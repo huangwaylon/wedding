@@ -45,7 +45,9 @@ const CONFIG = mergeConfig({
   partner2Name: 'Ren',
   weddingDate: WEDDING_DAY,
   weddingTime: '14:00',
-  venue: 'Meguro Gajoen',
+  // A long venue name on purpose: this is the string that broke the header's countdown onto a
+  // second line at 393px, and a short fixture never showed it.
+  venue: 'The 迎賓館 偕楽園 別邸',
   timezone: TOKYO,
 })
 
@@ -141,13 +143,19 @@ const DELETED = {
 
 const noop = () => {}
 
-function Shell({ children, wide = false }) {
+/**
+ * `canEdit` reaches the HEADER, not just the body. It used to be hardcoded true here, so no
+ * fixture could render the View only badge — and that badge sharing the header's second line with
+ * a long venue name is exactly what broke the countdown onto two lines on the live site. A harness
+ * that cannot show a case cannot protect the fix for it either.
+ */
+function Shell({ children, wide = false, canEdit = true }) {
   return (
     <div className="app">
-      <Header config={CONFIG} nowMs={NOW} canEdit onOpenSettings={noop} />
+      <Header config={CONFIG} nowMs={NOW} canEdit={canEdit} onOpenSettings={noop} />
       <main className={`shell${wide ? ' shell--wide' : ''}`}>{children}</main>
       {/* Not in timeline view, matching App: the FAB sits over the bottom-right of the chart. */}
-      {wide ? null : (
+      {wide || !canEdit ? null : (
         <span className="fab" aria-hidden="true">
           <PlusIcon style={{ width: '1.5em', height: '1.5em' }} />
         </span>
@@ -159,7 +167,7 @@ function Shell({ children, wide = false }) {
 function ListView({ locale, canEdit = true }) {
   const { tasks, overall } = surfaces(locale)
   return (
-    <Shell>
+    <Shell canEdit={canEdit}>
       <div className="shell__aside stack">
         <OverallCard overall={overall} />
         {canEdit ? <DeletedList tasks={DELETED[locale]} onRestore={noop} /> : null}

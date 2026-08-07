@@ -36,7 +36,8 @@ export default function Header({ config, nowMs, canEdit, onOpenSettings }) {
         <div className="header__text">
           <h1 className="header__title">{coupleTitle(config, t('app.name'))}</h1>
           <p className="header__sub">
-            <span className="tnum">{countdown}</span>
+            {/* Its own class, not just `tnum`: it must be the flex item that never gives way. */}
+            <span className="header__count tnum">{countdown}</span>
             {config.venue ? (
               <>
                 <span aria-hidden="true">·</span>

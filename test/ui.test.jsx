@@ -630,6 +630,24 @@ describe('the manifest', () => {
   })
 })
 
+describe('the header', () => {
+  it('never lets the countdown wrap or shrink', () => {
+    // With a long venue name and the View only badge sharing the row, "427 days to go" broke
+    // across two lines and grew the header an entire row on a 393px phone. The countdown is the
+    // one number up there; the venue is what gives way.
+    const count = ruleFor(app, '.header__count')
+    expect(count, '.header__count rule missing').toBeTruthy()
+    expect(count).toMatch(/flex: none/)
+    expect(count).toMatch(/white-space: nowrap/)
+
+    const venue = ruleFor(app, '.header__sub-text')
+    expect(venue).toMatch(/min-width: 0/)
+    expect(venue).toMatch(/text-overflow: ellipsis/)
+    // A flex item cannot shrink past its content without this on the container.
+    expect(ruleFor(app, '.header__sub')).toMatch(/min-width: 0/)
+  })
+})
+
 describe('subtasks on the timeline', () => {
   it('draws a subtask as a 1px rail, never as a bar', () => {
     // A subtask has no dates, so it has no extent of its own to draw. The rail says the one

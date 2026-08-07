@@ -76,11 +76,24 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   font-size: var(--fs-caption);
   color: var(--ink-3);
 }
 
+/* THE COUNTDOWN NEVER WRAPS AND NEVER SHRINKS. It is the one number in the header, and with a
+   long venue name beside it and the View only badge after that, "427 days / to go" broke across
+   two lines and grew the header a whole row on a 393px phone. */
+.header__count {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* The venue is what gives way instead — it is the one part of this row that can be truncated and
+   still say something useful, which is why it already had the ellipsis. */
 .header__sub-text {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
