@@ -256,6 +256,20 @@ describe('subtasks in a task row', () => {
       />,
     )
 
+  it('offers no add field when the deployment cannot store a subtask', () => {
+    // The banner tells somebody their script is out of date; leaving a live field under it invites
+    // them to type a checklist that will be refused. The existing items stay fully live — an old
+    // script ticks and deletes them correctly, it just cannot write `parent_id`.
+    const row = parented([sub('p', 1), sub('p', 2)])
+    const offered = render(row, { expanded: true })
+    expect(offered).toContain('subtask-add__field')
+
+    const withheld = render(row, { expanded: true, canAddSubtask: false })
+    expect(withheld).not.toContain('subtask-add__field')
+    expect(withheld.match(/<li class="subtask/g) ?? []).toHaveLength(2)
+    expect(withheld).toContain('subtask__toggle')
+  })
+
   it('shows no disclosure at all when a task has none', () => {
     // The load-bearing decision: a freshly seeded 52-task board adds zero pixels.
     expect(render(parented([]))).not.toContain('task__subs')

@@ -341,6 +341,7 @@ export default function App() {
                   onEdit={setEditing}
                   onDelete={setPendingDelete}
                   onExpand={toggleExpanded}
+                  canAddSubtask={!board.outdatedScript}
                   onAddSubtask={addSubtask}
                   onSubtaskFocus={setAddingSubtask}
                 />
@@ -374,6 +375,7 @@ export default function App() {
           defaultDay={nowWall.slice(0, 10)}
           onSave={save}
           onDelete={(task) => setPendingDelete(task)}
+          canAddSubtask={!board.outdatedScript}
           onAddSubtask={addSubtask}
           onToggleSubtask={toggleDone}
           onDeleteSubtask={setPendingDelete}

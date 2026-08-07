@@ -77,6 +77,7 @@ export default function TaskFormSheet({
   defaultDay,
   onSave,
   onDelete,
+  canAddSubtask,
   onAddSubtask,
   onToggleSubtask,
   onDeleteSubtask,
@@ -290,6 +291,7 @@ export default function TaskFormSheet({
           <div className="field">
             <span className="label">{t('form.subtasks')}</span>
             <SubtaskList
+              canAdd={canAddSubtask}
               subtasks={task.subtasks ?? []}
               canEdit
               onToggle={onToggleSubtask}

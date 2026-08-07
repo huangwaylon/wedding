@@ -97,7 +97,10 @@ function doGet() {
     var book = openBook()
     if (!book) return json({ ok: false, error: 'misconfigured' })
     if (!book.getSheetByName(TASKS_SHEET)) {
-      return json({ ok: true, needsSetup: true, tasks: [], config: {} })
+      // `schema` MUST be here too. Absence of it is how the client detects a deployment older than
+      // its own bundle, and this deployment knows its columns whether or not the tabs exist yet —
+      // so omitting it made a brand-new board greet its owner with "your script is out of date".
+      return json({ ok: true, needsSetup: true, tasks: [], config: {}, schema: TASK_COLUMNS })
     }
     return json(board(book, book.getSpreadsheetTimeZone()))
   } catch (err) {
@@ -342,8 +345,10 @@ function stampDeleted(book, id, value, timeZone) {
    *
    * Untouched cells are rewritten with what they already hold, normalised through `readCell` —
    * so a cell the Sheets UI had coerced to a Date comes back as the wall-clock string the client
-   * is already being shown, rather than as "Fri Aug 07 2026 …". These are the script's own two
-   * bookkeeping columns and nothing else writes them, which is what makes that safe.
+   * is already being shown, rather than as "Fri Aug 07 2026 …". What makes rewriting them safe is
+   * the LOCK, not ownership of the columns: the values come from a read taken inside the same lock,
+   * so no other request can have changed them in between. (`updated_at` is script-only, but
+   * `deleted_at` is not — `toRow` copies it from the client on every create and update.)
    */
   var updated = []
   var deleted = []

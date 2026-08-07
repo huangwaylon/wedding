@@ -208,30 +208,6 @@ export function useBoard({ editKey, onUnauthorized }) {
     [accept],
   )
 
-  const addTask = useCallback(
-    (draft) => {
-      const task = { ...draft, id: draft.id || newId(), pending: true }
-      return run(
-        (key) => api.createTask(task, key),
-        (previous) => [...previous, task],
-      )
-    },
-    [run],
-  )
-
-  const editTask = useCallback(
-    (task) =>
-      run(
-        (key) => api.updateTask(task, key),
-        (previous) => previous.map((row) => (row.id === task.id ? { ...task, pending: true } : row)),
-      ),
-    [run],
-  )
-
-  /**
-   * A subtask is a task with a parent and no window. It goes through the same `run` as
-   * everything else — a second write path would be the fifth try/catch `run` exists to prevent.
-   */
   /**
    * True when the deployed Apps Script predates a column this bundle relies on.
    *
@@ -246,6 +222,41 @@ export function useBoard({ editKey, onUnauthorized }) {
    * read yet — is deliberately not outdated, or every cold start would flag itself.
    */
   const outdatedScript = schema !== null && !schema.includes(REQUIRED_COLUMN)
+
+  const addTask = useCallback(
+    (draft) => {
+      const task = { ...draft, id: draft.id || newId(), pending: true }
+      return run(
+        (key) => api.createTask(task, key),
+        (previous) => [...previous, task],
+      )
+    },
+    [run],
+  )
+
+  const editTask = useCallback(
+    (task) => {
+      // A SUBTASK edit is refused on an out-of-date script for the same reason a new one is, and
+      // this is the path that matters most in practice: `toggleDone` comes through here, so ticking
+      // a checklist item would have been written by a script that has never heard of `parent_id`,
+      // dropping it and promoting the item to a task of its own. A top-level edit is unaffected —
+      // its `parent_id` is empty, so losing it changes nothing.
+      if (task.parentId && outdatedScript) {
+        setError(API_ERROR.NOT_FOUND)
+        return Promise.resolve(false)
+      }
+      return run(
+        (key) => api.updateTask(task, key),
+        (previous) => previous.map((row) => (row.id === task.id ? { ...task, pending: true } : row)),
+      )
+    },
+    [run, outdatedScript],
+  )
+
+  /**
+   * A subtask is a task with a parent and no window. It goes through the same `run` as
+   * everything else — a second write path would be the fifth try/catch `run` exists to prevent.
+   */
 
   const addSubtask = useCallback(
     (parent, title) => {

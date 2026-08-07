@@ -214,6 +214,16 @@ describe('the read', () => {
     expect(JSON.parse(script.doGet()).tasks[0].start).toBe('2027-01-01T00:00')
   })
 
+  it('reports its column list even on a board with no tabs yet', () => {
+    // Absence of `schema` is how the client detects a deployment older than its own bundle, and
+    // this deployment knows its columns whether or not the tabs exist. Omitting it here made a
+    // brand-new, correctly-deployed board greet its owner with "your script is out of date".
+    const fresh = makeFreshBook()
+    const body = JSON.parse(load(fresh).doGet())
+    expect(body.needsSetup).toBe(true)
+    expect(body.schema).toEqual(TASK_COLUMNS)
+  })
+
   it('never writes', () => {
     const before = book.tasks.writes
     script.doGet()

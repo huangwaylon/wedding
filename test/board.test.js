@@ -108,6 +108,22 @@ describe('the mutation primitive', () => {
     expect(body).not.toMatch(/schema\.length > 0/)
   })
 
+  it('declares the outdated-script flag before the mutations that depend on it', () => {
+    // A `useCallback` dep array is evaluated during render, so a `const` declared BELOW one is
+    // still in its temporal dead zone — a ReferenceError on every render, not a lint nit.
+    expect(body.indexOf('const outdatedScript')).toBeLessThan(body.indexOf('const editTask'))
+    expect(body.indexOf('const outdatedScript')).toBeLessThan(body.indexOf('const addSubtask'))
+  })
+
+  it('guards a SUBTASK edit too, not just a new subtask', () => {
+    // `toggleDone` comes through `editTask`, so ticking a checklist item on an out-of-date script
+    // would be written by a script that has never heard of `parent_id` — dropping it and promoting
+    // the item to a task of its own. A top-level edit is unaffected: its `parent_id` is empty.
+    const declaration = declarationOf('editTask')
+    expect(declaration).toMatch(/if \(task\.parentId && outdatedScript\)/)
+    expect(declaration).toMatch(/return Promise\.resolve\(false\)/)
+  })
+
   it('refuses the write rather than letting the script reshape it', () => {
     // A warning alone would still let somebody make the mess: the write returns {ok:true}, the
     // row is created, and the column is dropped.

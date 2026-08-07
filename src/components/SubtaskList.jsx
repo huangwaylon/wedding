@@ -122,10 +122,17 @@ function AddSubtask({ onAdd, onFocusChange }) {
   )
 }
 
+/**
+ * @param {boolean} [props.canAdd] false when the DEPLOYED script has no `parent_id` column, so a
+ *   subtask cannot be stored at all. The existing items stay live — they can still be ticked and
+ *   deleted, which the old script handles fine — but there is no field, because offering one would
+ *   invite somebody to type a checklist that gets thrown away. The banner says why.
+ */
 export default function SubtaskList({
   id,
   subtasks,
   canEdit,
+  canAdd = true,
   onToggle,
   onDelete,
   onAdd,
@@ -143,7 +150,7 @@ export default function SubtaskList({
         />
       ))}
       {/* Last, always, with a stable key — moving or remounting it drops the keyboard on iOS. */}
-      {canEdit ? <AddSubtask onAdd={onAdd} onFocusChange={onFocusChange} /> : null}
+      {canEdit && canAdd ? <AddSubtask onAdd={onAdd} onFocusChange={onFocusChange} /> : null}
     </ul>
   )
 }

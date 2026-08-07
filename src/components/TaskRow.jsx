@@ -25,6 +25,7 @@ export default function TaskRow({
   task,
   nowWall,
   canEdit,
+  canAddSubtask,
   expanded,
   onToggle,
   onEdit,
@@ -119,6 +120,7 @@ export default function TaskRow({
               id={`subs-${task.id}`}
               subtasks={subtasks}
               canEdit={canEdit}
+              canAdd={canAddSubtask}
               onToggle={onToggle}
               onDelete={onDelete}
               onAdd={(title) => onAddSubtask(task, title)}

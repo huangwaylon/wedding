@@ -375,8 +375,11 @@ describe('layout', () => {
     expect(/\.shell \{([^}]*)\}/.exec(app)[1]).toMatch(/padding-bottom:.*--fab-size/)
   })
 
-  it('has only the two documented breakpoints', () => {
-    const widths = new Set([...app.matchAll(/@media \(min-width: ([\d.]+rem)\)/g)].map((m) => m[1]))
+  it('has only the two documented breakpoints, across EVERY stylesheet', () => {
+    // `app` alone was scanned, and `primitives.css` has a 48rem block of its own — so a third
+    // breakpoint added anywhere but `app.css` would not have failed the build, while CLAUDE.md
+    // claimed this pinned it. `all` is every sheet with comments stripped.
+    const widths = new Set([...all.matchAll(/@media \(min-width: ([\d.]+rem)\)/g)].map((m) => m[1]))
     expect([...widths].sort()).toEqual(['48rem', '62rem'])
   })
 

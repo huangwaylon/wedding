@@ -1,577 +1,200 @@
 # CLAUDE.md
 
-Guidance for Claude Code working in this repository. For the data model, the access model
-and the cost, see `README.md`; for the Google walkthrough, see `SETUP.md`. Do not restate
-either here.
+Data model, access model and cost are in `README.md`, the Google walkthrough in `SETUP.md`; do not
+restate either here. Every file explains its own reasoning in comments — WHY, not what, at the
+existing density, never narrating a refactor. This holds what constrains work elsewhere. Vite +
+React 19, plain ESM JavaScript, vitest, no runtime dependency but `react`/`react-dom`; the whole
+backend is one container-bound Apps Script web app over one spreadsheet, where `doGet` is anonymous
+and read-only and `doPost` needs `APP_KEY` in the body.
 
-## Commands
-
-| Command | Notes |
-| --- | --- |
-| `npm run dev` | Vite on port 5173 |
-| `npm test` | vitest, single run. Must pass before any commit |
-| `npm run build` | Production bundle into `dist/`, then `scripts/build-sw.js` emits `dist/sw.js` |
-| `npm run preview` | Serve the built bundle |
-| `npm run icons` | Regenerate `public/icons/*.png` |
-| `npx vite-node scripts/preview.jsx` | Render the visual harness to `scripts/preview-*.html` |
-| `node scripts/check-contrast.js` | Measure every colour pair. Run after any colour change |
+`npm test` must pass before any commit; also `npm run dev|build|preview`,
+`node scripts/check-contrast.js` after any colour change, `npx vite-node scripts/preview.jsx` for the
+visual harness.
 
 ## Invariants
 
-These are the rules that prevent silent wrongness. Breaking one does not throw — it quietly
-puts a misleading number on somebody's screen or the wrong thing in their spreadsheet.
+Breaking one does not throw; it puts a misleading number on somebody's screen or the wrong thing in
+their spreadsheet.
 
-**`src/schema.js` and `apps-script/Code.gs` both know the column layout, and they must
-agree.** That duplication is unavoidable — the boundary between them is a network hop — and
-it is the only such duplication in the repo. `test/schema.test.js` parses the `.gs` file and
-fails the build when the two lists drift. Nothing else anywhere may name a column.
+### The sheet contract
 
-**`start` and `end` are WALL-CLOCK strings, resolved against the board's `timezone`.** Never
-an instant, never the device's zone. "The ceremony is at 14:00" must read 14:00 to a planner
-in another country. Every conversion goes through `src/lib/time.js`; no other file may build
-a `Date` from a task's fields.
+- **`src/schema.js` and `apps-script/Code.gs` both hold the column list and must agree.** The
+  boundary is a network hop; `test/schema.test.js` fails the build when they drift, nothing else may
+  name a column, and new columns are **appended** so no existing index shifts.
+- **`taskToRow` must always send `parent_id`**: `update` rewrites the whole row from the payload, so
+  omitting it blanks the cell and silently promotes a subtask to a task.
+- **Cells are formatted as text BEFORE values are written**, or `setValues` parses a timestamp into
+  a Date and the sheet's locale decides what comes back. `textCell` also escapes a leading `=`, `+`,
+  `-` or `@`, which `setValue` treats as a formula whatever the format says. Everything crossing the
+  wire is a string, and `readCell` recovers a cell somebody hand-edited into a Date.
+- **Deletes are soft, confirmed and reversible**, so rows never move. `compact()` is the only hard
+  delete and must `deleteRow` **descending**, or it takes the wrong rows.
 
-**Never `new Date('2027-04-18')`.** That parses as UTC midnight and renders as the 17th
-anywhere west of Greenwich. Every `Date` in `time.js` is built from explicit parts, and to
-*format* a wall clock you build the instant as if the parts were UTC and format with
-`timeZone: 'UTC'` — formatting it in the board's zone would apply the offset twice.
+### Time
 
-**`wallToInstant` takes two offset samples and then verifies the result.** The offset has to
-be sampled at the instant being solved for, so it guesses, re-solves, and then round-trips
-the answer back to a wall clock. Without that check, a time inside a spring-forward gap
-resolves *backwards* — 02:30 becomes 01:30, an hour earlier than anybody typed. Do not
-"simplify" this to one lookup.
+- **`start` and `end` are WALL-CLOCK strings resolved against the board's `timezone`** — never
+  instants, never the device's zone: "the ceremony is at 14:00" must read 14:00 to a planner abroad.
+  Every conversion goes through `src/lib/time.js`, which never writes `new Date('2027-04-18')` (UTC
+  midnight, so the 17th west of Greenwich), samples a DST offset twice and round-trips the answer, and
+  ends an all-day window at 23:59 so a task due Friday is overdue on Saturday morning.
 
-**An all-day window ends at 23:59, not at the next midnight.** A task due Friday must be
-overdue on Saturday morning, not 99% complete. `endOfDay` is the only place this is decided.
+### Progress
 
-**`percent` and `timePercent` are different claims and must not be merged.** `percent` is
-what to draw (done → 100, else elapsed); `timePercent` is the elapsed fraction regardless of
-done, and rolled up it is the on-schedule reference the meter's mark points at. A task whose
-window ran out unfinished has `percent` of 1 while being emphatically incomplete, which is
-why the roll-up always ships its counts alongside.
-
-**`paceLabel` takes the overdue count AND a signed pace.** For a task with no subtasks `pace` is still
-positive-only — `percent` is `done ? 1 : timePercent`, so an expired unfinished window counts 1
-in both sums and cancels — and there, overdue is the only evidence of lateness there is. A
-version taking `pace` alone reported "On schedule" for a board with eight tasks past their date,
-so **the overdue branch is first and unconditional**.
-
-The negative branch is strictly additive, and it exists because subtasks gave the app a
-work-done measurement it never had. A parent 80% through its window with one of five items
-ticked contributes 0.2 to the headline and 0.8 to the reference — a negative term that does not
-need the window to have expired. **That is the app's first prospective lateness signal**;
-overdue only ever fires after a deadline has already passed. The dead band is symmetric, and
-`test/progress.test.js` pins that the negative branch is unreachable on a board with no
-subtasks anywhere.
-
-**`time.js` memoises three things, and the expensive one is not the obvious one.**
-`formatToParts` was assumed to be the cost; measured, it was `new Intl.DateTimeFormat` inside
-`isValidTimeZone` — `resolveTimeZone` sits on the path of `wallToInstant`, `offsetMsAt` and
-`instantToWall`, which is ~416 constructions per tick on a fifty-task board and **96% of the
-whole per-tick cost**. With `zoneValidity`, `instantCache` and `offsetCache` in place a tick is
-0.071ms, down from 7.58ms. Do not remove any of them without a fresh measurement, and do not
-re-optimise `formatToParts` — it is 0.15ms.
-
-`offsetCache` is keyed by zone and HOUR, never by day: DST transitions happen on the hour, so
-an hour bucket cannot straddle one, while a day bucket would return the wrong offset for every
-lookup on a transition day. `instantCache` is keyed by reading AND zone, and caching the answer
-does not skip the DST round-trip that derives it.
-
-**`React.memo` on the task rows is the wrong fix and was considered and rejected.** It would
-never hit as written — `withProgress` allocates a fresh `{...task, progress}` every tick — and
-reconciliation is the cheap half. React already writes zero DOM properties on a typical tick,
-because the interpolated `width: "43%"` string is unchanged.
-
-**Every TOP-LEVEL task counts equally in the roll-up — never weighted by duration, and never
-by how many subtasks it was broken into.** "36% of our tasks" is a sentence somebody can check
-by counting the cards on screen. A duration-weighted mean silently makes a six-month venue hunt
-worth thirty times the cake tasting; a subtask in the mean would let a parent with ten of them
-carry eleven twentieths of a ten-task board. Decomposing one task more finely must not change
-what the rest of the board is worth, or writing detail into one task would deflate every other.
-A subtask moves its parent's single share and nothing else.
-
-**Nesting is exactly one level, and the READ is what enforces it.** A row is a subtask iff its
-`parent_id` names a LIVE row whose own `parent_id` is empty (`partitionSubtasks`). That rule is
-depth-1 by construction, so it cannot recurse, walk a cycle, or need a visited set — and it has
-an answer for every state a hand-edited sheet can reach. Everything else is TOP-LEVEL: a
-grandchild, a self-parent, a cycle member, and an orphan whose parent was tombstoned or
-compacted away are all **promoted, never hidden**. Promotion puts the row where somebody can see
-and fix it; hiding loses live work, which is the one thing this app must never do. The Apps
-Script deliberately does not check the graph — it would cost a second `findRow` scan per write
-and would not catch the case that actually happens, which is somebody typing in the Sheets UI.
-
-**A parent's `percent` is its subtasks done; `done_at` still outranks it.** Precedence is
-`done_at` > the subtask tally > the clock. A parent with no LIVE subtasks falls back to the
-clock exactly as before, so a parent whose subtasks are all tombstoned is a parent with none.
-Nothing is blended: "3 of 5 = 60%" is checkable by counting and `0.5 × elapsed + 0.5 × tally` is
-not. **All subtasks done does NOT make a parent done.** `isDone` is `Boolean(doneAt)` and the
-roll-up's done count comes from the state, so a derived DONE would put a task in that count with
-an empty cell in the spreadsheet and no answer to "when was it finished" — the app writing data
-on somebody's behalf, in the one place it never does. The app suggests the tick; the person
-makes it.
-
-**`taskToRow` must always send `parent_id`.** `updateTask` in the script rewrites the WHOLE row
-from the payload, so a task object built without it blanks the cell and silently promotes a
-subtask to a top-level task. `TaskFormSheet` spreads the existing task first for exactly this
-reason.
-
-**The delete cascade lives in the Apps Script, not the client.** `stampDeleted` stamps the parent
-and every row naming it, under the one lock, in one reply. From the browser it would be N round
-trips that can half-fail, leaving some children tombstoned and some not. `restoreTask` is the
-exact inverse, and `useBoard`'s optimistic updater stamps children too — otherwise they sit on
-screen for a second and then vanish when the reply lands.
-
-**Every mutation goes through `run()` in `useBoard`, and there is exactly one of it.**
-Bump `saving`, call, accept the fresh board, classify the failure, flag a rejected key,
-decrement `saving` — that block was written out four times, and the fourth copy (`compact`)
-had quietly dropped the `unauthorized` callback, so a rotated key plus a Purge left the app
-still showing edit controls and still failing silently. `test/board.test.js` pins that there
-is one copy of each half of it. Adding a mutation means calling `run`, never writing a fifth
-try/catch.
-
-**Every read carries the deployed script's column list, and ABSENCE is the out-of-date signal.**
-`board()` reports `schema: TASK_COLUMNS`; a deployment older than the bundle sends no `schema` at
-all, so `decodeBoard` yields `[]` and `[]` is what means "cannot store the newest column". In
-`useBoard` the state therefore starts at **`null`** — no read has landed — and the guard is
-`schema !== null && !schema.includes(REQUIRED_COLUMN)`. Written as `schema.length > 0 && …` it
-excluded the only case it exists for and never fired once. This is load-bearing rather than
-cosmetic: `updateTask` and `create` rewrite a row from the columns the *script* knows, so an old
-deployment answers `ok: true`, creates the row, and drops `parent_id` — a subtask that saved
-successfully and came back a top-level task. So the write is REFUSED, not merely warned about,
-and `REQUIRED_COLUMN` is read off the end of `TASK_COLUMNS` rather than written as a literal.
-
- Row positions shift whenever anyone edits the sheet
-directly in the Sheets UI, so `updateTask` and `stampDeleted` re-resolve id → row immediately
-before writing.
-
-**Every mutation holds a script lock.** Two people on two phones can save at the same moment,
-and without `LockService` two simultaneous appends resolve the same "next" row and one
-silently overwrites the other.
-
-**Cells are formatted as plain text BEFORE values are written, never after.** With the default
-format, `setValues` parses `"2027-04-18T14:00"` into a Date and the sheet's locale then decides
-what comes back out. `textCell` additionally escapes a leading `=`, `+`, `-` or `@` with an
-apostrophe, because `setValue` parses those as formulas whatever the number format says — a
-note of `=SUM(A:A)` would otherwise become a live formula.
-
-**Deletes are soft, confirmed, and reversible.** `deleted_at` is stamped and the client
-filters, so rows never change position and a restore is one cell write. Every delete goes
-through `ConfirmDeleteSheet`, and recovery is the collapsed `DeletedList` — not a toast,
-because a toast that has timed out is a delete nobody can undo. That is why no toast in this
-app carries a button. `compact()` is the only hard delete, and it must issue its `deleteRow`
-calls in **descending** order or earlier deletions shift the indices of later ones.
-
-**`doGet` never writes.** It is anonymous, so an anonymous request must not be able to cause
-a write. A spreadsheet with no `tasks` tab answers `needsSetup: true`; an editor's first
-write builds the structure.
-
-**Neither `doGet` nor `doPost` may throw.** An uncaught throw returns Google's HTML error
-page, which the client classifies as *transient* and retries — so a throw on the reject path
-becomes a silent retry loop. Never read `e.parameter` for the key either: a key in a query
-string lands in Google's request logs.
-
-**The endpoint always answers HTTP 200.** `ContentService` cannot set a status, so
-`{"ok":false,"error":"unauthorized"}` arrives as a 200 and the body is the only signal.
-Branch on the body, never on `response.ok`. `unauthorized` is **terminal**; a non-JSON reply,
-a rejection and a timeout are **transient**, because Google's HTML error page is the common
-non-JSON case and it recovers. Getting this backwards either logs an editor out over a hiccup
-or hides a rotated key behind retries forever.
-
-**The POST is `Content-Type: text/plain`, and the method is never forced through the
-redirect.** `text/plain` keeps it a CORS simple request; a preflight would be answered with
-the 302 that `/exec` returns and die, which is also why the script has no `doOptions`.
-`fetch` downgrades POST to GET across that 302 and Apps Script serves the computed reply from
-the echo URL — forcing POST through the hop returns "page not found".
-
-**The read carries a cache-buster in the query string, and the edit key never can.** `/exec`
-is served through Google's cache, so a planner reloading after an edit would be handed the
-previous board. The two facts are the same fact from opposite ends: a fragment never reaches
-the server, which is why the key lives in one and the cache-buster cannot.
-
-**A rejected key is FLAGGED, not deleted.** Deleting it drops the device silently to
-view-only and the next person to notice is whoever wondered why their edits stopped saving.
-
-**`canEdit` decides what renders; it is not the security boundary.** The endpoint refuses
-every keyless write, so hiding controls is a courtesy. Do not add client-side checks as if
-they were enforcement, and do not remove the server-side one because the UI already hides the
-button.
-
-**The hash is stripped only when running standalone.** In Safari it must stay, so that *Add to
-Home Screen* records a URL still carrying the key — an installed web app has its own storage
-bucket. `public/manifest.webmanifest` omits `start_url` for the same reason. Adding one breaks
-editor installs on iOS and nothing will fail loudly.
-
-**Refreshes on focus are throttled.** One sheet, no push channel, and every read spends the
-owner's Apps Script quota, hence the 30s floor — do not remove it.
-
-**Nothing written to the sheet is localized, with exactly one deliberate exception.** Config
-values, column names and timestamps are language-independent, because the couple and their
-planners may read the UI in different languages. The exception is a seeded template's task
-titles, which are written in the seeding device's language: a seeded title is *content* from
-that moment on, editable and never re-rendered, so it is not a localized view of stored data.
-
-**Per-device vs per-sheet.** The locale, the accent and the list filter live in
-`localStorage`; the names, dates, venue, timezone and categories live in the sheet's `config`
-tab. Neither preference may ever be written to the sheet — nobody gets to restyle anybody
-else's screen or choose a planner's language.
-
-**The snapshot's `v` is a drop marker, never a migration.** An unrecognised version is ignored
-and re-fetched, which is free — the sheet is the source of truth. It stores the **pre-merge**
-config, because a merged copy freezes the building build's defaults into every later launch.
-`clearSnapshot` must reset the module's "last payload written" memo, or the next write is
-convinced it already saved.
-
-**The service worker never intercepts a cross-origin request**, and that is an explicit early
-`return` as the first statement of the `fetch` handler, not a property of scope — scope decides
-which *clients* are controlled, not which *requests* are seen, so the Apps Script endpoint
-arrives there. A `<meta>` CSP does not cover a worker's own context and Pages sends no CSP
-header, so a worker responding to those would be an uncovered proxy in front of the edit key.
-
-**Precache from a `dist/` walk, and derive the cache name from file contents.**
-`.vite/manifest.json` is not emitted without a flag, and when it is, it omits `index.html`
-itself and everything copied from `public/`. Hashing names rather than contents would leave
-`sw.js` byte-identical after an `index.html`-only change — a CSP edit, for instance — so the
-update would never reach the device. `caches.match` needs `ignoreVary: true`: Pages sends
-`Vary: Accept-Encoding` and `vite preview` sends `Vary: Origin`, and a mismatch misses and
-falls through to the network, which offline means a cache that silently only works online.
-
-**`sheets.googleapis.com` must not appear in the CSP.** The browser never holds a Google
-token; that is precisely why a view-only visitor needs no credential. If you find yourself
-adding that host, the architecture has changed and README's security model is no longer true.
-`test/ui.test.jsx` pins its absence.
-
-**There is no migration code, and no users to need it.** Anything justified only by "keeps an
-existing sheet working" has been removed. Do not add a back-compatibility branch for a shape
-this app never shipped.
-
-## Conventions
-
-- **Plain modern JavaScript, ESM.** No TypeScript. `.jsx` only for files containing JSX.
-- **No new npm dependencies** without a clear reason. The bundle is React plus application
-  code; icons are inline SVG in `src/components/icons.jsx`, the Gantt is CSS grid, and the
-  PNG encoder in `scripts/make-icons.js` exists so there is no native image dependency. A new
-  dependency is also a CSP decision, and `test/lockfile.test.js` pins the dependency list.
-- **If you add a host, update the CSP** in `index.html`. It is a deliberate allowlist.
-- **Never put a real secret in a `VITE_` variable.** Vite inlines them into the shipped
-  bundle. The one existing variable is public by design.
-- **Comments explain *why*, not *what*.** Match the existing density — the non-obvious
-  constraint gets a comment; the obvious line does not. Do not narrate the history of a
-  refactor in a comment.
-- **One helper, one home.** `readStored`/`writeStored` in `src/config.js` are the only
-  `localStorage` touches; every column name lives in `schema.js`; `CATEGORIES` in
-  `templates.js` is the only category list; `time.js` is the only file that resolves a zone;
-  `run()` in `useBoard` is the only place a mutation is wrapped; `Notice` is the only
-  title/body/action block.
-- **Export only what something outside the file uses.** A symbol exported "for testing" that
-  no test imports is a wider public surface for nothing. `monthTicks` and `draftToWindow` are
-  exported *because* they are tested directly; the rest are module-private.
-
-### i18n
-
-English and Japanese, no dependency. `src/i18n/` holds the engine (`index.js`), the two
-catalogs (`en.js`, `ja.js`) and the registry (`catalogs.js`).
-
-- **Never hardcode a user-facing string in a component.** That includes every `aria-label`,
-  `title` and `placeholder`. `test/i18n.test.js` scans `src/` and fails on a catalog key
-  nothing references, a referenced key no catalog has, and a bare string literal in one of
-  those three attributes.
-- **A key built at runtime needs its own coverage test.** The scan cannot see
-  `` t(`state.${state}`) `` or `` t(`category.${name}`) ``, so each family is asserted against
-  its source list (`STATE`, `CATEGORIES`, `TEMPLATE_IDS`, `ACCENTS`) instead.
-- **A category the catalog has never heard of renders exactly as typed.** The sheet is the
-  source of truth and the catalog is a courtesy on top of it.
-- **It is a module singleton, not a context.** `render.test.jsx` renders components bare, and
-  non-React modules need the same `t`. A provider would break the first and be unreachable
-  from the second.
-- **`useT()` uses `useSyncExternalStore` with the third argument.** Omitting
-  `getServerSnapshot` throws under `renderToStaticMarkup`, which is how every render test
-  runs. `useAccent()` has the same requirement.
-- **Plurals go through `Intl.PluralRules`, never a `count === 1` ternary.** A pluralised value
-  is an object keyed by CLDR category, and it is the only case where a catalog value is not a
-  string. `en` supplies `one`/`other`; `ja` supplies `other` alone, because that is what
-  `Intl.PluralRules('ja')` reports.
-- **The pure layers stay pure.** `time.js`, `progress.js`, `schema.js` and `templates.js`
-  never read the singleton; locale arrives as an argument with an English default.
-- **A test that calls `setLocale` must restore it** in `afterEach`, or the state leaks into
-  other files.
+- **`percent` and `timePercent` are different claims and must not be merged.** `percent` is what to
+  draw (done → 100, else the tally, else elapsed); `timePercent` is always the clock and rolled up
+  it is the on-schedule reference. An expired unfinished window has `percent` of 1 while emphatically
+  incomplete — hence the counts beside it.
+- **`paceLabel` takes the overdue count AND the signed pace, overdue first**: without subtasks `pace`
+  cannot go negative, since an expired window counts 1 in both sums and cancels.
+- **Every TOP-LEVEL task counts equally in the roll-up**, never by duration or subtask count —
+  decomposing one task more finely must not change what the rest of the board is worth.
 
 ### Subtasks
 
-- **A subtask is a checklist item: a title and a tick, no dates.** `validateTask` returns early
-  for anything with a `parentId`, because requiring two date wheels per item would make entering
-  five in a row unusable on a phone — and then no parent's progress would ever advance, which is
-  the whole point. It gets no meter (a dateless bar would encode the one bit the checkbox beside
-  it already does) and no state badge.
-- **`withProgress` returns TOP-LEVEL rows, each carrying its own `subtasks`.** That element shape
-  is a superset of the old one, which is why grouping, the timeline's bars and the roll-up all
-  kept working untouched. Subtasks are never sorted into that list: they are dateless, so
-  `compareForDisplay` would tear every one away from its parent into a trailing pile. Within a
-  parent they sort by `createdAt` — the order a checklist was typed is the order it is read.
-- **`writeSnapshot` strips `subtasks` along with `pending` and `progress`.** Persisting the
-  derived tree would re-seed a stale percentage on every cold launch and double the payload
-  against `MAX_CHARS`.
-- **The disclosure only exists once a task has a subtask.** A freshly seeded 52-task board must
-  add zero pixels, which is also why the FIRST subtask is added from the edit form rather than
-  from a permanent "add" row on every parent — that would be three phone screens of height for a
-  rare action. Those adds are immediate writes, not part of the draft, and the form says so.
-- **The add row is last, always, with a stable key.** Moving or remounting it drops the iOS
-  keyboard mid-checklist, and it does not await the write before clearing — the optimistic update
-  has already landed, and awaiting would freeze the field for a second per item.
-- **The add row is NOT a `<form>`, and it has a visible submit button.** It lives inside
-  `TaskFormSheet`'s form, and the HTML parser drops a nested `<form>` outright — so the inner one
-  never existed and Enter submitted the *task*, closing the sheet. Commit is `onKeyDown` on Enter
-  plus a `+` button, and the button is required: with Enter as the only affordance, typing a title
-  and then tapping anywhere else discarded it with no feedback, which is the "adding subtasks is
-  not working" report. Its `onMouseDown` calls `preventDefault` so the click does not blur the
-  field first.
-- **The seeded templates stay flat.** Subtasks would double a curated, sourced, two-language
-  content surface and make `template.count` lie, and the feature is fully provable without them.
+- **Nesting is exactly one level and the READ enforces it.** A row is a subtask iff `parent_id`
+  names a LIVE row whose own `parent_id` is empty (`partitionSubtasks`) — depth-1 by construction,
+  so it cannot recurse or cycle. Anything unplaceable (grandchild, cycle, orphan) is **promoted,
+  never hidden**: a silently hidden task is the worst thing this app could do.
+- **Precedence is `done_at` > tally > clock, and nothing is blended** — "3 of 5 = 60%" is checkable
+  by counting; `0.5 × elapsed + 0.5 × tally` is not. No live subtasks falls back to the clock.
+- **All subtasks done does NOT make a parent done**, or a task would sit in the done count with an
+  empty cell in the sheet and no answer to "when was it finished". Nothing prompts for the tick
+  either: a 5/5 parent reads 100% and stays open until a person closes it.
+- **A subtask is a title and a tick, no dates** — `validateTask` returns early for anything with a
+  `parentId`, because two date wheels per item would make entering five unusable on a phone and then
+  no parent's progress would advance. No meter, no badge, and the whole row is the toggle. **Deleting
+  a parent cascades in the Apps Script**, one lock and one reply; `restore` is its exact inverse.
 
-### Charts
+### The endpoint
 
-The meter and the Gantt are hand-rolled — no charting library. `Meter` is a track, a fill and
-one tick; `Timeline` is CSS grid plus percentages.
+`Code.gs` and `api.js` state the two biggest rules in capitals in their own headers: **neither handler
+may throw** (Google's HTML page reads as transient, so a throw on the reject path is a silent retry
+loop) and **the reply is always HTTP 200**, so the BODY is the only signal. `api.js`'s `TERMINAL`
+set decides retryability — only `busy` and `transient` may be retried. Never read `e.parameter` for
+the key; a query string reaches Google's logs.
 
-- **The meter's hairline is load-bearing, and it is `--track-line`, never `--line`.**
-  `--track` is 1.34:1 against the card and cannot reach 3:1 while staying a warm neutral, so
-  the *boundary* identifies the bar. Delete it and an empty meter is invisible — 0% reads as
-  "there is no meter here". This shipped half-broken: the hairline was `--line`, which
-  measures **1.035:1 against `--track`** and therefore drew nothing at all, on both the meter
-  and the timeline bar. `--track-line` is 1.45:1 on the track and 1.95:1 on the surface.
-- **The on-schedule mark is ink with a 2px ring in the surface colour**, which is what keeps
-  it legible whether it crosses the fill or the bare track. It must never be given a hue of
-  its own; no single colour clears both backgrounds.
-- **The state → colour mapping lives in ONE table** at the top of `primitives.css`. Four
-  families — a badge's wash, its dot, the standalone dot, a meter fill — plus the timeline bar
-  used to restate it in nineteen blocks across two files, and that had already produced two
-  defects: `badge--unscheduled` is rendered for every state and had no rule at all, and
-  `.dot--upcoming` was a no-op. Each state now sets `--state-fill` and `--state-wash` once and
-  every mark reads them with a fallback. A new mark type costs one line.
-- **State colour is never the only channel.** A badge is a wash plus an *ink* label and a
-  coloured dot; `--good` and `--critical` are fills only. One of them cannot clear 4.5:1 on
-  white, and a viewer with any form of colour vision has to read the same thing.
-- **There is no `--warning`.** "In progress" is the accent and "upcoming" is the bare track,
-  so no state needs a hue that cannot clear 3:1 on white — which is what yellow would have
-  forced.
-- **The timeline colours by STATE, not by category.** State is what somebody scans a timeline
-  for, and a second categorical encoding on the same mark would put two palettes in one
-  chart. Category stays in the list, as text.
-- **The meter fill is never transitioned.** It advances on its own once a minute, and an
-  animation makes it look like a control responding to a tap.
-- **Run `node scripts/check-contrast.js` after any colour change.** Every value in
-  `tokens.css` carries its measured ratio in a comment; the script is what produced them.
+- **`doGet` never writes** — it is anonymous, so an anonymous request must not cause one. An unbuilt
+  spreadsheet answers `needsSetup` (WITH its `schema`, or a brand-new board warns about itself), and
+  an editor's first write builds the tabs. **Every mutation holds a script lock**, or two simultaneous
+  appends resolve the same next row, and **no cached row number is ever trusted**. The read carries a
+  cache-buster in its query string; the edit key never can, and rides in the POST body.
+- **The POST is `text/plain`, and its method is never forced through the 302 that `/exec` returns**;
+  `api.js` explains why, and why there is no `doOptions`.
+- **A Sheets service call is the unit of cost; arithmetic between them is free.** Each op takes ONE
+  read of the grid through `openTasks`, which folds in the header self-heal; the reply then reads it
+  again, deliberately, since that read-back is what the client is shown. `stampDeleted` writes two
+  whole columns so a cascade costs what one row does, and the LOCK is what makes rewriting untouched
+  cells safe — the values came from a read taken inside it.
+- **Every read reports `schema: TASK_COLUMNS`, and ABSENCE is the out-of-date signal.** An older
+  script sends none, so `[]` means "cannot store the newest column" and `null` means "nothing read
+  yet". `addSubtask` and a SUBTASK `editTask` then refuse outright and the add field is withheld,
+  rather than let the old script answer `ok` and drop the column. A top-level write is unaffected.
 
-### CSS
+### Client state
 
-Four files, loaded in order by `src/main.jsx`: `tokens.css` (custom properties), `base.css`
-(reset, typography), `primitives.css` (generic `.card`, `.btn`, `.input`, `.meter`, `.sheet`,
-…), `app.css` (app-specific layout).
+- **Every mutation goes through `run()` in `useBoard` and there is exactly one of it**, pinned by
+  `test/board.test.js`. **Writes serialise on a chain and only the LAST write in flight may replace
+  the board**: every reply carries the whole board as of that write, so an earlier one describes a
+  sheet without the later edits and accepting it wipes them off screen. `refresh` is skipped while a
+  write is pending — the same clobber from the other direction.
+- **The task sheets close before the write lands, and a failure has a toast of its own.** A round trip
+  is ~3s and those mutations are optimistic, so waiting buys nothing — but with the panel gone, a
+  rolled-back row is invisible unless said out loud. Settings still waits: `saveConfig` has no
+  optimistic half, so closing early would show a stale zone and countdown for three seconds.
+- **A rejected key is FLAGGED, not deleted**, or the device drops to view-only in silence. And
+  **`canEdit` decides what renders; it is not the security boundary** — the endpoint refuses every
+  keyless write, so never add a client check as enforcement or drop the server one.
+- **Refreshes on focus are throttled** (30s floor); every read spends the owner's quota. **The hash
+  is stripped only when standalone**, so *Add to Home Screen* records a URL still carrying the key,
+  and `manifest.webmanifest` omits `start_url` for the same reason.
+- **The snapshot's version is a DROP marker, never a migration**, and the service worker never
+  touches a cross-origin request.
+- **Nothing written to the sheet is localized** bar one exception, a seeded template's titles, which
+  are content from then on. Locale, accent and filter are per-device; the rest is per-sheet.
+- **`sheets.googleapis.com` must not appear in the CSP** — the browser never holds a Google token,
+  which is why a view-only visitor needs no credential. **There is no migration code.**
 
-- **Light theme only.** There is no dark block. State is stated in words, never in hue alone.
-- **An accent preset is three custom properties**, redefined under `[data-accent]` in
-  `tokens.css`. `--accent-ring` and `--accent-shadow` derive from `--accent` with
-  `color-mix`, so a preset never restates the accent's channels and can never reach the
-  neutrals or the state colours. Every preset keeps white text ≥7.5:1 on the accent and
-  ≥6.8:1 against `--bg`; measured values sit beside them. The selector is attribute-based
-  rather than `:root`-scoped so a settings swatch can paint its own colour.
-- **Use the tokens.** In particular use `var(--transition-fast|base)` rather than a hardcoded
-  duration — the tokens collapse to ~0ms under `prefers-reduced-motion`, so hardcoding
-  silently opts out of that support.
-- **`letter-spacing: 0` and no `text-transform`, anywhere text can be Japanese.** Tracking
-  inserts a gap between every kana (「このつき」 becomes 「こ の つ き」) and `uppercase` is a
-  no-op on kana. The lone carve-out is `.overall__percent`, which renders digits exclusively.
-- **No line-height below 1.5** on anything that can hold Japanese; CJK glyphs fill the em box.
-  `--lh-flat: 1` is the single carve-out, same element, same reason.
-- **Nothing below 13px.** Weights are `400|500|600` only.
-- **Tabular figures in columns, proportional for the hero.** `tabular-nums` gives every digit
-  the width of a `0`, which makes a large standalone number look loose. `.tnum` is for the
-  per-row percentages and the axis, not for `.overall__percent`.
-- **Never drop a form control below 16px.** Mobile Safari zooms on focus below that and will
-  not zoom back out. `textarea` is in `base.css`'s `font: inherit` list for the same family of
-  reason — browsers default it to monospace, and a monospace fallback for Japanese is markedly
-  worse than for Latin.
-- **`--tap-target` (44px), not `--tap-target-sm`, for anything a thumb aims at.** The 24px WCAG
-  floor is the wrong bar for a phone-first app. The chips, the row's check and its icon buttons
-  are all 44px; `--tap-target-sm` is for non-controls and for the segmented thumb.
-- **`role="progressbar"`, never `role="meter"`.** ARIA reserves `meter` for a gauge rather than
-  a value advancing toward completion, and iOS VoiceOver maps it patchily enough that an
-  unrecognised one degrades to a generic and takes the label and value with it.
-- **`interactive-widget=resizes-content` in the viewport meta is load-bearing**, and
-  `.sheet__foot` is sticky as well. iOS defaults to `resizes-visual`, where the keyboard changes
-  neither the layout viewport nor `dvh` — so a sheet's Save button sat under ~340px of keyboard,
-  unreachable, and the only escape was Return in a single-line field.
-- **Shadows appear in exactly four places** (sheet panel, toast, FAB, segmented thumb) and
-  never on hover. Cards are a white plane plus one hairline; the temperature step from `--bg`
-  to `--surface` is the elevation. The focus ring is also drawn with `box-shadow`, which is a
-  ring, not an elevation.
-- **`--line-input` is deliberately darker than `--line`.** WCAG 1.4.11 wants 3:1 for the
-  boundary identifying a control, and `--line` on white does not come close.
-- **`.btn--icon` is not combined with `.btn--ghost`.** They disagree about the border, and the
-  glyph at `--ink-2` is itself the 3:1 graphic.
-- Mobile-first. One column, capped at `--column-max` from `48rem`, two columns at `62rem`; the
-  sheet becomes a centred dialog at `48rem` too. **There is no third breakpoint** and
-  `test/ui.test.jsx` pins that.
-- **Timeline view opts out of the two-column grid** via `.shell--wide`: a Gantt wants the
-  full width, and a 23rem aside beside it leaves the bars unreadable. It also lifts the
-  `--column-max` cap from `48rem` up, because an iPad in portrait is 768px and would
-  otherwise draw a year of bars in 576 of them.
-- **`.shell` is a flex column with a gap at every width.** `.stack`'s gap applies *inside* each
-  stack only, so below 62rem the two stacks had ZERO separation and the summary card's hairline
-  touched the first filter chip. That was the reported "filter buttons need padding" bug, and it
-  was never the chips.
-- **The timeline's rows and axis are FLEX, not grid, and the label gutter is `position: sticky;
-  left: 0` with an opaque background.** Without the pin, panning right takes the task names with
-  it and leaves fifty anonymous bars. It must be flex: a sticky element is clamped to its
-  containing block, and a grid item's containing block is its own grid area — exactly the
-  gutter's width, so there is nothing to travel within. Chrome happens to allow the grid version;
-  flex is what the spec guarantees and Safari is the target.
-- **The timeline's height cap is NOT behind a width breakpoint.** 48rem is 768px and an iPhone 15
-  in landscape is 852px wide, so a width-gated cap gave the phone a 384px nested scroller in a
-  393px viewport while portrait got no cap at all — and with no cap the sticky axis never
-  engages, which is the whole reason the cap exists.
-- **Zoom multiplies `--timeline-zoom` and nothing else.** Never narrow the plan window instead:
-  `taskProgress`'s positions are clamped to 0–1, so a task running past the edge would look like
-  it ends there, and `min-width: 4px` would render every out-of-window task as a phantom stub
-  pinned to the edge.
-- **The multiplier scales `width`, not `min-width`.** `min-width` is a floor, so it did nothing
-  at all until the product exceeded the container — 1x, 1.5x and 2x rendered byte-identically on
-  a desktop and only 3x moved, which is exactly what was reported. `.timeline__inner` is
-  `width: calc(100% * var(--timeline-zoom))` with the `min-width` kept purely as a narrow-phone
-  floor. The steps now measure 1214 → 1821 → 2428 → 3642 → 4856 → 7284px.
-- **`.timeline__row` is `align-items: stretch`, and the sticky label paints the full row height.**
-  Sized to their content, the label was 29px and the track 24px inside a 36px row, so the pinned
-  gutter's opaque background did not cover it and the today rule showed through above and below
-  every label as a column of dashes — the reported "gaps between the rows". The bar is centred
-  with `top: 50%; transform: translateY(-50%)` instead of the track having a fixed height, so
-  nothing depends on the two agreeing.
-- **The tick count is a PIXEL budget, not a constant.** A fixed six drew six gridlines across
-  2400px at 8x — losing the date reference exactly when zooming in was meant to provide it.
-  `BASE_PLOT_PX` is the *first-paint* value and must stay correct on its own: the measured width
-  only arrives in a layout effect, and a static render never runs one.
-- **A timeline row is a `<button>`, so its children are `<span>`s.** A `<button>`'s content model
-  is phrasing content. An absolutely positioned span is blockified but its CHILD is not, so
-  `.timeline__bar-fill` needs an explicit `display: block` — without it `height: 100%` does
-  nothing and every bar silently paints as unstarted.
-- **No `-webkit-overflow-scrolling: touch`, anywhere.** A no-op for momentum since iOS 13, and
-  the legacy implementation created its own stacking context and broke `position: sticky` inside
-  the same scroller — load-bearing here twice over, for the axis and the gutter.
-- **`.shell--wide .shell__aside` must stay `position: static`.** `--wide` is ONE column, so
-  the aside and the main are stacked rows rather than neighbours — and a sticky element in a
-  stack does not sit beside the content, it floats over it. This shipped: scrolling the
-  timeline dragged the summary card down across the rows and drew it on top of them, text
-  over text. `test/ui.test.jsx` pins both the rule and its position in the cascade.
-- **The timeline's label gutter is `clamp()`, not a breakpoint.** A stepped gutter wanted a
-  third media query and there are two. 26vw lands on the 7.5rem floor at 390px, where the
-  bars matter more than the labels, and the 20rem ceiling at 1440px, where the labels are
-  read.
-- **The timeline needs its height cap for the axis to stick.** `position: sticky` resolves
-  against the nearest scrollport; without `max-height` the timeline IS its content's height,
-  nothing scrolls inside it, and the axis never sticks — which leaves row thirty with no axis
-  in sight. The axis also has to be opaque, or rows show through it as they pass behind.
-- **Month gridlines are not decoration.** The axis is at the top and the row somebody cares
-  about is hundreds of pixels below it; without gridlines a bar's date is unreadable. They
-  come from the same `monthTicks` list as the labels, so the two can never drift.
-- **Every layout keeps `--fab-size` of clearance below its content.** Dropping that reservation
-  is how the FAB lands on top of the last row's delete button.
-- Keep specificity flat: single class selectors, no IDs, no `!important`.
+## Conventions
+
+- **One helper, one home.** `readStored`/`writeStored` are the only `localStorage` touches;
+  `schema.js` owns column names, `templates.js` owns `CATEGORIES`, `time.js` is the only file that
+  resolves a zone, `run()` the only mutation wrapper, `DoneToggle` the only done control, `Notice` the
+  only title/body/action block. **Export only what something outside the file uses.**
+- **No new npm dependencies** without a clear reason — one is also a CSP decision, and
+  `test/lockfile.test.js` pins the list. **Add a host, update the CSP** in `index.html`, and never
+  put a real secret in a `VITE_` variable: Vite inlines them into the shipped bundle.
+
+### i18n
+
+English and Japanese, no dependency; `src/i18n/` holds the engine, two catalogs and the registry. It
+is a module singleton rather than a context, because render tests mount components bare and non-React
+modules need the same `t`.
+
+- **Never hardcode a user-facing string in a component**, including every `aria-label`, `title` and
+  `placeholder`. `test/i18n.test.js` fails on an unused key, a missing key and a bare literal in one
+  of those attributes; a key built at runtime needs its own coverage test.
+- **Plurals go through `Intl.PluralRules`**, never a `count === 1` ternary; `ja` has `other` alone.
+  **The pure layers stay pure**: `time.js`, `progress.js`, `schema.js` and `templates.js` never read
+  the singleton, and a test that calls `setLocale` must restore it. **An unknown category renders
+  exactly as typed** — the sheet is the source of truth, the catalog a courtesy on top.
+
+### CSS and charts
+
+Four stylesheets, in order: `tokens.css`, `base.css`, `primitives.css`, `app.css`. Single classes,
+no IDs, no `!important`. Light theme only, mobile first, and **exactly two breakpoints** (48rem,
+62rem) — `test/ui.test.jsx` pins that across every sheet, so prefer a `clamp()` or a query. Use
+the tokens: `var(--transition-fast|base)` collapse to ~0ms under `prefers-reduced-motion`, so a
+hardcoded duration opts out of that silently. Meter and Gantt are hand-rolled — flex plus
+percentages, no library. Every rule carries its constraint as a comment and `test/ui.test.jsx` pins
+the load-bearing ones: state colour is one table and never the only channel, the meter's hairline is
+`--track-line`, its mark is ink with a surface ring, a row is a `<button>` so its children are spans.
+What reaches beyond CSS:
+
+- **Japanese is a first-class language here.** `letter-spacing: 0`, no `text-transform`, and no
+  `line-height` below 1.5 wherever text can be Japanese. Nothing below 13px; weights `400|500|600`.
+- **Never a form control below 16px** (mobile Safari zooms on focus and will not zoom back), and
+  **`--tap-target` (44px), not `--tap-target-sm`, for anything a thumb aims at.**
+  **`role="progressbar"`, never `role="meter"`**: ARIA reserves `meter` for a gauge rather than a
+  value advancing toward completion, and VoiceOver maps it patchily enough to lose the label and the
+  value with it. **`interactive-widget=resizes-content` is load-bearing** with a sticky
+  `.sheet__foot`, or Save sits under the keyboard.
+- **The timeline's rows and axis are FLEX, not grid**, because the sticky gutter must travel and a
+  grid item's containing block is its own grid area. Rows are `align-items: stretch` so the opaque
+  label covers the full row height, and the height cap is NOT width-gated — without it nothing
+  scrolls inside the chart and the axis never sticks.
+- **A subtask is never drawn as a bar**: no dates means no position and no extent. It gets a 1px rail
+  spanning the parent's window, and the parent a `3/5` tally, never coloured — `5/5` in `--good`
+  would claim a `done_at` the sheet does not have. **Colour follows STATE, not category**, or one mark
+  carries two palettes, and **no `-webkit-overflow-scrolling: touch` anywhere**: a no-op since iOS 13
+  that broke `position: sticky` inside the same scroller.
 
 ## Testing
 
-Specs live in `test/**/*.test.{js,jsx}`. Thirteen files: `time`, `progress`, `schema`,
-`templates`, `access`, `api`, `board`, `snapshot`, `sw-build`, `i18n`, `render`, `ui`,
-`lockfile`.
-
-**`ui.test.jsx` reads CSS as text, so its helpers strip comments.** `ruleFor` matches a WHOLE
-selector anchored at a line start — an unanchored `.timeline__label {` also matches
-`.timeline__row:hover .timeline__label {`, which had three assertions reading a hover rule and
-passing for the wrong reason — and `blocksOf` brace-counts a media block rather than using a
-lazy `[\s\S]*?`, which escapes the block and matches the base rule hundreds of lines later.
-Both mistakes produce a test that always passes.
-
-**A static render never runs an effect.** `render.test.jsx` and `scripts/preview.jsx` both use
-`renderToStaticMarkup`, so anything that lands in `useEffect`/`useLayoutEffect` — the timeline's
-measured plot width, its scroll position — is invisible to them and shows its default. That is
-why the default has to be independently correct, and why the zoom, the pan-pinning and the
-detail sheet were verified by driving the built app in a real browser instead.
-
-`api`, `snapshot`, `sw-build` and `access` all exist for the same reason: their failure modes
-are invisible. A misclassified endpoint reply logs an editor out or hides a rotated key; a
-snapshot that seeds tasks without their config renders the countdown against the wrong zone;
-an incomplete precache list makes `install` reject so no worker ever activates and the app is
-simply never fast; a truncated edit key stored as if valid produces an `unauthorized` that
-looks exactly like a rotation. None of that shows up in a build or on screen.
-
-`schema.test.js` holds the only cross-boundary check in the repo — the `Code.gs` column list
-against `schema.js` — and it is the one test most worth keeping green.
-
-`render.test.jsx` and `ui.test.jsx` render components to static markup and read the
-stylesheets as text — no DOM, no browser. They catch components that throw on a real prop
-shape or silently drop data, and CSS invariants a build cannot see. A focus trap or a
-`scrollIntoView` call cannot be tested this way; do not fake a DOM to try.
-
-Note that both stylesheets and the generated worker are heavily commented, and several
-comments *name the thing they forbid*. Any "nothing anywhere does X" assertion must strip
-comments first — `test/ui.test.jsx` has `code()` and `test/sw-build.test.js` has
-`withoutComments()` for exactly that.
-
-When fixing a bug, add the regression test. When changing progress arithmetic, the test that
-matters most is the misleading case: a board where every task is overdue and nothing is done
-must report 100% *and* say it is behind.
-
-**A passing suite does not mean it looks right.** Everything in this list was found by
-looking at the thing, with the suite green: an overall tracker reading "On schedule" with
-eight tasks overdue; a timeline whose Japanese month labels overlapped into a smear; a sticky
-aside drawing the summary card on top of the timeline rows; and a meter hairline in `--line`
-that measured 1.035:1 against the track it was outlining.
-
-```sh
-npx vite-node scripts/preview.jsx     # writes scripts/preview-*.html (gitignored)
-```
-
-Load those through `scripts/harness.html`, which takes everything on the query string —
-one page, because three near-identical harnesses had accreted one screenshot at a time:
-
-```
-harness.html?f=en&w=390,430,768                    phone through tablet
-harness.html?f=en-timeline&w=1440&h=930&scroll=0.35  the timeline, scrolled
-harness.html?f=en,en-sage,en-gold&w=330&h=480      presets side by side
-```
-
-`scroll` matters: the timeline owns its vertical scroll, so scrolling the page does not move
-it — and the sticky-overlap bug only appeared once those rows had moved.
-
-**Use the iframes it builds, not a resized window** — an iframe gets its own viewport so
-container and media queries resolve honestly, while headless Chrome quietly reports a
-different width than you asked for and every breakpoint reads wrong. Note the FAB is
-`position: fixed`, so inside a short iframe it floats over the middle of the list; that is a
-harness artifact, not a layout bug.
+`ui.test.jsx` reads the stylesheets as TEXT, so its helpers strip comments, anchor whole selectors and
+brace-count media blocks — each of those mistakes makes a test that always passes. `script.test.js`
+EXECUTES `Code.gs` against a fake Sheets service, because the write path is exactly the kind that
+answers `ok: true` while writing the wrong cell.
+- **A static render never runs an effect**, so the measured plot width, the scroll position and an
+  opened outline are invisible to `render.test.jsx` and to the harness. Every default must be correct
+  alone, and zoom, panning, the detail sheet and the outline were each verified by driving the built
+  app in a real browser.
+- **When fixing a bug, add the regression test** — for progress arithmetic, the misleading case: all
+  overdue and nothing done must report 100% *and* say it is behind.
+- **A passing suite does not mean it looks right.** Screenshot through `scripts/harness.html`'s
+  iframes rather than a resized window — an iframe gets an honest viewport, while headless Chrome
+  reports a different width and every breakpoint reads wrong; that file documents its own options.
 
 ## Gotchas
 
-- **Never run a bare `npm install` on a machine with a private registry.** This repo is
-  developed where `NPM_CONFIG_REGISTRY` points at an internal Apple mirror, and `npm install`
-  bakes that host into every `resolved` URL in `package-lock.json`. The result works locally
-  and fails everywhere else with `getaddrinfo ENOTFOUND`, which npm reports only as the
-  useless "Exit handler never called!". A repo `.npmrc` cannot prevent it — npm ranks env vars
-  higher. Always regenerate with an explicit override, which `test/lockfile.test.js` then
-  verifies:
-
-  ```sh
-  rm -rf node_modules package-lock.json
-  npm install --registry=https://registry.npmjs.org
-  ```
+- **Never run a bare `npm install`.** `NPM_CONFIG_REGISTRY` here points at an internal mirror and npm
+  bakes that host into every `resolved` URL — fine locally, `ENOTFOUND` everywhere else, reported
+  only as "Exit handler never called!", and a repo `.npmrc` cannot outrank an env var. Use
+  `npm install --registry=https://registry.npmjs.org`; `test/lockfile.test.js` verifies.
+- **A deployment is pinned to a version.** Editing `Code.gs` changes nothing on the live board until
+  **Deploy → Manage deployments → New version**; the app detects this and refuses unsafe writes.
 - **The script must stay container-bound.** `spreadsheets.currentonly` only works for a script
-  created from the spreadsheet via *Extensions › Apps Script*. From `script.new` it fails and
-  `SpreadsheetApp.getActive()` returns null, so every call answers `misconfigured`. Going
-  standalone means widening the scope to `spreadsheets`, which reaches every sheet the account
-  can see, and README's security model would need rewriting.
-- **`vite.config.js` defaults `base` to `/wedding/`** to match the repo name, because project
-  Pages sites serve from `/<repo>/`. Renaming the repo without updating it produces a blank
-  page. Build with `VITE_BASE=/` for a custom domain; `scripts/build-sw.js` reads the same
-  variable.
-- **`vite.config.js` sets `test.env.VITE_SCRIPT_URL`.** `config.js` captures it at module
-  load, so a test cannot stub it afterwards, and without it `test/api.test.js` would only ever
-  exercise the "no endpoint" branch.
-- **The board is world-readable and that is the design.** Do not put anything private in it,
-  and do not add a feature that assumes otherwise.
+  created from the sheet via *Extensions › Apps Script*; from `script.new`, `getActive()` returns
+  null and everything answers `misconfigured`.
+- **`vite.config.js` defaults `base` to `/wedding/`** because project Pages sites serve from
+  `/<repo>/`, and sets `test.env.VITE_SCRIPT_URL`, which `config.js` captures at module load.
+- **The board is world-readable and that is the design.** Do not put anything private in it.
