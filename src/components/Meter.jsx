@@ -3,9 +3,11 @@
  *
  * Three things are deliberate and easy to "clean up" wrongly:
  *
- * IT IS NOT A `<progress>`. Safari's native progress element cannot be given a
- * second mark, and the on-schedule tick is the whole reason this component exists.
- * The ARIA meter role carries the same semantics to a screen reader.
+ * IT IS NOT A `<progress>` ELEMENT. Safari's native one cannot be given a second mark, and
+ * the on-schedule tick is the whole reason this component exists. It IS `role="progressbar"`,
+ * though — not `role="meter"`, which ARIA explicitly reserves for a gauge rather than a value
+ * advancing toward completion, and which iOS VoiceOver maps patchily enough that an
+ * unrecognised one degrades to a generic and takes the label and value with it.
  *
  * THE VALUE IS ALSO TEXT. Every caller renders the percentage beside the bar, and
  * `aria-valuetext` states it as a sentence, because a fill length is not a value
@@ -32,7 +34,7 @@ export default function Meter({ value, mark, state, large = false, label, valueT
   return (
     <div
       className={`meter${large ? ' meter--lg' : ''}${state ? ` meter--${state}` : ''}`}
-      role="meter"
+      role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={percent}

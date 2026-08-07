@@ -95,7 +95,11 @@ svg {
 button,
 input,
 select,
-optgroup {
+optgroup,
+/* textarea belongs here: browsers default it to monospace, so without it the notes field is
+   the one control in the app not in --font-sans — and a monospace fallback for Japanese is
+   markedly worse than for Latin. */
+textarea {
   margin: 0;
   font: inherit;
   color: inherit;

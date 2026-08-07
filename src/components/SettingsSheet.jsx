@@ -137,7 +137,9 @@ export default function SettingsSheet({
 
           <section className="section">
             <h3 className="section__title">{t('settings.wedding')}</h3>
-            <div className="field__row">
+            {/* `.field` supplies the 16px; `.field__row` on its own has none, so this pair
+                butted straight into the Venue label below it. */}
+            <div className="field field__row">
               <div>
                 <label className="label" htmlFor="wdate">
                   {t('settings.weddingDate')}
@@ -187,18 +189,23 @@ export default function SettingsSheet({
                 autoComplete="off"
                 spellCheck={false}
               />
+              {/* `.hint` is inline, so two of them ran together into one paragraph. Stacked
+                  explicitly, and the error replaces the hint rather than shifting it. */}
               {zoneOk ? (
-                <span className="hint">{t('settings.timezoneHint')}</span>
+                <p className="hint">
+                  {t('settings.timezoneHint')}
+                  {/* Only worth saying when the two actually differ: a time typed straight
+                      into the spreadsheet is interpreted by the SHEET's zone, not this one. */}
+                  {sheetTimeZone && sheetTimeZone !== draft.timezone ? (
+                    <>
+                      {' '}
+                      {t('settings.timezoneMismatch', { zone: sheetTimeZone })}
+                    </>
+                  ) : null}
+                </p>
               ) : (
                 <span className="field__error">{t('settings.timezoneBad')}</span>
               )}
-              {/* Only worth saying when the two actually differ: a time typed straight
-                  into the spreadsheet is interpreted by the SHEET's zone, not this one. */}
-              {zoneOk && sheetTimeZone && sheetTimeZone !== draft.timezone ? (
-                <span className="hint">
-                  {t('settings.timezoneMismatch', { zone: sheetTimeZone })}
-                </span>
-              ) : null}
             </div>
           </section>
 

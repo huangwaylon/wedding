@@ -109,9 +109,12 @@ function Shell({ children, wide = false }) {
     <div className="app">
       <Header config={CONFIG} nowMs={NOW} canEdit onOpenSettings={noop} />
       <main className={`shell${wide ? ' shell--wide' : ''}`}>{children}</main>
-      <span className="fab" aria-hidden="true">
-        <PlusIcon style={{ width: '1.5em', height: '1.5em' }} />
-      </span>
+      {/* Not in timeline view, matching App: the FAB sits over the bottom-right of the chart. */}
+      {wide ? null : (
+        <span className="fab" aria-hidden="true">
+          <PlusIcon style={{ width: '1.5em', height: '1.5em' }} />
+        </span>
+      )}
     </div>
   )
 }

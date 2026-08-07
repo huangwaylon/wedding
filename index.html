@@ -2,9 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      `interactive-widget=resizes-content` is the load-bearing part. iOS defaults to
+      `resizes-visual`, where the keyboard changes neither the layout viewport nor `dvh` — so a
+      bottom sheet stayed full height with its Save button under ~340px of keyboard and no way
+      to reach it. `resizes-content` shrinks the layout viewport instead, which brings the
+      footer up with it. `.sheet__foot` is also sticky, for engines that ignore this.
+    -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <meta name="theme-color" content="#faf7f4" />
     <meta name="color-scheme" content="light" />

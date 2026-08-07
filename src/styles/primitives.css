@@ -256,9 +256,14 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  min-height: var(--tap-target-sm);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--line);
+  /* The full target. These are the app's primary filter controls on a phone, and 36px was
+     8px under the platform minimum for the whole secondary tier. */
+  min-height: var(--tap-target);
+  padding: 0 var(--space-4);
+  /* --line-input, not --line: this is an `aria-pressed` control, and 1.4.11 wants 3:1 for the
+     boundary that identifies one. A --line border measures ~1.2:1, which left the chips
+     reading borderless beside the compliant secondary buttons next to them. */
+  border: 1px solid var(--line-input);
   border-radius: var(--radius-full);
   background-color: var(--surface);
   font-size: var(--fs-caption);
@@ -281,7 +286,9 @@
 }
 
 .chip--static {
+  /* Not a control — a category tag on a task row. It opts out of the target and the boundary. */
   min-height: 0;
+  border-color: transparent;
   padding: 0.0625rem var(--space-2);
   background-color: var(--sunken);
   border-color: transparent;
@@ -290,7 +297,24 @@
 
 .chip__count {
   font-variant-numeric: tabular-nums;
-  opacity: 0.75;
+  font-feature-settings: "tnum" 1;
+  /* --ink-3, not `opacity: 0.75`. The count is the whole reason the chip is worth its space,
+     and 0.75 of --ink-2 composites to 4.15:1 at 13px — under the 4.5:1 floor every ink in
+     tokens.css is measured against. --ink-3 is documented as the lightest that passes. */
+  color: var(--ink-3);
+}
+
+.chip[aria-pressed="true"] .chip__count {
+  /* On the accent fill the ink tokens are unreadable; the selected chip's own text colour is
+     already compliant, so the count just joins it. */
+  color: inherit;
+}
+
+/* A disabled chip was pixel-identical to a live one, because `opacity: 0.5` was scoped to
+   `.btn[disabled]`. Controls.jsx disables every zero-count filter. */
+.chip[disabled] {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* ---- Badge -------------------------------------------------------------
@@ -303,7 +327,9 @@
   align-items: center;
   gap: var(--space-1);
   padding: 0.0625rem var(--space-2);
-  border-radius: var(--radius-xs);
+  /* Pill, matching `.chip--static`, which it sits beside on every task row. The two were the
+     same size, padding, type and ink at two different corner radii. */
+  border-radius: var(--radius-full);
   background-color: var(--neutral-wash);
   font-size: var(--fs-caption);
   font-weight: 500;
@@ -484,7 +510,10 @@
   flex-direction: column;
   width: 100%;
   max-width: var(--sheet-max);
-  max-height: 92dvh;
+  /* 88, not 92. At 92 a full form left a 68px scrim strip that sat almost entirely inside the
+     Dynamic Island inset — so the only tap-to-dismiss region overlapped the status bar, and a
+     stray reach for the top of the screen discarded text that exists nowhere else. */
+  max-height: 88dvh;
   background-color: var(--surface);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   box-shadow: var(--shadow-overlay);
@@ -520,15 +549,28 @@
 .sheet__body {
   flex: 1;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  /* `document.body.style.overflow = 'hidden'` does not reliably stop iOS chaining once the
+     panel's own content hits its end; this is what does. */
+  overscroll-behavior: contain;
+  /* So `.detail` can ask about the sheet's width rather than the viewport's. */
+  container-type: inline-size;
   padding: var(--space-4);
 }
 
 .sheet__foot {
+  /* Sticky, and inside the scrolling body's flow rather than after it, because iOS's
+     `resizes-visual` keyboard changes neither the layout viewport nor `dvh`: the panel stayed
+     full height with Save sitting under ~340px of keyboard, unreachable, and the only escape
+     was Return in a single-line field — which does nothing from the notes textarea.
+     `index.html` also asks for `interactive-widget=resizes-content`; this holds even where
+     that is unsupported. */
+  position: sticky;
+  bottom: 0;
   display: flex;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-4);
   padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+  background-color: var(--surface);
   border-top: 1px solid var(--line);
 }
 
@@ -616,7 +658,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  width: min(24rem, calc(100vw - 2 * var(--space-4)));
+  /* Kept clear of the FAB, which is 56px in the bottom-right corner. --z-toast is above
+     --z-fab, so a full-width toast hid the button behind every "Saved". */
+  width: min(24rem, calc(100vw - var(--fab-size) - 3 * var(--space-4)));
   transform: translateX(-50%);
   pointer-events: none;
 }

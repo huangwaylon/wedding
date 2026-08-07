@@ -38,6 +38,41 @@ const all = [tokens, base, primitives, app].map(code).join('\n')
  */
 const csp = /http-equiv="Content-Security-Policy"\s*\n?\s*content="([^"]*)"/.exec(html)[1]
 
+/**
+ * The declarations of one rule, matched on a WHOLE selector at the start of a line.
+ *
+ * An unanchored `.timeline__label {` also matches `.timeline__row:hover .timeline__label {`,
+ * so three of these assertions were reading a hover rule and passing for the wrong reason.
+ */
+function ruleFor(css, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // Comments stripped for the same reason as `code`: several of these rules explain the thing
+  // they are avoiding ("--ink-3, not opacity: 0.75"), and a raw match reads the prose.
+  const found = new RegExp(`^${escaped} \\{([^}]*)\\}`, 'm').exec(code(css))
+  return found ? found[1] : null
+}
+
+/** The bodies of every `@media (min-width: Nrem)` block, brace-counted rather than lazily. */
+function blocksOf(css, rem) {
+  const opener = `@media (min-width: ${rem}rem) {`
+  const blocks = []
+  let from = 0
+  for (;;) {
+    const start = css.indexOf(opener, from)
+    if (start < 0) break
+    let depth = 0
+    let index = start + opener.length - 1
+    do {
+      if (css[index] === '{') depth += 1
+      else if (css[index] === '}') depth -= 1
+      index += 1
+    } while (depth > 0 && index < css.length)
+    blocks.push(css.slice(start, index))
+    from = index
+  }
+  return blocks
+}
+
 describe('accent presets', () => {
   it('defines every preset the app offers', () => {
     for (const accent of ACCENTS) {
@@ -244,6 +279,72 @@ describe('elevation', () => {
   })
 })
 
+describe('touch ergonomics', () => {
+  it('separates the two stacks below the two-column breakpoint', () => {
+    // THE reported bug. `.stack`'s gap applies inside each stack only, and `.shell` was a plain
+    // block below 62rem, so the summary card's bottom hairline and the first filter chip's top
+    // edge touched at 0px — which is what made the chips read as welded to the card. It was
+    // never the chips' own padding.
+    const shell = ruleFor(app, '.shell')
+    expect(shell).toMatch(/display: flex/)
+    expect(shell).toMatch(/flex-direction: column/)
+    expect(shell).toMatch(/gap: var\(--space-4\)/)
+  })
+
+  it('gives the filter chips the full tap target', () => {
+    // 36px is 8px under the platform minimum, and these are the primary controls on a phone.
+    expect(ruleFor(primitives, '.chip')).toMatch(/min-height: var\(--tap-target\)/)
+  })
+
+  it('draws a control boundary the eye can find', () => {
+    // 1.4.11 wants 3:1 for the boundary identifying a control; --line measures ~1.2:1, which
+    // left the chips reading borderless beside the compliant buttons next to them.
+    expect(ruleFor(primitives, '.chip')).toMatch(/border: 1px solid var\(--line-input\)/)
+  })
+
+  it('makes a disabled chip look disabled', () => {
+    // `opacity: 0.5` was scoped to `.btn[disabled]`, so a dead zero-count filter was
+    // pixel-identical to a live one.
+    expect(primitives).toMatch(/\.chip\[disabled\] \{[^}]*opacity/)
+  })
+
+  it('does not dim the chip count with opacity', () => {
+    // 0.75 of --ink-2 composites to 4.15:1 at 13px, under the 4.5:1 floor every ink in
+    // tokens.css is measured against — and the count is the reason the chip earns its space.
+    const count = ruleFor(primitives, '.chip__count')
+    expect(count).not.toMatch(/opacity/)
+    expect(count).toMatch(/color: var\(--ink-3\)/)
+  })
+
+  it('keeps the two row icon buttons apart, one of them being destructive', () => {
+    // 4px was the tightest interactive adjacency in the app, between Edit and Delete.
+    expect(ruleFor(app, '.task__actions')).toMatch(/gap: var\(--space-2\)/)
+  })
+
+  it('gives the check toggle the full target', () => {
+    // The primary interaction of the app was a 36px square in the corner of a ~110px card.
+    const check = ruleFor(app, '.task__check')
+    expect(check).toMatch(/width: var\(--tap-target\)/)
+    expect(check).toMatch(/min-height: var\(--tap-target\)/)
+  })
+
+  it('keeps the sheet footer reachable with the keyboard up', () => {
+    // iOS defaults to `resizes-visual`: the keyboard changes neither the layout viewport nor
+    // `dvh`, so Save sat under ~340px of keyboard with no way to reach it.
+    expect(html).toContain('interactive-widget=resizes-content')
+    expect(ruleFor(primitives, '.sheet__foot')).toMatch(/position: sticky/)
+  })
+
+  it('contains the overscroll of the sheet body', () => {
+    expect(ruleFor(primitives, '.sheet__body')).toMatch(/overscroll-behavior: contain/)
+  })
+
+  it('keeps the toast clear of the FAB', () => {
+    // --z-toast is above --z-fab, so a full-width toast hid the button behind every "Saved".
+    expect(ruleFor(primitives, '.toasts')).toMatch(/--fab-size/)
+  })
+})
+
 describe('layout', () => {
   it('reserves clearance for the FAB so it cannot cover the last row', () => {
     // Dropping this reservation in the two-column block is exactly how the button once
@@ -288,17 +389,90 @@ describe('layout', () => {
     expect(timeline).toMatch(/overflow: auto/)
   })
 
-  it('caps the timeline height so its axis can stick', () => {
+  it('caps the timeline height at every width, so its axis always sticks', () => {
     // Sticky resolves against the nearest scrollport. Without a height cap the timeline IS
     // its own content's height, nothing ever scrolls inside it, and the axis never sticks —
-    // which leaves row thirty with no axis in sight.
-    expect(app).toMatch(/\.timeline \{[^}]*overflow: auto/)
-    expect(app).toMatch(/max-height: max\(24rem/)
+    // which left row thirty with no axis in sight.
+    //
+    // And the cap must NOT be behind a width breakpoint. 48rem is 768px; an iPhone 15 in
+    // landscape is 852px wide, so a width-gated rule gave the phone a 384px nested scroller
+    // inside a 393px viewport — the exact trap it was written to avoid — while portrait got
+    // no cap at all.
+    const timeline = /\n\.timeline \{([^}]*)\}/.exec(app)[1]
+    expect(timeline).toMatch(/overflow: auto/)
+    expect(timeline).toMatch(/max-height: max\(20rem, 70dvh\)/)
+
+    // Scoped to the media block's own body. A lazy [\s\S]*? here escapes the block and
+    // matches the base rule hundreds of lines later, which is a test that always passes.
+    for (const block of blocksOf(app, 48)) {
+      expect(block, 'the timeline height cap must not be width-gated').not.toMatch(
+        /\.timeline \{[^}]*max-height/,
+      )
+    }
+
     const axis = /\.timeline__axis \{([^}]*)\}/.exec(app)[1]
     expect(axis).toMatch(/position: sticky/)
     expect(axis).toMatch(/top: 0/)
     // Opaque, or rows show through it as they pass behind.
     expect(axis).toMatch(/background-color: var\(--surface\)/)
+  })
+
+  it('pins the label gutter so names survive a horizontal pan', () => {
+    // Pan right without this and you are reading fifty anonymous bars.
+    for (const selector of ['.timeline__label', '.timeline__axis-gutter']) {
+      const rule = ruleFor(app, selector)
+      expect(rule, `${selector} rule missing`).toBeTruthy()
+      expect(rule, `${selector} is not pinned`).toMatch(/position: sticky/)
+      expect(rule, `${selector} has no left edge`).toMatch(/left: 0/)
+      // Transparent would let the panning bars show straight through the names.
+      expect(rule, `${selector} is not opaque`).toMatch(/background-color: var\(--surface\)/)
+    }
+  })
+
+  it('uses flex rows, not grid, so the sticky gutter can travel', () => {
+    // A sticky element is clamped to its containing block, and a GRID item's containing block
+    // is its own grid area — exactly the gutter's width, so nothing to travel within. A flex
+    // item's containing block is the flex container's content box.
+    for (const selector of ['.timeline__axis', '.timeline__row']) {
+      const rule = ruleFor(app, selector)
+      expect(rule, `${selector} should be flex`).toMatch(/display: flex/)
+      expect(rule, `${selector} must not be grid`).not.toMatch(/grid-template-columns/)
+    }
+    // The gutter is now a flex-basis, and both sides still resolve the same custom property.
+    expect(ruleFor(app, '.timeline__label')).toMatch(/flex: 0 0 var\(--timeline-gutter\)/)
+    expect(ruleFor(app, '.timeline__axis-gutter')).toMatch(/flex: 0 0 var\(--timeline-gutter\)/)
+  })
+
+  it('drops -webkit-overflow-scrolling, which breaks sticky in the same scroller', () => {
+    // A no-op for momentum since iOS 13, and the legacy implementation created its own
+    // stacking context and broke `position: sticky` inside the scroller — now load-bearing
+    // twice over, for the axis and for the gutter.
+    expect(all).not.toContain('-webkit-overflow-scrolling')
+  })
+
+  it('contains only the horizontal overscroll on the timeline', () => {
+    // A horizontal pan that chains becomes an iOS back-swipe. But `contain` on BOTH axes can
+    // swallow a vertical drag that begins on the chart.
+    const timeline = /\n\.timeline \{([^}]*)\}/.exec(app)[1]
+    expect(timeline).toMatch(/overscroll-behavior-x: contain/)
+    expect(timeline).not.toMatch(/overscroll-behavior: contain/)
+  })
+
+  it('scales the plot by a zoom multiplier and nothing else', () => {
+    // Zoom must change the plot's WIDTH, never the plan window: narrowing the window would
+    // clamp out-of-range bars to the edges, so a task running past the edge would look like it
+    // ends there, and `min-width: 4px` would render every out-of-window task as a phantom stub.
+    expect(/\.timeline__inner \{([^}]*)\}/.exec(app)[1]).toMatch(
+      /min-width: calc\(34rem \* var\(--timeline-zoom\)\)/,
+    )
+    expect(/\n\.timeline \{([^}]*)\}/.exec(app)[1]).toMatch(/--timeline-zoom: 1/)
+  })
+
+  it('keeps the zoom toolbar outside the scroller', () => {
+    // Inside it, the controls would scroll away with the chart.
+    expect(app).toContain('.timeline__toolbar')
+    const toolbar = /\.timeline__toolbar \{([^}]*)\}/.exec(app)[1]
+    expect(toolbar).not.toMatch(/position: sticky/)
   })
 
   it('draws month gridlines, solid and one step off the surface', () => {

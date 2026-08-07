@@ -67,14 +67,17 @@ export default function OverallCard({ overall, compact = false }) {
   )
 
   const stats = (
+    /* dt BEFORE dd inside each group: the other order is invalid in a `dl` and pairs the four
+       counts wrongly for a screen reader. `.stat` reverses them visually with
+       `column-reverse`, so the number still reads above its label. */
     <dl className="overall__stats">
       {STATS.map((state) => (
         <div key={state} className={`stat${overall[state] ? '' : ' stat--zero'}`}>
+          <dt className="stat__label">{t(`state.${state}`)}</dt>
           <dd className="stat__value tnum">
             <span className={`dot dot--${state}`} aria-hidden="true" />
             {overall[state]}
           </dd>
-          <dt className="stat__label">{t(`state.${state}`)}</dt>
         </div>
       ))}
     </dl>

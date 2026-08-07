@@ -25,6 +25,7 @@ import StateBadge from '../src/components/StateBadge.jsx'
 import TaskList from '../src/components/TaskList.jsx'
 import TaskRow from '../src/components/TaskRow.jsx'
 import { draftToWindow } from '../src/components/TaskFormSheet.jsx'
+import TaskDetailSheet from '../src/components/TaskDetailSheet.jsx'
 import Timeline, { monthTicks } from '../src/components/Timeline.jsx'
 import Toasts from '../src/components/Toasts.jsx'
 
@@ -58,13 +59,17 @@ const rows = (list) => withProgress(list, NOW, TOKYO)
 const noop = () => {}
 
 describe('Meter', () => {
-  it('carries the ARIA meter role and a spoken value', () => {
-    // Not a native <progress>: Safari's cannot take a second mark, and the on-schedule
-    // tick is the whole reason the component exists.
+  it('carries the progressbar role and a spoken value', () => {
+    // Not a native <progress> element: Safari's cannot take a second mark, and the
+    // on-schedule tick is the whole reason the component exists. But it must be
+    // `progressbar`, not `meter` — ARIA reserves `meter` for a gauge rather than a value
+    // advancing toward completion, and iOS VoiceOver maps it patchily enough that an
+    // unrecognised one takes the label and value down with it.
     const html = renderToStaticMarkup(
       <Meter value={0.42} label="Overall" valueText="42% complete" />,
     )
-    expect(html).toContain('role="meter"')
+    expect(html).toContain('role="progressbar"')
+    expect(html).not.toContain('role="meter"')
     expect(html).toContain('aria-valuenow="42"')
     expect(html).toContain('aria-valuetext="42% complete"')
     expect(html).toContain('width:42%')
@@ -100,7 +105,7 @@ describe('OverallCard', () => {
     const overall = overallProgress(rows([task({ id: 'a' }), task({ id: 'b' })]))
     const html = renderToStaticMarkup(<OverallCard overall={overall} />)
     expect(html).toContain('overall__percent')
-    expect(html).toContain('role="meter"')
+    expect(html).toContain('role="progressbar"')
     expect(html).toContain('Every task counts equally')
   })
 
@@ -268,6 +273,34 @@ describe('Timeline', () => {
     expect(html).toMatch(/aria-label="Book the venue: [^"]*% complete, In progress"/)
   })
 
+  it('makes every row a button, because touch has no hover and no tooltip', () => {
+    // Both the label's and the bar's `title` are dead on touch, so a task's dates, percentage
+    // and state were reachable by no gesture at all. The row is the trigger.
+    const list = rows([task()])
+    const html = renderToStaticMarkup(<Timeline tasks={list} nowMs={NOW} timeZone={TOKYO} />)
+    expect(html).toMatch(/<button[^>]*class="timeline__row/)
+    expect(html).toContain('type="button"')
+  })
+
+  it('carries a state dot in the gutter, so state is not colour alone', () => {
+    // The bar's colour is the only other state channel and its `title` never renders on a
+    // phone, which would leave a filled green bar and a filled red one identical.
+    const list = rows([task({ doneAt: '2027-01-02T00:00:00.000Z' })])
+    const html = renderToStaticMarkup(<Timeline tasks={list} nowMs={NOW} timeZone={TOKYO} />)
+    expect(html).toMatch(/dot dot--done timeline__dot/)
+  })
+
+  it('offers zoom controls outside the scroller', () => {
+    const list = rows([task()])
+    const html = renderToStaticMarkup(<Timeline tasks={list} nowMs={NOW} timeZone={TOKYO} />)
+    const toolbar = html.slice(0, html.indexOf('class="timeline"'))
+    expect(toolbar).toContain('aria-label="Zoom in"')
+    expect(toolbar).toContain('aria-label="Zoom out"')
+    // Opens at 1x and cannot zoom out below it.
+    expect(toolbar).toMatch(/aria-label="Zoom out"[^>]*disabled|disabled[^>]*aria-label="Zoom out"/)
+    expect(html).toContain('--timeline-zoom:1')
+  })
+
   it('skips undated tasks and says so when nothing is drawable', () => {
     const list = rows([task({ start: '', end: '' })])
     const html = renderToStaticMarkup(<Timeline tasks={list} nowMs={NOW} timeZone={TOKYO} />)
@@ -334,12 +367,31 @@ describe('monthTicks', () => {
     }
   })
 
-  it('thins a long plan so labels cannot collide', () => {
-    // Three years of months would be thirty-six labels in ~425px. This is the fix for a
-    // Japanese axis that rendered as an unreadable smear.
-    const ticks = monthTicks(window('2026-01-01T00:00', '2029-01-01T00:00'), TOKYO)
-    expect(ticks.length).toBeLessThanOrEqual(6)
-    expect(ticks.length).toBeGreaterThan(1)
+  it('thins a long plan to a PIXEL budget, not a fixed count', () => {
+    // Three years is thirty-six months. The budget is the plot's width over the widest label
+    // the app renders (`2026年11月` at 13px, ~66px), so it has to grow with zoom — a fixed six
+    // drew six gridlines across 2400px at 8x, losing the date reference exactly when zooming
+    // in was supposed to provide it.
+    const span = window('2026-01-01T00:00', '2029-01-01T00:00')
+    const narrow = monthTicks(span, TOKYO, 544)
+    const wide = monthTicks(span, TOKYO, 544 * 8)
+    expect(narrow.length).toBeGreaterThan(1)
+    expect(narrow.length).toBeLessThanOrEqual(Math.floor(544 / 72))
+    // Zoomed in, every month fits. 35, not 36: the boundaries are those strictly inside the
+    // window, so both endpoints are excluded.
+    expect(wide.length).toBeGreaterThan(narrow.length)
+    expect(wide.length).toBe(35)
+  })
+
+  it('never lets two labels land closer than the budget allows', () => {
+    const span = window('2026-01-01T00:00', '2029-01-01T00:00')
+    for (const plotPx of [400, 544, 1200, 4352]) {
+      const ticks = monthTicks(span, TOKYO, plotPx)
+      for (let i = 1; i < ticks.length; i += 1) {
+        const gapPx = (ticks[i].fraction - ticks[i - 1].fraction) * plotPx
+        expect(gapPx, `${plotPx}px plot`).toBeGreaterThanOrEqual(60)
+      }
+    }
   })
 
   it('spells the year out on the first tick and on each rollover only', () => {
@@ -352,6 +404,55 @@ describe('monthTicks', () => {
 
   it('is empty when the window is inside one month', () => {
     expect(monthTicks(window('2027-01-05T00:00', '2027-01-25T00:00'), TOKYO)).toEqual([])
+  })
+})
+
+describe('TaskDetailSheet', () => {
+  const [row] = rows([task({ notes: 'call first', owner: 'Aoi' })])
+
+  it('shows the full title, un-truncated — the thing the gutter cannot', () => {
+    const html = renderToStaticMarkup(
+      <TaskDetailSheet task={row} nowWall={NOW_WALL} onClose={noop} />,
+    )
+    expect(html).toContain('Book the venue')
+    expect(html).toContain('Status')
+    expect(html).toContain('When')
+    expect(html).toContain('Progress')
+    // The dates and the percentage, which on a phone lived only in a dead `title`.
+    expect(html).toContain('role="progressbar"')
+    expect(html).toMatch(/detail__percent[^>]*>\d+%/)
+  })
+
+  it('labels the state row Status, not with the state itself', () => {
+    const html = renderToStaticMarkup(
+      <TaskDetailSheet task={row} nowWall={NOW_WALL} onClose={noop} />,
+    )
+    const terms = [...html.matchAll(/class="detail__term">([^<]*)</g)].map((m) => m[1])
+    expect(terms[0]).toBe('Status')
+  })
+
+  it('omits a row for every field the task does not have', () => {
+    const [bare] = rows([task()])
+    const html = renderToStaticMarkup(
+      <TaskDetailSheet task={bare} nowWall={NOW_WALL} onClose={noop} />,
+    )
+    expect(html).not.toContain('Notes')
+    expect(html).not.toContain('Who is on it')
+  })
+
+  it('is read-only: no delete one tap from a mark somebody was reading', () => {
+    const html = renderToStaticMarkup(
+      <TaskDetailSheet task={row} nowWall={NOW_WALL} onClose={noop} />,
+    )
+    expect(html).not.toContain('Delete')
+  })
+
+  it('says so rather than showing an empty window for an undated task', () => {
+    const [none] = rows([task({ start: '', end: '' })])
+    const html = renderToStaticMarkup(
+      <TaskDetailSheet task={none} nowWall={NOW_WALL} onClose={noop} />,
+    )
+    expect(html).toContain('No dates set')
   })
 })
 
@@ -491,6 +592,18 @@ describe('Deleted', () => {
       <ConfirmDeleteSheet task={task()} onConfirm={noop} onClose={noop} />,
     )
     expect(html).toContain('Book the venue')
+  })
+})
+
+describe('the stat list', () => {
+  it('emits dt before dd, which is the only valid order in a dl', () => {
+    // The other way round is invalid markup and pairs the four counts wrongly for a screen
+    // reader. `.stat` reverses them visually with column-reverse.
+    const overall = overallProgress(rows([task()]))
+    const html = renderToStaticMarkup(<OverallCard overall={overall} />)
+    const group = /<div class="stat[^"]*">([\s\S]*?)<\/div>/.exec(html)[1]
+    expect(group.indexOf('<dt')).toBeGreaterThanOrEqual(0)
+    expect(group.indexOf('<dt')).toBeLessThan(group.indexOf('<dd'))
   })
 })
 

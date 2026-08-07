@@ -58,11 +58,23 @@ for a board with eight tasks past their date. Overdue is the only hard evidence 
 there is — a task halfway through its window with no work done is not late, and this app
 never asks anybody to estimate progress.
 
-**`offsetMsAt` caches by zone and HOUR, never by day.** `formatToParts` is the expensive
-call in `time.js` and the whole board re-derives it once a minute as the clock ticks — a
-fifty-task board is ~400 calls a minute for a handful of distinct answers. Hour buckets are
-safe because DST transitions happen on the hour; a day bucket would return the wrong offset
-for every lookup on a transition day.
+**`time.js` memoises three things, and the expensive one is not the obvious one.**
+`formatToParts` was assumed to be the cost; measured, it was `new Intl.DateTimeFormat` inside
+`isValidTimeZone` — `resolveTimeZone` sits on the path of `wallToInstant`, `offsetMsAt` and
+`instantToWall`, which is ~416 constructions per tick on a fifty-task board and **96% of the
+whole per-tick cost**. With `zoneValidity`, `instantCache` and `offsetCache` in place a tick is
+0.071ms, down from 7.58ms. Do not remove any of them without a fresh measurement, and do not
+re-optimise `formatToParts` — it is 0.15ms.
+
+`offsetCache` is keyed by zone and HOUR, never by day: DST transitions happen on the hour, so
+an hour bucket cannot straddle one, while a day bucket would return the wrong offset for every
+lookup on a transition day. `instantCache` is keyed by reading AND zone, and caching the answer
+does not skip the DST round-trip that derives it.
+
+**`React.memo` on the task rows is the wrong fix and was considered and rejected.** It would
+never hit as written — `withProgress` allocates a fresh `{...task, progress}` every tick — and
+reconciliation is the cheap half. React already writes zero DOM properties on a typical tick,
+because the interpolated `width: "43%"` string is unchanged.
 
 **Every task counts equally in the roll-up — never weighted by duration.** "36% of our tasks"
 is a sentence somebody can check by counting. A duration-weighted mean silently makes a
@@ -286,7 +298,19 @@ Four files, loaded in order by `src/main.jsx`: `tokens.css` (custom properties),
   the width of a `0`, which makes a large standalone number look loose. `.tnum` is for the
   per-row percentages and the axis, not for `.overall__percent`.
 - **Never drop a form control below 16px.** Mobile Safari zooms on focus below that and will
-  not zoom back out.
+  not zoom back out. `textarea` is in `base.css`'s `font: inherit` list for the same family of
+  reason — browsers default it to monospace, and a monospace fallback for Japanese is markedly
+  worse than for Latin.
+- **`--tap-target` (44px), not `--tap-target-sm`, for anything a thumb aims at.** The 24px WCAG
+  floor is the wrong bar for a phone-first app. The chips, the row's check and its icon buttons
+  are all 44px; `--tap-target-sm` is for non-controls and for the segmented thumb.
+- **`role="progressbar"`, never `role="meter"`.** ARIA reserves `meter` for a gauge rather than
+  a value advancing toward completion, and iOS VoiceOver maps it patchily enough that an
+  unrecognised one degrades to a generic and takes the label and value with it.
+- **`interactive-widget=resizes-content` in the viewport meta is load-bearing**, and
+  `.sheet__foot` is sticky as well. iOS defaults to `resizes-visual`, where the keyboard changes
+  neither the layout viewport nor `dvh` — so a sheet's Save button sat under ~340px of keyboard,
+  unreachable, and the only escape was Return in a single-line field.
 - **Shadows appear in exactly four places** (sheet panel, toast, FAB, segmented thumb) and
   never on hover. Cards are a white plane plus one hairline; the temperature step from `--bg`
   to `--surface` is the elevation. The focus ring is also drawn with `box-shadow`, which is a
@@ -302,6 +326,35 @@ Four files, loaded in order by `src/main.jsx`: `tokens.css` (custom properties),
   full width, and a 23rem aside beside it leaves the bars unreadable. It also lifts the
   `--column-max` cap from `48rem` up, because an iPad in portrait is 768px and would
   otherwise draw a year of bars in 576 of them.
+- **`.shell` is a flex column with a gap at every width.** `.stack`'s gap applies *inside* each
+  stack only, so below 62rem the two stacks had ZERO separation and the summary card's hairline
+  touched the first filter chip. That was the reported "filter buttons need padding" bug, and it
+  was never the chips.
+- **The timeline's rows and axis are FLEX, not grid, and the label gutter is `position: sticky;
+  left: 0` with an opaque background.** Without the pin, panning right takes the task names with
+  it and leaves fifty anonymous bars. It must be flex: a sticky element is clamped to its
+  containing block, and a grid item's containing block is its own grid area — exactly the
+  gutter's width, so there is nothing to travel within. Chrome happens to allow the grid version;
+  flex is what the spec guarantees and Safari is the target.
+- **The timeline's height cap is NOT behind a width breakpoint.** 48rem is 768px and an iPhone 15
+  in landscape is 852px wide, so a width-gated cap gave the phone a 384px nested scroller in a
+  393px viewport while portrait got no cap at all — and with no cap the sticky axis never
+  engages, which is the whole reason the cap exists.
+- **Zoom multiplies `--timeline-zoom` and nothing else.** Never narrow the plan window instead:
+  `taskProgress`'s positions are clamped to 0–1, so a task running past the edge would look like
+  it ends there, and `min-width: 4px` would render every out-of-window task as a phantom stub
+  pinned to the edge.
+- **The tick count is a PIXEL budget, not a constant.** A fixed six drew six gridlines across
+  2400px at 8x — losing the date reference exactly when zooming in was meant to provide it.
+  `BASE_PLOT_PX` is the *first-paint* value and must stay correct on its own: the measured width
+  only arrives in a layout effect, and a static render never runs one.
+- **A timeline row is a `<button>`, so its children are `<span>`s.** A `<button>`'s content model
+  is phrasing content. An absolutely positioned span is blockified but its CHILD is not, so
+  `.timeline__bar-fill` needs an explicit `display: block` — without it `height: 100%` does
+  nothing and every bar silently paints as unstarted.
+- **No `-webkit-overflow-scrolling: touch`, anywhere.** A no-op for momentum since iOS 13, and
+  the legacy implementation created its own stacking context and broke `position: sticky` inside
+  the same scroller — load-bearing here twice over, for the axis and the gutter.
 - **`.shell--wide .shell__aside` must stay `position: static`.** `--wide` is ONE column, so
   the aside and the main are stacked rows rather than neighbours — and a sticky element in a
   stack does not sit beside the content, it floats over it. This shipped: scrolling the
@@ -327,6 +380,19 @@ Four files, loaded in order by `src/main.jsx`: `tokens.css` (custom properties),
 Specs live in `test/**/*.test.{js,jsx}`. Thirteen files: `time`, `progress`, `schema`,
 `templates`, `access`, `api`, `board`, `snapshot`, `sw-build`, `i18n`, `render`, `ui`,
 `lockfile`.
+
+**`ui.test.jsx` reads CSS as text, so its helpers strip comments.** `ruleFor` matches a WHOLE
+selector anchored at a line start — an unanchored `.timeline__label {` also matches
+`.timeline__row:hover .timeline__label {`, which had three assertions reading a hover rule and
+passing for the wrong reason — and `blocksOf` brace-counts a media block rather than using a
+lazy `[\s\S]*?`, which escapes the block and matches the base rule hundreds of lines later.
+Both mistakes produce a test that always passes.
+
+**A static render never runs an effect.** `render.test.jsx` and `scripts/preview.jsx` both use
+`renderToStaticMarkup`, so anything that lands in `useEffect`/`useLayoutEffect` — the timeline's
+measured plot width, its scroll position — is invisible to them and shows its default. That is
+why the default has to be independently correct, and why the zoom, the pan-pinning and the
+detail sheet were verified by driving the built app in a real browser instead.
 
 `api`, `snapshot`, `sw-build` and `access` all exist for the same reason: their failure modes
 are invisible. A misclassified endpoint reply logs an editor out or hides a rotated key; a

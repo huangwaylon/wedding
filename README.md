@@ -59,6 +59,19 @@ up.
 In timeline view the summary above it collapses to a single band. There the chart is the
 subject and the summary is context, and the full card pushed the Gantt off the screen.
 
+**On a phone the timeline is built around three things a desktop Gantt gets for free.** The
+label gutter is pinned, so panning to a later month does not take the task names with it. The
+axis is pinned, so row thirty still has dates above it. And there is a **zoom** — at 1x a year
+compresses into ~240px of visible plot, where a one-week task is 8px and bar length stops
+encoding anything, so −/+ scale the plot from 1x to 8x while holding the date at the centre of
+the screen. Zoom is explicit buttons rather than pinch on purpose: pinch inside an element means
+fighting Safari's own page zoom with a non-passive listener, and it would collide with the tap
+that opens a task.
+
+**Tapping a row opens that task read-only.** On a phone a task's dates, percentage and state
+were reachable by no gesture at all — a `title` tooltip does not exist on touch — and the gutter
+truncates a 240px title into 120px.
+
 ## Data model
 
 One spreadsheet, two tabs — `tasks` and `config` — laid out in exactly one place,

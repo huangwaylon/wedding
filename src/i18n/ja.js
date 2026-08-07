@@ -115,6 +115,10 @@ export default {
   'confirm.deleteTitle': 'このタスクを削除しますか?',
   'confirm.deleteBody': '「{title}」は削除済みリストに移動し、元に戻せます。',
 
+  'detail.state': '状態',
+  'detail.window': '期間',
+  'detail.progress': '進捗',
+
   'deleted.title': { other: '削除済み（{count}）' },
   'deleted.restored': 'タスクを元に戻しました。',
 
@@ -146,6 +150,10 @@ export default {
   'settings.saved': '設定を保存しました。',
 
   'timeline.title': 'タイムライン',
+  'timeline.hint': 'タップで詳細',
+  'timeline.zoom': '拡大・縮小',
+  'timeline.zoomIn': '拡大',
+  'timeline.zoomOut': '縮小',
   'timeline.today': '今日',
   'timeline.empty': '日程が入ったタスクがまだありません。',
   'timeline.rowLabel': '{title}：{range}、{percent}%完了、{state}',

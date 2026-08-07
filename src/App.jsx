@@ -282,7 +282,10 @@ export default function App() {
         </div>
       </main>
 
-      {canEdit ? (
+      {/* Not in timeline view: the FAB is a 56px disc fixed over the bottom-right of the
+          chart, which is where the newest months and often the today rule are. The chart's own
+          toolbar is its action surface, and adding a task is a list-view job. */}
+      {canEdit && !wide ? (
         <button
           type="button"
           className="fab"

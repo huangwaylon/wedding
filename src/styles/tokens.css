@@ -179,9 +179,6 @@
   /* The FAB, and therefore the clearance every layout must keep beneath its
      content so the button never covers the last row. */
   --fab-size: 3.5rem;
-  /* The timeline's fixed label gutter. Shared by the axis and every row so the
-     bars line up with the header ticks. */
-  --timeline-gutter: 15rem;
 
   /* ---- Motion ----------------------------------------------------------
      Duration and easing live together so components can write

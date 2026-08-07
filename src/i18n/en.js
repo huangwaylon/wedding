@@ -121,6 +121,10 @@ export default {
   'confirm.deleteTitle': 'Delete this task?',
   'confirm.deleteBody': '“{title}” goes to the Deleted list, where you can put it back.',
 
+  'detail.state': 'Status',
+  'detail.window': 'When',
+  'detail.progress': 'Progress',
+
   'deleted.title': { one: 'Deleted ({count})', other: 'Deleted ({count})' },
   'deleted.restored': 'Task restored.',
 
@@ -152,6 +156,10 @@ export default {
   'settings.saved': 'Settings saved.',
 
   'timeline.title': 'Timeline',
+  'timeline.hint': 'Tap a row for details',
+  'timeline.zoom': 'Zoom',
+  'timeline.zoomIn': 'Zoom in',
+  'timeline.zoomOut': 'Zoom out',
   'timeline.today': 'Today',
   'timeline.empty': 'Nothing with dates to draw yet.',
   'timeline.rowLabel': '{title}: {range}, {percent}% complete, {state}',

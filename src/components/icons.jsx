@@ -29,6 +29,24 @@ export function PlusIcon(props) {
   )
 }
 
+export function MinusIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M5 12h14" />
+    </svg>
+  )
+}
+
+/** A crosshair: "bring today back into view". */
+export function TargetIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="12" cy="12" r="7" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+    </svg>
+  )
+}
+
 export function GearIcon(props) {
   return (
     <svg {...base} {...props}>

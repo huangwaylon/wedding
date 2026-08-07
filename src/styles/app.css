@@ -14,6 +14,14 @@
   max-width: var(--column-max);
   margin: 0 auto;
   padding: var(--space-4);
+  /* The two stacks are siblings and `.stack`'s gap only applies INSIDE each one, so below
+     62rem — where `.shell` is not yet a grid — they had ZERO separation: the summary card's
+     bottom hairline and the first filter chip's top edge touched, which is what made the
+     chips read as welded to the card. The 62rem grid overrides `display` and supplies its
+     own gap. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
   /* Clearance for the FAB, so it never covers the last task in the list. Every
      layout below keeps this reservation; dropping it in the two-column block is
      exactly how the button once landed on a row's delete control. */
@@ -164,6 +172,13 @@
   }
 }
 
+.stat {
+  /* The markup is dt-then-dd, which is the only valid order inside a `dl`; the number still
+     reads above its label. */
+  display: flex;
+  flex-direction: column-reverse;
+}
+
 .stat__value {
   display: flex;
   align-items: center;
@@ -226,7 +241,9 @@
 .overall--compact .overall__stats {
   padding-top: 0;
   border-top: 0;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* Deliberately NOT forcing four columns. The base card's container query drops to two
+     below 22rem for a documented reason — four tiles in ~70px collide — and forcing four
+     here meant the same data had two rhythms on the same phone depending on the view. */
 }
 
 .overall--compact .stat__value {
@@ -260,19 +277,61 @@
   }
 }
 
-/* ---- Controls row ----------------------------------------------------- */
+/* ---- Controls row -----------------------------------------------------
+   The five filter chips measure ~453px against 361px of card, so they used to wrap to two
+   rows and push the segmented control to a third: 132px of a 793px screen before the first
+   task. One scrollable line is both shorter AND lets the chips take the full 44px target —
+   the iOS convention for a filter row, and the reason the chips are no longer 36px. */
 .controls {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-3);
 }
 
 .controls__filters {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--space-2);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* Bleed to the shell's edge and pad back, so a chip scrolls off the screen edge rather
+     than stopping short inside the padding — which reads as a broken row rather than a
+     scrollable one. */
+  margin-inline: calc(var(--space-4) * -1);
+  padding-inline: var(--space-4);
+  /* Room for the focus ring, which a scroll container would otherwise clip. */
+  padding-block: 2px;
+  scroll-padding-inline: var(--space-4);
+}
+
+/* The scrollbar is an overlay on touch and hidden here on desktop, where the row does not
+   overflow anyway. */
+.controls__filters::-webkit-scrollbar {
+  display: none;
+}
+
+/* `.controls` is `align-items: stretch` on a phone so the scrolling chip row can bleed to both
+   edges; the segmented control must opt out or it spans the whole width with dead space. */
+.controls > .segmented {
+  align-self: flex-start;
+}
+
+@media (min-width: 48rem) {
+  .controls {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* Past the phone there is room for every chip, so the row stops being a scroller. */
+  .controls__filters {
+    flex-wrap: wrap;
+    overflow: visible;
+    margin-inline: 0;
+    padding-inline: 0;
+  }
 }
 
 /* ---- Task list -------------------------------------------------------- */
@@ -330,11 +389,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--tap-target-sm);
-  height: var(--tap-target-sm);
-  margin-left: calc(var(--space-2) * -1);
-  border-radius: var(--radius-sm);
-  color: var(--ink-3);
+  /* The primary interaction of the whole app. It was a 36px square pinned to the top-left
+     corner of a ~110px card with the rest of the row dead; now it is the full tap target and
+     matches the icon buttons opposite it in both ink and radius. */
+  width: var(--tap-target);
+  min-height: var(--tap-target);
+  margin-left: calc(var(--space-3) * -1);
+  border-radius: var(--radius-md);
+  color: var(--ink-2);
   transition: color var(--transition-fast), background-color var(--transition-fast);
 }
 
@@ -394,7 +456,9 @@
   grid-row: 1 / 2;
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  /* Edit and Delete were 4px apart — the tightest interactive adjacency in the app, and one
+     of the two is destructive. A thumb on the seam was a coin flip. */
+  gap: var(--space-2);
   margin-right: calc(var(--space-2) * -1);
 }
 
@@ -426,7 +490,9 @@
 /* ---- Empty and seeding ------------------------------------------------- */
 .empty {
   text-align: center;
-  padding: var(--space-6) var(--space-4);
+  /* Block padding only: the inline padding comes from `.card`, so the empty state's left edge
+     lines up with every other card in the column instead of missing it by 4px. */
+  padding-block: var(--space-5);
 }
 
 .empty__title {
@@ -486,72 +552,86 @@
 }
 
 /* ---- Timeline ---------------------------------------------------------
-   A Gantt, in CSS grid. Every row shares --timeline-gutter with the axis, which is why
-   the bars line up with the month ticks; .timeline__overlay spans exactly the plot area so
-   the gridlines and the today rule position as plain percentages.
+   A Gantt, in flex rows. The axis and every row share --timeline-gutter, which is why the
+   bars line up with the month ticks; .timeline__overlay spans exactly the plot area so the
+   gridlines and the today rule position as plain percentages.
 
-   The timeline scrolls in BOTH axes inside its own card from 48rem up. That is what lets
-   the axis stick: thirty-eight rows scroll well past it, and an axis you cannot see while
-   reading row thirty is decoration. Below 48rem there is no height cap, so the page carries
-   the vertical scroll — a nested vertical scroll on a phone fights the page. */
+   FLEX ROWS, NOT GRID. The label has to stay pinned while the plot pans sideways — pan right
+   without it and you are reading fifty anonymous bars. A sticky element is clamped to its
+   containing block, and for a GRID item that containing block is its own grid area, which is
+   exactly the gutter's width: nothing to travel within. A flex item's containing block is the
+   flex container's content box, so it can slide the full scroll width. (Chrome happens to let
+   the grid version travel too; flex is what the spec guarantees, and Safari is the target.)
+
+   The card owns its vertical scroll at every width. That is what lets the axis stick, and the
+   height is deliberately NOT behind a width breakpoint: 48rem is 768px, and an iPhone 15 in
+   landscape is 852px wide, so a width-gated rule gave the phone a 384px nested scroller in a
+   393px viewport — the exact trap it was written to avoid. */
 .timeline {
-  /* Fluid rather than stepped, deliberately: a stepped gutter would need a third
-     breakpoint, and there are two. 26vw lands on ~7.5rem at 390px (the floor, where the
-     bars matter more than the labels) and ~20rem at 1440px (the ceiling, past which the
-     labels are read and the extra room belongs to the chart). */
+  /* Fluid rather than stepped: a stepped gutter would need a third breakpoint, and there are
+     two. 26vw lands on ~7.5rem at 393px and ~20rem at 1440px. */
   --timeline-gutter: clamp(7.5rem, 26vw, 20rem);
+  /* Zoom multiplies the plot's width and nothing else — see Timeline.jsx. */
+  --timeline-zoom: 1;
   overflow: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-}
-
-@media (min-width: 48rem) {
-  .timeline {
-    /* The summary strip, the controls row and the FAB clearance above and below come to
-       roughly 22rem; this leaves the card a visible bottom edge rather than running it off
-       the viewport. Floored so a short window still gets a usable chart. */
-    max-height: max(24rem, calc(100dvh - 22rem));
-  }
+  /* Contain the HORIZONTAL axis only. A pan that chains becomes an iOS back-swipe; but
+     `contain` on both axes can swallow a vertical drag that starts on the chart. */
+  overscroll-behavior-x: contain;
+  /* There is deliberately no `-webkit-overflow-scrolling: touch` here or on the sheet body.
+     Momentum has been the default since iOS 13, and the legacy implementation created its own
+     stacking context and broke `position: sticky` inside the same scroller — which is now
+     load-bearing twice over, for the axis and for the label gutter. */
+  max-height: max(20rem, 70dvh);
+  /* The chart always continues past the right edge, and iOS paints no scrollbar until you
+     pan. This is the affordance; it is not a shadow and not a new token. */
+  mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
 }
 
 .timeline__inner {
-  /* Wide enough that months stay legible; the container scrolls past that. */
-  min-width: 34rem;
+  /* Wide enough that months stay legible at 1x; zoom scales from here. */
+  min-width: calc(34rem * var(--timeline-zoom));
 }
 
 /* Sticky at the top of the timeline's own scrollport, and opaque, so rows pass behind it
-   rather than through it. It still scrolls horizontally with the plot, which is what keeps
-   a tick above its own gridline. */
+   rather than through it. It still scrolls horizontally with the plot, which is what keeps a
+   tick above its own gridline. */
 .timeline__axis {
   position: sticky;
   top: 0;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: var(--timeline-gutter) minmax(0, 1fr);
+  z-index: 3;
+  display: flex;
   padding: var(--space-3) var(--space-4) var(--space-2) 0;
   background-color: var(--surface);
   border-bottom: 1px solid var(--line);
 }
 
-/* The axis's own gutter cell carries the left padding, so a tick at fraction 0 still
-   starts where the plot does. */
+/* Pinned left so the axis corner stays opaque over the panning ticks. Also carries the left
+   padding, so a tick at fraction 0 starts where the plot does. */
 .timeline__axis-gutter {
+  flex: 0 0 var(--timeline-gutter);
+  position: sticky;
+  left: 0;
+  z-index: 1;
   padding-left: var(--space-4);
+  background-color: var(--surface);
 }
 
-/* Two bands: the Today pill on the upper line, the month labels on the lower one nearest
-   the gridlines they name. They shared a line at first and the pill sat on top of whichever
-   month happened to be next to it. Deterministic beats measuring the DOM. */
 .timeline__ticks {
   position: relative;
+  flex: 1;
+  min-width: 0;
   height: 2.375rem;
 }
 
+/* Two bands: the Today pill on the upper line, the month labels on the lower one nearest the
+   gridlines they name. They shared a line at first and the pill sat on top of whichever month
+   happened to be next to it. */
 .timeline__tick {
   position: absolute;
   top: 1.25rem;
   font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
   color: var(--ink-3);
   white-space: nowrap;
   transform: translateX(-50%);
@@ -573,8 +653,8 @@
   pointer-events: none;
 }
 
-/* Hairline, solid, one step off the surface — never dashed. Without these a bar's position
-   is unreadable: the axis is at the top and the row somebody cares about is far below it. */
+/* Hairline, solid, one step off the surface — never dashed. Without these a bar's position is
+   unreadable: the axis is at the top and the row somebody cares about is far below it. */
 .timeline__gridline {
   position: absolute;
   top: 0;
@@ -583,8 +663,8 @@
   background-color: var(--line);
 }
 
-/* The one place this chart raises its voice. In a countdown-driven app "where we are now"
-   is the most important thing on it, and the accent is how it says so. */
+/* The one place this chart raises its voice. In a countdown-driven app "where we are now" is
+   the most important thing on it, and the accent is how it says so. */
 .timeline__now {
   position: absolute;
   top: 0;
@@ -594,10 +674,9 @@
   background-color: var(--accent);
 }
 
-/* Lives in the sticky axis, on its own band above the months, so it stays visible however
-   far the rows are scrolled and never sits on a month label. Anchored to the rule rather
-   than centred on it — centring would put half a pill on the wrong side of the line — and
-   the component flips the anchor near the right edge so it cannot be clipped. */
+/* Lives in the sticky axis, on its own band above the months, so it stays visible however far
+   the rows are scrolled and never sits on a month label. Anchored to the rule rather than
+   centred on it; the component flips the anchor near the right edge so it cannot be clipped. */
 .timeline__now-label {
   position: absolute;
   top: 0;
@@ -612,58 +691,100 @@
   transform: translateX(-2px);
 }
 
+/* A button, because on a phone a task's dates, percentage and state were reachable by no
+   gesture at all: both the label's and the bar's `title` are dead on touch. One tap opens the
+   detail sheet, which is also the only way to read a title the gutter truncates. */
 .timeline__row {
   position: relative;
-  display: grid;
-  grid-template-columns: var(--timeline-gutter) minmax(0, 1fr);
+  display: flex;
   align-items: center;
+  width: 100%;
   min-height: var(--tap-target-sm);
+  text-align: start;
   transition: background-color var(--transition-fast);
 }
 
-/* Rows carry no rules between them — thirty-eight hairlines is a grid, not a chart. The
-   hover band is what lets a pointer track a label across seven hundred pixels to its bar
-   instead. Pointer-only: there is no hover on a touch screen, and a sticky highlight after
-   a tap would read as a selection nobody made. */
+/* A phone has no hover to fall back on, so the row is the target and it gets the full 44px. */
+@media (pointer: coarse) {
+  .timeline__row {
+    min-height: var(--tap-target);
+  }
+}
+
+/* Rows carry no rules between them — fifty hairlines is a grid, not a chart. The hover band is
+   what lets a pointer track a label across seven hundred pixels to its bar instead. The band
+   goes on the label rather than the row because the label is opaque and painted over it. */
 @media (hover: hover) and (pointer: fine) {
-  .timeline__row:hover {
+  .timeline__row:hover .timeline__label {
+    background-color: var(--sunken);
+  }
+
+  .timeline__row:hover .timeline__track {
     background-color: var(--sunken);
   }
 }
 
+/* Pinned left, and opaque, so the names stay readable at any pan offset. */
 .timeline__label {
-  padding: 0 var(--space-3) 0 var(--space-4);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 0 0 var(--timeline-gutter);
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-4);
+  background-color: var(--surface);
   font-size: var(--fs-label);
   line-height: var(--lh-tight);
   color: var(--ink);
 }
 
-.timeline__row--done .timeline__label {
+.timeline__label-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* State as a shape as well as a hue, in the gutter where it is always on screen. Without it a
+   fully-filled green bar and a fully-filled red one are identical to a touch user, since the
+   bar's state lives only in a `title` that never renders — which would break the app's own
+   "state colour is never the only channel" rule. */
+.timeline__dot {
+  flex: none;
+}
+
+.timeline__row--done .timeline__label-text {
   color: var(--ink-3);
   text-decoration: line-through;
   text-decoration-color: var(--ink-4);
   text-decoration-thickness: 1px;
 }
 
-.timeline__row--overdue .timeline__label {
+.timeline__row--overdue .timeline__label-text {
   font-weight: 500;
 }
 
 .timeline__track {
   position: relative;
+  flex: 1;
+  min-width: 0;
   height: 1.5rem;
+  transition: background-color var(--transition-fast);
 }
 
-/* Capped well under the 24px mark spec, and the band's leftover is air. The hairline is
-   what makes an unstarted bar read as a planned window rather than as nothing — the same
-   reasoning as the meter's, and for the same measured reason. */
+/* Capped well under the 24px mark spec, and the band's leftover is air. The hairline is what
+   makes an unstarted bar read as a planned window rather than as nothing — the same reasoning
+   as the meter's, and for the same measured reason. */
 .timeline__bar {
+  /* Spans, because the row is a <button> and its content model is phrasing content. An
+     absolutely positioned element is blockified, but its CHILD is not — `height: 100%` on an
+     inline fill does nothing, which silently painted every bar as unstarted. */
+  display: block;
   position: absolute;
   top: 0.4375rem;
-  height: 0.625rem;
+  height: var(--meter-height);
   min-width: 4px;
   border-radius: var(--radius-full);
   background-color: var(--track);
@@ -672,6 +793,7 @@
 }
 
 .timeline__bar-fill {
+  display: block;
   height: 100%;
   background-color: var(--accent);
 }
@@ -688,8 +810,42 @@
   background-color: var(--ink-4);
 }
 
-/* ---- Deleted ---------------------------------------------------------- */
-.deleted__row {
+/* ---- Timeline toolbar -------------------------------------------------
+   Outside .timeline, so it does not scroll away with the chart. Zoom is the only way to read
+   a year-long plan on a phone: at 1x a one-week task is 8px and nine of fifty bars sit on the
+   4px floor. */
+.timeline__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+/* One line, truncating. Four 44px targets leave ~150px on a 393px screen, and a hint that
+   wraps to two lines costs more height than it is worth. */
+.timeline__toolbar > .hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline__zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.timeline__zoom-level {
+  min-width: 2.5rem;
+  text-align: center;
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--ink-2);
+}
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -747,10 +903,6 @@
 }
 
 @media (min-width: 48rem) {
-  .shell {
-    max-width: var(--column-max);
-  }
-
   /* Timeline view takes the full width from here, not from 62rem. A Gantt squeezed into
      the 36rem reading column is the one layout where the cap actively hurts — an iPad in
      portrait is 768px and would otherwise draw a year of bars in 576 of them. */
@@ -799,5 +951,60 @@
 
   .shell--wide .shell__main {
     max-width: none;
+  }
+}
+
+/* ---- Task detail ------------------------------------------------------
+   The read-only sheet a timeline row opens. A two-column definition list, collapsing to one
+   on a narrow phone where a 6rem term column leaves nothing for a date range. */
+.detail {
+  display: grid;
+  gap: var(--space-1) var(--space-4);
+}
+
+.detail__term {
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.detail__value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--ink);
+}
+
+/* The meter takes the room and the figure sits beside it, as it does on a task row: a
+   percentage inside an 8px fill does not fit at any size. */
+.detail__value > .meter {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail__percent {
+  flex: none;
+  font-size: var(--fs-label);
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.detail dt + dd {
+  margin-bottom: var(--space-3);
+}
+
+/* A container query, not a media query: there are two breakpoints in this app and this is a
+   question about the sheet's width, not the viewport's. Same mechanism as `.overall__stats`. */
+@container (min-width: 24rem) {
+  .detail {
+    grid-template-columns: 6rem minmax(0, 1fr);
+    align-items: baseline;
+  }
+
+  .detail__term {
+    /* Baseline-align the term with the first line of its value, not with the row. */
+    padding-top: 0.125rem;
   }
 }
