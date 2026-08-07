@@ -24,7 +24,7 @@
 
 import { STORAGE_KEYS, readStored, writeStored } from '../config.js'
 
-export const EDIT_KEY_PARAM = 'k'
+const EDIT_KEY_PARAM = 'k'
 
 /**
  * What `openssl rand -hex 32` produces. Checked before storing so a mangled link

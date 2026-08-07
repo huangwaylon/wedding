@@ -117,122 +117,39 @@ export function useBoard({ editKey, onUnauthorized }) {
   }, [refresh])
 
   /**
-   * Apply locally, call the endpoint, replace state with its reply — and on any
-   * failure put back exactly what was there before.
+   * Every mutation goes through here, and there is exactly one of these on purpose.
    *
-   * The rollback captures state through the updater rather than closing over
-   * `tasks`, so two edits in quick succession cannot resurrect the first one's
-   * starting point.
-   */
-  const commit = useCallback(async (optimistic, call) => {
-    let rollback = null
-    setTasks((previous) => {
-      rollback = previous
-      return optimistic(previous)
-    })
-    setSaving((count) => count + 1)
-    try {
-      accept(await call(keyRef.current))
-      return true
-    } catch (failure) {
-      if (rollback) setTasks(rollback)
-      const code = failure?.code ?? API_ERROR.TRANSIENT
-      setError(code)
-      if (code === API_ERROR.UNAUTHORIZED) unauthorizedRef.current?.()
-      return false
-    } finally {
-      setSaving((count) => count - 1)
-    }
-  }, [accept])
-
-  const addTask = useCallback(
-    (draft) => {
-      const task = { ...draft, id: draft.id || newId(), pending: true }
-      return commit(
-        (previous) => [...previous, task],
-        (key) => api.createTask(task, key),
-      )
-    },
-    [commit],
-  )
-
-  const editTask = useCallback(
-    (task) =>
-      commit(
-        (previous) => previous.map((row) => (row.id === task.id ? { ...task, pending: true } : row)),
-        (key) => api.updateTask(task, key),
-      ),
-    [commit],
-  )
-
-  /**
-   * Done is a timestamp, not a boolean, because "when did this get finished" is
-   * worth keeping and because a blank cell is the obvious spelling of not-done in
-   * a spreadsheet somebody may open by hand.
-   */
-  const toggleDone = useCallback(
-    (task) => editTask({ ...task, doneAt: task.doneAt ? '' : new Date().toISOString() }),
-    [editTask],
-  )
-
-  const removeTask = useCallback(
-    (id) =>
-      commit(
-        (previous) =>
-          previous.map((row) =>
-            row.id === id ? { ...row, deletedAt: new Date().toISOString(), pending: true } : row,
-          ),
-        (key) => api.deleteTask(id, key),
-      ),
-    [commit],
-  )
-
-  const restoreTask = useCallback(
-    (id) =>
-      commit(
-        (previous) =>
-          previous.map((row) => (row.id === id ? { ...row, deletedAt: '', pending: true } : row)),
-        (key) => api.restoreTask(id, key),
-      ),
-    [commit],
-  )
-
-  /**
-   * Seed a starter checklist. Not optimistic: forty rows appearing and then
-   * vanishing on a failure is worse than a second of a spinner, and this runs once
-   * in the life of a board.
+   * This block — bump `saving`, call, accept the fresh board, classify the failure, flag a
+   * rejected key, decrement `saving` — was written out four times, and the fourth copy
+   * (`compact`) had quietly dropped the `unauthorized` callback. So a rotated key plus a
+   * Purge left the app looking like it still had edit rights. One copy cannot drift from
+   * itself.
    *
-   * @returns {Promise<number>} how many tasks were seeded, or 0 on any failure
+   * `optimistic` is the only variable part. With it, the local edit lands immediately and
+   * any failure restores exactly what was there before — captured through the updater
+   * rather than by closing over `tasks`, so two edits in quick succession cannot resurrect
+   * the first one's starting point. Without it the call just waits, which is right when a
+   * partial result would be worse than a spinner.
+   *
+   * @param {(key: string) => Promise<object>} call
+   * @param {(tasks: object[]) => object[]} [optimistic]
+   * @returns {Promise<boolean>} whether it landed
    */
-  const seedTemplate = useCallback(
-    async (templateId, { weddingDay, locale }) => {
-      const template = findTemplate(templateId)
-      if (!template) return 0
-      const drafts = materialize(template, weddingDay, { locale, newId })
-      if (!drafts.length) return 0
-      setSaving((count) => count + 1)
-      try {
-        accept(await api.createTasks(drafts, keyRef.current))
-        return drafts.length
-      } catch (failure) {
-        const code = failure?.code ?? API_ERROR.TRANSIENT
-        setError(code)
-        if (code === API_ERROR.UNAUTHORIZED) unauthorizedRef.current?.()
-        return 0
-      } finally {
-        setSaving((count) => count - 1)
+  const run = useCallback(
+    async (call, optimistic) => {
+      let rollback = null
+      if (optimistic) {
+        setTasks((previous) => {
+          rollback = previous
+          return optimistic(previous)
+        })
       }
-    },
-    [accept],
-  )
-
-  const saveConfig = useCallback(
-    async (partial) => {
       setSaving((count) => count + 1)
       try {
-        accept(await api.writeConfig(serializeConfig(partial), keyRef.current))
+        accept(await call(keyRef.current))
         return true
       } catch (failure) {
+        if (rollback) setTasks(rollback)
         const code = failure?.code ?? API_ERROR.TRANSIENT
         setError(code)
         if (code === API_ERROR.UNAUTHORIZED) unauthorizedRef.current?.()
@@ -244,18 +161,81 @@ export function useBoard({ editKey, onUnauthorized }) {
     [accept],
   )
 
-  const compact = useCallback(async () => {
-    setSaving((count) => count + 1)
-    try {
-      accept(await api.compact(keyRef.current))
-      return true
-    } catch (failure) {
-      setError(failure?.code ?? API_ERROR.TRANSIENT)
-      return false
-    } finally {
-      setSaving((count) => count - 1)
-    }
-  }, [accept])
+  const addTask = useCallback(
+    (draft) => {
+      const task = { ...draft, id: draft.id || newId(), pending: true }
+      return run(
+        (key) => api.createTask(task, key),
+        (previous) => [...previous, task],
+      )
+    },
+    [run],
+  )
+
+  const editTask = useCallback(
+    (task) =>
+      run(
+        (key) => api.updateTask(task, key),
+        (previous) => previous.map((row) => (row.id === task.id ? { ...task, pending: true } : row)),
+      ),
+    [run],
+  )
+
+  /**
+   * Done is a timestamp, not a boolean, because "when did this get finished" is worth
+   * keeping and because a blank cell is the obvious spelling of not-done in a spreadsheet
+   * somebody may open by hand.
+   */
+  const toggleDone = useCallback(
+    (task) => editTask({ ...task, doneAt: task.doneAt ? '' : new Date().toISOString() }),
+    [editTask],
+  )
+
+  const removeTask = useCallback(
+    (id) =>
+      run(
+        (key) => api.deleteTask(id, key),
+        (previous) =>
+          previous.map((row) =>
+            row.id === id ? { ...row, deletedAt: new Date().toISOString(), pending: true } : row,
+          ),
+      ),
+    [run],
+  )
+
+  const restoreTask = useCallback(
+    (id) =>
+      run(
+        (key) => api.restoreTask(id, key),
+        (previous) => previous.map((row) => (row.id === id ? { ...row, deletedAt: '', pending: true } : row)),
+      ),
+    [run],
+  )
+
+  /**
+   * Seed a starter checklist. Deliberately NOT optimistic: forty rows appearing and then
+   * vanishing on a failure is worse than a second of a spinner, and this runs once in the
+   * life of a board.
+   *
+   * @returns {Promise<number>} how many tasks were seeded, or 0 on any failure
+   */
+  const seedTemplate = useCallback(
+    async (templateId, { weddingDay, locale }) => {
+      const template = findTemplate(templateId)
+      if (!template) return 0
+      const drafts = materialize(template, weddingDay, { locale, newId })
+      if (!drafts.length) return 0
+      return (await run((key) => api.createTasks(drafts, key))) ? drafts.length : 0
+    },
+    [run],
+  )
+
+  const saveConfig = useCallback(
+    (partial) => run((key) => api.writeConfig(serializeConfig(partial), key)),
+    [run],
+  )
+
+  const compact = useCallback(() => run((key) => api.compact(key)), [run])
 
   const deletedTasks = useMemo(() => tasks.filter((task) => !isLive(task)), [tasks])
 

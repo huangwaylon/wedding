@@ -25,7 +25,7 @@
  */
 
 /** The stored shape. Minutes precision: a wedding schedule has no use for seconds. */
-export const WALL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/
+const WALL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/
 const DAY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 
 /** Used when the sheet has no `timezone` value and by every default. */
@@ -155,7 +155,7 @@ function pad(number) {
   return String(number).padStart(2, '0')
 }
 
-export function formatParts({ year, month, day, hour, minute }) {
+function formatParts({ year, month, day, hour, minute }) {
   return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}`
 }
 
@@ -348,7 +348,7 @@ export function formatWallMonthShort(wall, { locale, year = false } = {}) {
 }
 
 /** '14:00'. Always 24-hour: a schedule read at a glance has no room for am/pm. */
-export function formatWallTime(wall, { locale } = {}) {
+function formatWallTime(wall, { locale } = {}) {
   const date = asUtcDate(wall)
   if (!date) return ''
   return displayFormatter(locale, { hour: '2-digit', minute: '2-digit', hour12: false }).format(date)

@@ -20,7 +20,7 @@
 import { useEffect, useState } from 'react'
 
 /** A minute. Fine enough for a plan measured in months, cheap enough to ignore. */
-export const TICK_MS = 60_000
+const TICK_MS = 60_000
 
 export function useNow(intervalMs = TICK_MS) {
   const [now, setNow] = useState(() => Date.now())

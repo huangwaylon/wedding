@@ -275,10 +275,11 @@ npx vite-node scripts/preview.jsx     # writes scripts/preview-*.html (gitignore
 node scripts/check-contrast.js        # every colour pair, measured
 ```
 
-Load the preview files through `scripts/harness.html?f=preview-en.html&w=390,430,768` and
-screenshot. **Use the iframes it builds, not a resized window** — an iframe gets its own
-viewport so container and media queries resolve honestly, while headless Chrome quietly
-reports a different width than you asked for and every breakpoint reads wrong.
+Load the preview files through `scripts/harness.html?f=en&w=390,430,768` and screenshot; add
+`&scroll=0.35` to see the timeline part-way down its own scroll container. **Use the iframes
+it builds, not a resized window** — an iframe gets its own viewport so container and media
+queries resolve honestly, while headless Chrome quietly reports a different width than you
+asked for and every breakpoint reads wrong.
 
 ## Layout
 
@@ -298,10 +299,10 @@ reports a different width than you asked for and every breakpoint reads wrong.
 | `src/lib/snapshot.js` | the launch cache: last successful read, kept on the device |
 | `src/lib/serviceWorker.js` | registration, and when it is safe to activate an update |
 | `src/lib/theme.js` | the accent presets |
-| `src/state/` | `useBoard` (optimistic CRUD, throttled refresh), `useNow`, `useToasts` |
+| `src/state/` | `useBoard` (one `run()` primitive behind optimistic CRUD, throttled refresh), `useNow`, `useToasts` |
 | `src/i18n/`, `src/components/`, `src/styles/` | engine and `en`/`ja` catalogs; one file per view with inline-SVG icons; `tokens`/`base`/`primitives`/`app` in that order |
 | `test/` | vitest specs, including the `Code.gs` ↔ `schema.js` column pin |
-| `scripts/preview.jsx`, `scripts/harness.html` | the static-HTML visual harness |
+| `scripts/preview.jsx`, `scripts/harness.html` | the static-HTML visual harness; the harness takes files, widths and a scroll position on the query string |
 | `scripts/check-contrast.js` | the palette's measured contrast pairs |
 | `scripts/build-sw.js` | walks `dist/` and emits the service worker; importable, so its silent failure modes are tested |
 | `scripts/make-icons.js` | hand-rolled PNG encoder for the app icons; no native dependency |

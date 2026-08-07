@@ -15,7 +15,7 @@ import { STORAGE_KEYS, readStored, writeStored } from '../config.js'
 import { CATALOGS, DEFAULT_LOCALE, SUPPORTED } from './catalogs.js'
 
 /** `{name}` — the only interpolation syntax. */
-export const VAR_PATTERN = /\{(\w+)\}/g
+const VAR_PATTERN = /\{(\w+)\}/g
 
 const numberFormats = new Map()
 const pluralRules = new Map()

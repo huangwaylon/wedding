@@ -19,7 +19,7 @@ import TaskRow from './TaskRow.jsx'
  * `withProgress` has already sorted, so grouping is a single pass and the groups
  * come out in order — no second sort, and no `Object.keys` ordering assumption.
  */
-export function groupByMonth(tasks) {
+function groupByMonth(tasks) {
   const groups = []
   let current = null
   for (const task of tasks) {

@@ -20,6 +20,7 @@ import {
   normalizeWall,
   offsetMsAt,
   parseWall,
+  FALLBACK_TIME_ZONE,
   resolveTimeZone,
   startOfDay,
   wallDay,
@@ -88,8 +89,22 @@ describe('zones', () => {
   })
 
   it('falls back rather than throwing', () => {
-    expect(resolveTimeZone('Mars/Olympus')).toBe(TOKYO)
+    expect(resolveTimeZone('Mars/Olympus')).toBe(FALLBACK_TIME_ZONE)
+    expect(resolveTimeZone('')).toBe(FALLBACK_TIME_ZONE)
     expect(resolveTimeZone(TOKYO)).toBe(TOKYO)
+  })
+
+  it('caches the offset without letting a DST day poison it', () => {
+    // The cache is keyed by hour, not day. 2027-03-14 is the US spring-forward: 01:00 local
+    // is still PST and 04:00 local is PDT, on the same calendar day. A day-keyed cache would
+    // hand the second lookup the first one's answer and put every task an hour out.
+    const before = wallToInstant('2027-03-14T01:00', LA)
+    const after = wallToInstant('2027-03-14T04:00', LA)
+    expect(offsetMsAt(before, LA)).toBe(-8 * 3_600_000)
+    expect(offsetMsAt(after, LA)).toBe(-7 * 3_600_000)
+    // And repeated lookups (which is what a ticking clock does) stay correct.
+    expect(offsetMsAt(before, LA)).toBe(-8 * 3_600_000)
+    expect(offsetMsAt(after, LA)).toBe(-7 * 3_600_000)
   })
 
   it('reports the offset east of UTC', () => {

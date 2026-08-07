@@ -1,27 +1,92 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><style>
-  body{margin:0;background:#333;font:12px system-ui;color:#fff}
-  .row{display:flex;gap:12px;padding:12px;align-items:flex-start}
-  .col{display:flex;flex-direction:column;gap:4px}
-  iframe{border:0;background:#faf7f4}
-</style></head><body>
-<div class="row" id="row"></div>
-<script>
-  const params = new URLSearchParams(location.search)
-  const file = params.get('f') || 'preview-en.html'
-  const widths = (params.get('w') || '390,430,768').split(',').map(Number)
-  const height = Number(params.get('h') || 1400)
-  const row = document.getElementById('row')
-  for (const w of widths) {
-    const col = document.createElement('div')
-    col.className = 'col'
-    col.innerHTML = '<span>' + w + 'px</span>'
-    const frame = document.createElement('iframe')
-    frame.src = file
-    frame.width = w
-    frame.height = height
-    col.appendChild(frame)
-    row.appendChild(col)
-  }
-</script>
-</body></html>
+<!--
+  The screenshot harness. One page; everything is driven by the query string.
+
+    harness.html?f=en&w=390,430,768
+    harness.html?f=en-timeline&w=1440&h=930&scroll=0.35
+    harness.html?f=en,en-sage,en-gold&w=330&h=480
+
+  f       comma-separated preview files. The `preview-` prefix and `.html` are optional.
+  w       comma-separated iframe widths in px, applied to every file
+  h       iframe height in px (default 900)
+  scroll  0-1: how far to scroll the timeline's OWN container. The timeline owns its
+          vertical scroll, so scrolling the page does not move it — and a sticky element
+          overlapping those rows is a bug that only appears once they have moved.
+
+  IFRAMES, NOT A RESIZED WINDOW. Each frame gets its own viewport, so container and media
+  queries resolve honestly; headless Chrome quietly reports a different width than you
+  asked for and every breakpoint reads wrong.
+
+  Regenerate the preview files first: `npx vite-node scripts/preview.jsx`.
+
+  This replaced three near-identical harness pages that had accreted one screenshot at a
+  time, each hardcoding its own file list and scroll behaviour.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        background: #333;
+        font: 11px system-ui, sans-serif;
+        color: #fff;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        padding: 10px;
+        align-items: flex-start;
+      }
+      .col {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      iframe {
+        border: 0;
+        background: #faf7f4;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="row" id="row"></div>
+    <script>
+      const params = new URLSearchParams(location.search)
+      const files = (params.get('f') || 'en')
+        .split(',')
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .map((name) => {
+          const prefixed = name.startsWith('preview-') ? name : `preview-${name}`
+          return prefixed.endsWith('.html') ? prefixed : `${prefixed}.html`
+        })
+      const widths = (params.get('w') || '390,430,768').split(',').map(Number)
+      const height = Number(params.get('h') || 900)
+      const scroll = Number(params.get('scroll') || 0)
+      const row = document.getElementById('row')
+
+      for (const file of files) {
+        for (const width of widths) {
+          const col = document.createElement('div')
+          col.className = 'col'
+          const label = document.createElement('span')
+          label.textContent = `${file.replace(/^preview-/, '').replace(/\.html$/, '')} @ ${width}`
+          col.appendChild(label)
+
+          const frame = document.createElement('iframe')
+          frame.src = file
+          frame.width = width
+          frame.height = height
+          frame.onload = () => {
+            if (!scroll) return
+            const timeline = frame.contentDocument?.querySelector('.timeline')
+            if (timeline) timeline.scrollTop = Math.round(timeline.scrollHeight * scroll)
+          }
+          col.appendChild(frame)
+          row.appendChild(col)
+        }
+      }
+    </script>
+  </body>
+</html>

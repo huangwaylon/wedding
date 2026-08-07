@@ -27,6 +27,7 @@ import Controls, { FILTER_ALL, VIEWS } from './components/Controls.jsx'
 import { ConfirmDeleteSheet, DeletedList } from './components/Deleted.jsx'
 import EmptyBoard from './components/EmptyBoard.jsx'
 import Header from './components/Header.jsx'
+import Notice from './components/Notice.jsx'
 import OverallCard from './components/OverallCard.jsx'
 import SettingsSheet from './components/SettingsSheet.jsx'
 import TaskFormSheet from './components/TaskFormSheet.jsx'
@@ -49,6 +50,26 @@ if (boot.strip && typeof window !== 'undefined') {
   // replaceState, not a navigation: it leaves the Home Screen shortcut's recorded URL
   // alone and only cleans up what is on screen.
   window.history.replaceState(null, '', window.location.pathname + window.location.search)
+}
+
+/**
+ * The api error codes that carry a second line worth showing. The others state the whole
+ * problem in their title, and a hint that repeats the title is noise.
+ */
+const HINTED = new Set([API_ERROR.UNCONFIGURED, API_ERROR.NOT_EMPTY, API_ERROR.MISCONFIGURED])
+
+/** The retry inside a notice. Two of them, identical, so it is one thing. */
+function RetryButton({ onRetry, label }) {
+  return (
+    <button
+      type="button"
+      className="btn btn--secondary btn--sm"
+      onClick={() => onRetry({ force: true })}
+    >
+      <RefreshIcon style={{ width: '1em', height: '1em' }} />
+      {label}
+    </button>
+  )
 }
 
 export default function App() {
@@ -149,10 +170,7 @@ export default function App() {
     return (
       <div className="app">
         <main className="shell">
-          <section className="card notice notice--warn">
-            <span className="notice__title">{t('api.unconfigured')}</span>
-            <span className="notice__body">{t('api.unconfiguredHint')}</span>
-          </section>
+          <Notice tone="warn" title={t('api.unconfigured')} body={t('api.unconfiguredHint')} />
         </main>
       </div>
     )
@@ -173,41 +191,28 @@ export default function App() {
       <main className={`shell${wide ? ' shell--wide' : ''}`}>
         <div className="shell__aside stack">
           {rejected ? (
-            <section className="notice notice--warn">
-              <span className="notice__title">{t('access.rejected')}</span>
-              <span className="notice__body">{t('access.rejectedHint')}</span>
-            </section>
+            <Notice tone="warn" title={t('access.rejected')} body={t('access.rejectedHint')} />
           ) : null}
 
           {/* A failed read never blanks a board that is already on screen: the cached
               copy is stale, not wrong, and saying so beats an error page. */}
           {board.stale && board.error ? (
-            <section className="notice">
-              <span className="notice__title">{t('status.stale')}</span>
-              <span className="notice__body">{t('status.staleHint')}</span>
-              <span className="notice__actions">
-                <button
-                  type="button"
-                  className="btn btn--secondary btn--sm"
-                  onClick={() => board.refresh({ force: true })}
-                >
-                  <RefreshIcon style={{ width: '1em', height: '1em' }} />
-                  {t('status.refresh')}
-                </button>
-              </span>
-            </section>
+            <Notice title={t('status.stale')} body={t('status.staleHint')}>
+              <RetryButton onRetry={board.refresh} label={t('status.refresh')} />
+            </Notice>
           ) : null}
 
           {/* Only a TERMINAL failure earns a persistent notice. A transient one — or a
               held lock — is a thing to retry, and the stale banner above already covers
               the case where there is cached data to fall back on. */}
           {board.error && !board.stale && isTerminal(board.error) ? (
-            <section className="notice notice--warn">
-              <span className="notice__title">{t(`api.${board.error}`)}</span>
-              {board.error === API_ERROR.NOT_EMPTY || board.error === API_ERROR.MISCONFIGURED ? (
-                <span className="notice__body">{t(`api.${board.error}Hint`)}</span>
-              ) : null}
-            </section>
+            <Notice
+              tone="warn"
+              title={t(`api.${board.error}`)}
+              /* Only these two have a hint worth the extra line; the rest say it all in
+                 the title. `HINTED` keeps that list out of the markup. */
+              body={HINTED.has(board.error) ? t(`api.${board.error}Hint`) : null}
+            />
           ) : null}
 
           {/* Compact in timeline view: there the chart is the subject and the summary is
@@ -227,19 +232,9 @@ export default function App() {
                board: "the couple has not added anything yet" is a statement about the
                data, and there is no data — only a failed request. Saying the wrong one
                sends a planner away thinking the board is empty. */
-            <section className="notice notice--warn">
-              <span className="notice__title">{t(`api.${board.error ?? 'transient'}`)}</span>
-              <span className="notice__actions">
-                <button
-                  type="button"
-                  className="btn btn--secondary btn--sm"
-                  onClick={() => board.refresh({ force: true })}
-                >
-                  <RefreshIcon style={{ width: '1em', height: '1em' }} />
-                  {t('status.refresh')}
-                </button>
-              </span>
-            </section>
+            <Notice tone="warn" title={t(`api.${board.error ?? API_ERROR.TRANSIENT}`)}>
+              <RetryButton onRetry={board.refresh} label={t('status.refresh')} />
+            </Notice>
           ) : !tasks.length ? (
             <EmptyBoard
               canEdit={canEdit}

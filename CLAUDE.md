@@ -69,6 +69,14 @@ is a sentence somebody can check by counting. A duration-weighted mean silently 
 six-month venue hunt worth thirty times the cake tasting and nobody can reconstruct it from
 the screen.
 
+**Every mutation goes through `run()` in `useBoard`, and there is exactly one of it.**
+Bump `saving`, call, accept the fresh board, classify the failure, flag a rejected key,
+decrement `saving` — that block was written out four times, and the fourth copy (`compact`)
+had quietly dropped the `unauthorized` callback, so a rotated key plus a Purge left the app
+still showing edit controls and still failing silently. `test/board.test.js` pins that there
+is one copy of each half of it. Adding a mutation means calling `run`, never writing a fifth
+try/catch.
+
 **Never trust a cached row number.** Row positions shift whenever anyone edits the sheet
 directly in the Sheets UI, so `updateTask` and `stampDeleted` re-resolve id → row immediately
 before writing.
@@ -188,7 +196,12 @@ this app never shipped.
   refactor in a comment.
 - **One helper, one home.** `readStored`/`writeStored` in `src/config.js` are the only
   `localStorage` touches; every column name lives in `schema.js`; `CATEGORIES` in
-  `templates.js` is the only category list; `time.js` is the only file that resolves a zone.
+  `templates.js` is the only category list; `time.js` is the only file that resolves a zone;
+  `run()` in `useBoard` is the only place a mutation is wrapped; `Notice` is the only
+  title/body/action block.
+- **Export only what something outside the file uses.** A symbol exported "for testing" that
+  no test imports is a wider public surface for nothing. `monthTicks` and `draftToWindow` are
+  exported *because* they are tested directly; the rest are module-private.
 
 ### i18n
 
@@ -311,8 +324,9 @@ Four files, loaded in order by `src/main.jsx`: `tokens.css` (custom properties),
 
 ## Testing
 
-Specs live in `test/**/*.test.{js,jsx}`. Twelve files: `time`, `progress`, `schema`,
-`templates`, `access`, `api`, `snapshot`, `sw-build`, `i18n`, `render`, `ui`, `lockfile`.
+Specs live in `test/**/*.test.{js,jsx}`. Thirteen files: `time`, `progress`, `schema`,
+`templates`, `access`, `api`, `board`, `snapshot`, `sw-build`, `i18n`, `render`, `ui`,
+`lockfile`.
 
 `api`, `snapshot`, `sw-build` and `access` all exist for the same reason: their failure modes
 are invisible. A misclassified endpoint reply logs an editor out or hides a rotated key; a
@@ -348,12 +362,23 @@ that measured 1.035:1 against the track it was outlining.
 npx vite-node scripts/preview.jsx     # writes scripts/preview-*.html (gitignored)
 ```
 
-Load those through `scripts/harness.html?f=preview-en.html&w=390,430,768` and screenshot;
-`scripts/accents.html` shows all five presets side by side. **Use iframes, not a resized
-window** — an iframe gets its own viewport so container and media queries resolve honestly,
-while headless Chrome quietly reports a different width than you asked for and every
-breakpoint reads wrong. Note that the FAB is `position: fixed`, so inside a short iframe it
-floats over the middle of the list; that is a harness artifact, not a layout bug.
+Load those through `scripts/harness.html`, which takes everything on the query string —
+one page, because three near-identical harnesses had accreted one screenshot at a time:
+
+```
+harness.html?f=en&w=390,430,768                    phone through tablet
+harness.html?f=en-timeline&w=1440&h=930&scroll=0.35  the timeline, scrolled
+harness.html?f=en,en-sage,en-gold&w=330&h=480      presets side by side
+```
+
+`scroll` matters: the timeline owns its vertical scroll, so scrolling the page does not move
+it — and the sticky-overlap bug only appeared once those rows had moved.
+
+**Use the iframes it builds, not a resized window** — an iframe gets its own viewport so
+container and media queries resolve honestly, while headless Chrome quietly reports a
+different width than you asked for and every breakpoint reads wrong. Note the FAB is
+`position: fixed`, so inside a short iframe it floats over the middle of the list; that is a
+harness artifact, not a layout bug.
 
 ## Gotchas
 

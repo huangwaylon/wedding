@@ -19,11 +19,13 @@ import { ConfirmDeleteSheet, DeletedList } from '../src/components/Deleted.jsx'
 import EmptyBoard from '../src/components/EmptyBoard.jsx'
 import Header, { coupleTitle } from '../src/components/Header.jsx'
 import Meter from '../src/components/Meter.jsx'
+import Notice from '../src/components/Notice.jsx'
 import OverallCard from '../src/components/OverallCard.jsx'
 import StateBadge from '../src/components/StateBadge.jsx'
 import TaskList from '../src/components/TaskList.jsx'
 import TaskRow from '../src/components/TaskRow.jsx'
-import Timeline from '../src/components/Timeline.jsx'
+import { draftToWindow } from '../src/components/TaskFormSheet.jsx'
+import Timeline, { monthTicks } from '../src/components/Timeline.jsx'
 import Toasts from '../src/components/Toasts.jsx'
 
 const TOKYO = 'Asia/Tokyo'
@@ -308,6 +310,51 @@ describe('Timeline', () => {
   })
 })
 
+describe('monthTicks', () => {
+  const window = (fromWall, toWall) => {
+    const min = wallToInstant(fromWall, TOKYO)
+    const max = wallToInstant(toWall, TOKYO)
+    return { min, max, span: max - min }
+  }
+
+  it('lands one tick on each month boundary inside the window', () => {
+    const ticks = monthTicks(window('2027-01-15T00:00', '2027-05-15T00:00'), TOKYO)
+    expect(ticks.map((tick) => tick.wall)).toEqual([
+      '2027-02-01T00:00',
+      '2027-03-01T00:00',
+      '2027-04-01T00:00',
+      '2027-05-01T00:00',
+    ])
+  })
+
+  it('never emits a tick outside the window', () => {
+    for (const tick of monthTicks(window('2027-01-15T00:00', '2028-06-15T00:00'), TOKYO)) {
+      expect(tick.fraction).toBeGreaterThan(0)
+      expect(tick.fraction).toBeLessThan(1)
+    }
+  })
+
+  it('thins a long plan so labels cannot collide', () => {
+    // Three years of months would be thirty-six labels in ~425px. This is the fix for a
+    // Japanese axis that rendered as an unreadable smear.
+    const ticks = monthTicks(window('2026-01-01T00:00', '2029-01-01T00:00'), TOKYO)
+    expect(ticks.length).toBeLessThanOrEqual(6)
+    expect(ticks.length).toBeGreaterThan(1)
+  })
+
+  it('spells the year out on the first tick and on each rollover only', () => {
+    const ticks = monthTicks(window('2026-11-15T00:00', '2027-04-15T00:00'), TOKYO)
+    expect(ticks[0].showYear).toBe(true)
+    const rollovers = ticks.filter((tick) => tick.showYear).map((tick) => tick.wall.slice(0, 4))
+    // The opening year, then 2027 once — never the same year twice.
+    expect(new Set(rollovers).size).toBe(rollovers.length)
+  })
+
+  it('is empty when the window is inside one month', () => {
+    expect(monthTicks(window('2027-01-05T00:00', '2027-01-25T00:00'), TOKYO)).toEqual([])
+  })
+})
+
 describe('Header', () => {
   it('shows both names, the countdown and the venue', () => {
     const config = mergeConfig({
@@ -447,6 +494,31 @@ describe('Deleted', () => {
   })
 })
 
+describe('Notice', () => {
+  it('renders a title alone, without an empty body element', () => {
+    const html = renderToStaticMarkup(<Notice title="Could not reach the board." />)
+    expect(html).toContain('Could not reach the board.')
+    expect(html).not.toContain('notice__body')
+    expect(html).not.toContain('notice__actions')
+  })
+
+  it('adds the body and actions only when given them', () => {
+    const html = renderToStaticMarkup(
+      <Notice tone="warn" title="Showing saved data" body="Last copy this device saw.">
+        <button type="button">Refresh</button>
+      </Notice>,
+    )
+    expect(html).toContain('notice--warn')
+    expect(html).toContain('notice__body')
+    expect(html).toContain('notice__actions')
+    expect(html).toContain('Refresh')
+  })
+
+  it('is not a warning unless asked', () => {
+    expect(renderToStaticMarkup(<Notice title="x" />)).not.toContain('notice--warn')
+  })
+})
+
 describe('Toasts', () => {
   it('is a live region and holds no controls', () => {
     const html = renderToStaticMarkup(<Toasts toasts={[{ id: 1, message: 'Saved.' }]} />)
@@ -509,5 +581,36 @@ describe('Japanese', () => {
 describe('defaults', () => {
   it('ships a category list the templates can seed from', () => {
     expect(DEFAULT_CONFIG.categories.length).toBeGreaterThan(0)
+  })
+})
+
+describe('draftToWindow', () => {
+  const base = { startDay: '2027-04-18', endDay: '2027-04-20', startTime: '09:00', endTime: '17:00' }
+
+  it('spans whole days when all-day, ending at 23:59', () => {
+    // Not the next midnight: a task due on the 20th has to be overdue on the 21st rather
+    // than 99% complete. The clock fields are ignored entirely.
+    expect(draftToWindow({ ...base, allDay: true })).toEqual({
+      start: '2027-04-18T00:00',
+      end: '2027-04-20T23:59',
+    })
+  })
+
+  it('uses the clock fields when not all-day', () => {
+    expect(draftToWindow({ ...base, allDay: false })).toEqual({
+      start: '2027-04-18T09:00',
+      end: '2027-04-20T17:00',
+    })
+  })
+
+  it('gives a single all-day task a real span, not a zero-length one', () => {
+    // A zero-length window would read 0% all day and then flip to 100% at midnight.
+    const { start, end } = draftToWindow({ ...base, endDay: base.startDay, allDay: true })
+    expect(wallToInstant(end, TOKYO)).toBeGreaterThan(wallToInstant(start, TOKYO))
+  })
+
+  it('returns empty for a missing day rather than inventing one', () => {
+    expect(draftToWindow({ ...base, startDay: '', allDay: true }).start).toBe('')
+    expect(draftToWindow({ ...base, endDay: '', allDay: false }).end).toBe('')
   })
 })

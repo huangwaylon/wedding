@@ -36,7 +36,7 @@ export const ACCENT_HEX = {
   gold: '#6b4d17',
 }
 
-export function getAccent() {
+function getAccent() {
   const stored = readStored(STORAGE_KEYS.accent)
   return ACCENTS.includes(stored) ? stored : DEFAULT_ACCENT
 }

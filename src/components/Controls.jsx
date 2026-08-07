@@ -13,7 +13,7 @@ import { useT } from '../i18n/index.js'
 export const FILTER_ALL = 'all'
 
 /** `all` plus one per state, in scanning order — problems first. */
-export const FILTERS = [FILTER_ALL, ...STATE_ORDER]
+const FILTERS = [FILTER_ALL, ...STATE_ORDER]
 
 export const VIEWS = { LIST: 'list', TIMELINE: 'timeline' }
 

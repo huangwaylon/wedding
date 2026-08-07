@@ -274,8 +274,7 @@
   background-color: var(--sunken);
 }
 
-.chip[aria-pressed="true"],
-.chip--on {
+.chip[aria-pressed="true"] {
   background-color: var(--accent);
   border-color: var(--accent);
   color: var(--accent-text);
