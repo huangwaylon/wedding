@@ -1,0 +1,347 @@
+/**
+ * The app shell: access, board state, the ticking clock, and which surface is on
+ * screen.
+ *
+ * ACCESS IS RESOLVED ONCE, AT BOOT, from the URL fragment (see `lib/access.js`), and
+ * the fragment is only cleared once running as an installed app — in Safari it has to
+ * stay so that "Add to Home Screen" records a URL still carrying the key, because an
+ * installed web app gets its own storage bucket.
+ *
+ * `canEdit` decides what renders, but it is NOT the security boundary. The endpoint
+ * refuses any write without the key, so a planner who reaches into the DOM gains
+ * nothing — which is why nothing here needs to be defensive beyond hiding controls.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { STORAGE_KEYS, isConfigured, readStored, weddingWall, writeStored } from './config.js'
+import { isStandalone, markKeyRejected, resolveAccess, writeEditKey } from './lib/access.js'
+import { API_ERROR, isTerminal } from './lib/api.js'
+import { overallProgress, withProgress } from './lib/progress.js'
+import { nowWall as nowWallIn, resolveTimeZone, wallDay } from './lib/time.js'
+import { setSafeToReload } from './lib/serviceWorker.js'
+import { STATUS, useBoard } from './state/useBoard.js'
+import { useNow } from './state/useNow.js'
+import { useToasts } from './state/useToasts.js'
+import { useT } from './i18n/index.js'
+import Controls, { FILTER_ALL, VIEWS } from './components/Controls.jsx'
+import { ConfirmDeleteSheet, DeletedList } from './components/Deleted.jsx'
+import EmptyBoard from './components/EmptyBoard.jsx'
+import Header from './components/Header.jsx'
+import OverallCard from './components/OverallCard.jsx'
+import SettingsSheet from './components/SettingsSheet.jsx'
+import TaskFormSheet from './components/TaskFormSheet.jsx'
+import TaskList from './components/TaskList.jsx'
+import Timeline from './components/Timeline.jsx'
+import Toasts from './components/Toasts.jsx'
+import { PlusIcon, RefreshIcon } from './components/icons.jsx'
+
+/**
+ * Read the fragment before React renders anything, so the first paint already knows
+ * whether the controls belong on screen — resolving it in an effect would flash a
+ * view-only board at an editor on every launch.
+ */
+const boot = resolveAccess({
+  hash: typeof window === 'undefined' ? '' : window.location.hash,
+  standalone: isStandalone(),
+})
+
+if (boot.strip && typeof window !== 'undefined') {
+  // replaceState, not a navigation: it leaves the Home Screen shortcut's recorded URL
+  // alone and only cleans up what is on screen.
+  window.history.replaceState(null, '', window.location.pathname + window.location.search)
+}
+
+export default function App() {
+  const { t, locale } = useT()
+  const { toasts, show } = useToasts()
+
+  const [editKey, setEditKey] = useState(boot.key)
+  const [rejected, setRejected] = useState(boot.rejected)
+
+  const onUnauthorized = useCallback(() => {
+    markKeyRejected()
+    setRejected(true)
+  }, [])
+
+  const board = useBoard({ editKey, onUnauthorized })
+  const now = useNow()
+
+  const [filter, setFilter] = useState(() => readStored(STORAGE_KEYS.filter) || FILTER_ALL)
+  const [view, setView] = useState(VIEWS.LIST)
+  const [editing, setEditing] = useState(null)
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  const canEdit = Boolean(editKey) && !rejected
+  const timeZone = resolveTimeZone(board.config.timezone)
+
+  // Every percentage in the app comes from here, recomputed each tick.
+  const tasks = useMemo(() => withProgress(board.tasks, now, timeZone), [board.tasks, now, timeZone])
+  const overall = useMemo(() => overallProgress(tasks), [tasks])
+  const nowWall = useMemo(() => nowWallIn(timeZone, now), [timeZone, now])
+
+  const shown = useMemo(
+    () => (filter === FILTER_ALL ? tasks : tasks.filter((task) => task.progress.state === filter)),
+    [tasks, filter],
+  )
+
+  const chooseFilter = useCallback((next) => {
+    setFilter(next)
+    writeStored(STORAGE_KEYS.filter, next)
+  }, [])
+
+  // A reload must not land between a keystroke and a save. Both halves matter: an
+  // open form holds text that exists nowhere else, and `saving` covers the window
+  // where a write has left the device but not yet reached the sheet.
+  const busy = Boolean(editing || pendingDelete || settingsOpen) || board.saving > 0
+  useEffect(() => {
+    setSafeToReload(() => !busy)
+  }, [busy])
+
+  const save = useCallback(
+    async (task) => {
+      const ok = task.id ? await board.editTask(task) : await board.addTask(task)
+      if (ok) show(t('toast.saved'))
+      return ok
+    },
+    [board, show, t],
+  )
+
+  const confirmDelete = useCallback(
+    async (task) => {
+      setPendingDelete(null)
+      setEditing(null)
+      if (await board.removeTask(task.id)) show(t('toast.deleted'))
+    },
+    [board, show, t],
+  )
+
+  const restore = useCallback(
+    async (id) => {
+      if (await board.restoreTask(id)) show(t('deleted.restored'))
+    },
+    [board, show, t],
+  )
+
+  const seed = useCallback(
+    async (templateId) => {
+      const day = wallDay(weddingWall(board.config))
+      const count = await board.seedTemplate(templateId, { weddingDay: day, locale })
+      if (count) show(t('empty.seeded', { count }))
+    },
+    [board, locale, show, t],
+  )
+
+  const enableEditing = useCallback((key) => {
+    writeEditKey(key)
+    setEditKey(key)
+    setRejected(false)
+  }, [])
+
+  const revokeEditing = useCallback(() => {
+    writeEditKey(null)
+    setEditKey(null)
+    setRejected(false)
+    setSettingsOpen(false)
+  }, [])
+
+  if (!isConfigured()) {
+    return (
+      <div className="app">
+        <main className="shell">
+          <section className="card notice notice--warn">
+            <span className="notice__title">{t('api.unconfigured')}</span>
+            <span className="notice__body">{t('api.unconfiguredHint')}</span>
+          </section>
+        </main>
+      </div>
+    )
+  }
+
+  const weddingDay = wallDay(weddingWall(board.config))
+  const wide = view === VIEWS.TIMELINE
+
+  return (
+    <div className="app">
+      <Header
+        config={board.config}
+        nowMs={now}
+        canEdit={canEdit}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
+
+      <main className={`shell${wide ? ' shell--wide' : ''}`}>
+        <div className="shell__aside stack">
+          {rejected ? (
+            <section className="notice notice--warn">
+              <span className="notice__title">{t('access.rejected')}</span>
+              <span className="notice__body">{t('access.rejectedHint')}</span>
+            </section>
+          ) : null}
+
+          {/* A failed read never blanks a board that is already on screen: the cached
+              copy is stale, not wrong, and saying so beats an error page. */}
+          {board.stale && board.error ? (
+            <section className="notice">
+              <span className="notice__title">{t('status.stale')}</span>
+              <span className="notice__body">{t('status.staleHint')}</span>
+              <span className="notice__actions">
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => board.refresh({ force: true })}
+                >
+                  <RefreshIcon style={{ width: '1em', height: '1em' }} />
+                  {t('status.refresh')}
+                </button>
+              </span>
+            </section>
+          ) : null}
+
+          {/* Only a TERMINAL failure earns a persistent notice. A transient one — or a
+              held lock — is a thing to retry, and the stale banner above already covers
+              the case where there is cached data to fall back on. */}
+          {board.error && !board.stale && isTerminal(board.error) ? (
+            <section className="notice notice--warn">
+              <span className="notice__title">{t(`api.${board.error}`)}</span>
+              {board.error === API_ERROR.NOT_EMPTY || board.error === API_ERROR.MISCONFIGURED ? (
+                <span className="notice__body">{t(`api.${board.error}Hint`)}</span>
+              ) : null}
+            </section>
+          ) : null}
+
+          <OverallCard overall={overall} />
+
+          {canEdit ? (
+            <DeletedList tasks={board.deletedTasks} onRestore={restore} />
+          ) : null}
+        </div>
+
+        <div className="shell__main stack">
+          {board.status === STATUS.LOADING ? (
+            <p className="hint">{t('common.loading')}</p>
+          ) : board.status === STATUS.ERROR && !board.tasks.length ? (
+            /* A first load that never landed. This must NOT fall through to the empty
+               board: "the couple has not added anything yet" is a statement about the
+               data, and there is no data — only a failed request. Saying the wrong one
+               sends a planner away thinking the board is empty. */
+            <section className="notice notice--warn">
+              <span className="notice__title">{t(`api.${board.error ?? 'transient'}`)}</span>
+              <span className="notice__actions">
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => board.refresh({ force: true })}
+                >
+                  <RefreshIcon style={{ width: '1em', height: '1em' }} />
+                  {t('status.refresh')}
+                </button>
+              </span>
+            </section>
+          ) : !tasks.length ? (
+            <EmptyBoard
+              canEdit={canEdit}
+              weddingDay={weddingDay}
+              seeding={board.saving > 0}
+              onSeed={seed}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
+          ) : (
+            <>
+              <Controls
+                counts={overall}
+                total={overall.total}
+                filter={filter}
+                onFilter={chooseFilter}
+                view={view}
+                onView={setView}
+              />
+
+              {!shown.length ? (
+                <section className="card empty">
+                  <p className="empty__body">{t('list.emptyFiltered')}</p>
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    onClick={() => chooseFilter(FILTER_ALL)}
+                  >
+                    {t('list.showAll')}
+                  </button>
+                </section>
+              ) : view === VIEWS.TIMELINE ? (
+                <Timeline tasks={shown} nowMs={now} timeZone={timeZone} />
+              ) : (
+                <TaskList
+                  tasks={shown}
+                  nowWall={nowWall}
+                  canEdit={canEdit}
+                  onToggle={board.toggleDone}
+                  onEdit={setEditing}
+                  onDelete={setPendingDelete}
+                />
+              )}
+            </>
+          )}
+        </div>
+      </main>
+
+      {canEdit ? (
+        <button
+          type="button"
+          className="fab"
+          onClick={() => setEditing({})}
+          aria-label={t('form.newTitle')}
+        >
+          <PlusIcon style={{ width: '1.5em', height: '1.5em' }} />
+        </button>
+      ) : null}
+
+      {editing ? (
+        <TaskFormSheet
+          task={editing.id ? editing : null}
+          categories={board.config.categories}
+          defaultDay={nowWall.slice(0, 10)}
+          onSave={save}
+          onDelete={(task) => setPendingDelete(task)}
+          onClose={() => setEditing(null)}
+        />
+      ) : null}
+
+      {pendingDelete ? (
+        <ConfirmDeleteSheet
+          task={pendingDelete}
+          onConfirm={confirmDelete}
+          onClose={() => setPendingDelete(null)}
+        />
+      ) : null}
+
+      {settingsOpen ? (
+        <SettingsSheet
+          config={board.config}
+          canEdit={canEdit}
+          sheetTimeZone={board.sheetTimeZone}
+          deletedCount={board.deletedTasks.length}
+          onSaveConfig={async (partial) => {
+            const ok = await board.saveConfig(partial)
+            if (ok) show(t('settings.saved'))
+            return ok
+          }}
+          onCompact={async () => {
+            if (await board.compact()) show(t('settings.compacted'))
+          }}
+          onEnableEditing={(key) => {
+            enableEditing(key)
+            show(t('access.pasteOk'))
+          }}
+          onRevokeEditing={() => {
+            revokeEditing()
+            show(t('access.revoked'))
+          }}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
+
+      <Toasts toasts={toasts} />
+    </div>
+  )
+}

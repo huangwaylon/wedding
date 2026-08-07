@@ -1,0 +1,669 @@
+/* primitives.css — generic, reusable pieces: card, button, input, chip, badge,
+   meter, segmented control, sheet, toast. Nothing app-specific; layout lives in
+   app.css.
+
+   Single-class selectors throughout, no IDs, no !important. */
+
+/* ---- Card --------------------------------------------------------------
+   A white plane plus one hairline. NO shadow: the temperature step from --bg to
+   --surface is the elevation. */
+.card {
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.card--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.card__title {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+/* ---- Text ------------------------------------------------------------- */
+.hint {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-body);
+  color: var(--ink-3);
+}
+
+.caption {
+  font-size: var(--fs-caption);
+  color: var(--ink-2);
+}
+
+.label {
+  display: block;
+  font-size: var(--fs-label);
+  font-weight: 500;
+  color: var(--ink-2);
+  margin-bottom: var(--space-2);
+}
+
+.label__aside {
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+/* ---- Buttons ---------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap-target);
+  padding: 0 var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-tight);
+  text-decoration: none;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.btn--primary {
+  background-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.btn--primary:hover:not([disabled]) {
+  background-color: var(--accent-hover);
+}
+
+.btn--secondary {
+  background-color: var(--surface);
+  border-color: var(--line-input);
+  color: var(--ink);
+}
+
+.btn--secondary:hover:not([disabled]) {
+  background-color: var(--sunken);
+}
+
+.btn--ghost {
+  color: var(--ink-2);
+}
+
+.btn--ghost:hover:not([disabled]) {
+  background-color: var(--sunken);
+  color: var(--ink);
+}
+
+.btn--danger {
+  background-color: var(--danger);
+  color: var(--danger-text);
+}
+
+.btn--danger:hover:not([disabled]) {
+  background-color: var(--danger-hover);
+}
+
+.btn--block {
+  width: 100%;
+}
+
+.btn--sm {
+  min-height: var(--tap-target-sm);
+  padding: 0 var(--space-3);
+  font-size: var(--fs-label);
+}
+
+/* Never combined with --ghost: the two disagree about the border, and the glyph
+   at --ink-2 is itself the 3:1 graphic that identifies the control. */
+.btn--icon {
+  min-width: var(--tap-target);
+  min-height: var(--tap-target);
+  padding: 0;
+  border-radius: var(--radius-md);
+  color: var(--ink-2);
+}
+
+.btn--icon:hover:not([disabled]) {
+  background-color: var(--sunken);
+  color: var(--ink);
+}
+
+.btn--icon-sm {
+  min-width: var(--tap-target-sm);
+  min-height: var(--tap-target-sm);
+}
+
+.btn[disabled] {
+  opacity: 0.5;
+}
+
+/* ---- FAB ---------------------------------------------------------------
+   The one coloured element that floats, and the one coloured shadow. Every layout
+   reserves --fab-size of clearance below its content so this never covers the last
+   row — dropping that reservation is exactly how it once landed on top of a task's
+   delete button. */
+.fab {
+  position: fixed;
+  right: max(var(--space-4), var(--safe-right));
+  bottom: calc(var(--space-4) + var(--safe-bottom));
+  z-index: var(--z-fab);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--fab-size);
+  height: var(--fab-size);
+  border-radius: var(--radius-full);
+  background-color: var(--accent);
+  color: var(--accent-text);
+  box-shadow: var(--shadow-fab);
+  transition: background-color var(--transition-fast);
+}
+
+.fab:hover {
+  background-color: var(--accent-hover);
+}
+
+/* ---- Inputs ----------------------------------------------------------- */
+.input {
+  display: block;
+  width: 100%;
+  min-height: var(--tap-target);
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--surface);
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  /* 16px floor. Mobile Safari zooms the viewport on focus below that and will not
+     zoom back out. Do not lower this. */
+  font-size: max(1rem, var(--fs-body));
+  line-height: var(--lh-tight);
+}
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+  outline: none;
+}
+
+.input--textarea {
+  min-height: 5.5rem;
+  padding: var(--space-3);
+  line-height: var(--lh-body);
+  resize: vertical;
+}
+
+.input--invalid {
+  border-color: var(--danger);
+}
+
+.field {
+  margin-bottom: var(--space-4);
+}
+
+.field__error {
+  display: block;
+  margin-top: var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--danger);
+}
+
+.field__row {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.field__row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* ---- Switch ------------------------------------------------------------
+   A checkbox with a label, not a bare toggle: the state is always written out. */
+.switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-target);
+  cursor: pointer;
+}
+
+.switch__input {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.switch__text {
+  font-size: var(--fs-body);
+  color: var(--ink);
+}
+
+/* ---- Chips ------------------------------------------------------------ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--tap-target-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background-color: var(--surface);
+  font-size: var(--fs-caption);
+  color: var(--ink-2);
+  white-space: nowrap;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.chip:hover:not([disabled]) {
+  background-color: var(--sunken);
+}
+
+.chip[aria-pressed="true"],
+.chip--on {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.chip--static {
+  min-height: 0;
+  padding: 0.0625rem var(--space-2);
+  background-color: var(--sunken);
+  border-color: transparent;
+  color: var(--ink-2);
+}
+
+.chip__count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+/* ---- Badge -------------------------------------------------------------
+   A wash plus an INK label, never coloured text. The three state washes sit above
+   4.5:1 against --ink-2, while the state colours themselves are fills only. The
+   text is what carries the meaning; the tint is a second, redundant channel — a
+   viewer who cannot separate the hues loses nothing. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.0625rem var(--space-2);
+  border-radius: var(--radius-xs);
+  background-color: var(--neutral-wash);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.badge--done {
+  background-color: var(--good-wash);
+}
+
+.badge--overdue {
+  background-color: var(--critical-wash);
+}
+
+.badge--active {
+  background-color: var(--accent-wash);
+}
+
+/* The dot is the icon half of the icon+label pairing: it puts the state's colour
+   on screen without ever colouring type. */
+.badge__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: var(--radius-full);
+  background-color: currentColor;
+}
+
+.badge--done .badge__dot {
+  background-color: var(--good);
+}
+
+.badge--overdue .badge__dot {
+  background-color: var(--critical);
+}
+
+.badge--active .badge__dot {
+  background-color: var(--accent);
+}
+
+.badge--upcoming .badge__dot {
+  background-color: var(--ink-4);
+}
+
+/* The same dot, standalone — for the stat tiles, where there is no badge wrapper
+   to scope the colour. Kept as its own modifier rather than reusing
+   `.badge--done .badge__dot`, which needs the ancestor and silently paints grey
+   without it. */
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: var(--radius-full);
+  background-color: var(--ink-4);
+}
+
+.dot--done {
+  background-color: var(--good);
+}
+
+.dot--overdue {
+  background-color: var(--critical);
+}
+
+.dot--active {
+  background-color: var(--accent);
+}
+
+.dot--upcoming {
+  background-color: var(--ink-4);
+}
+
+/* ---- Meter -------------------------------------------------------------
+   The core primitive of this app. A track, a fill, and — on the large variant —
+   one tick marking where the fill would sit if everything were on schedule.
+
+   The hairline is load-bearing, not decoration: --track is 1.34:1 against the card
+   and cannot reach 3:1 while staying a warm neutral, so the BOUNDARY is what
+   identifies the bar. Without it an empty meter is invisible and 0% reads as
+   "there is no meter here".
+
+   The fill is not transitioned. It advances on its own once a minute, and an
+   animation would make it look like a control responding to a tap. */
+.meter {
+  position: relative;
+  height: var(--meter-height);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background-color: var(--track);
+  overflow: hidden;
+}
+
+.meter__fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background-color: var(--accent);
+}
+
+.meter--done .meter__fill {
+  background-color: var(--good);
+}
+
+.meter--overdue .meter__fill {
+  background-color: var(--critical);
+}
+
+.meter--upcoming .meter__fill {
+  background-color: var(--ink-4);
+}
+
+.meter--lg {
+  height: var(--meter-height-lg);
+  /* The tick has to escape the bar to stay legible, so this variant cannot clip. */
+  overflow: visible;
+}
+
+.meter--lg .meter__fill {
+  height: 100%;
+}
+
+/* The on-schedule mark. A dark tick with a 2px ring in the surface colour, which
+   is the dataviz surface-ring rule: that ring is why it stays visible whether it
+   crosses the fill or the bare track, and why it needs no colour of its own.
+   Taller than the bar so its ends sit against the card. */
+.meter__mark {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  background-color: var(--ink);
+  box-shadow: 0 0 0 2px var(--surface);
+  border-radius: var(--radius-full);
+}
+
+/* ---- Segmented control ------------------------------------------------ */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  background-color: var(--sunken);
+  border-radius: var(--radius-md);
+}
+
+.segmented__option {
+  min-height: var(--tap-target-sm);
+  padding: 0 var(--space-4);
+  border-radius: calc(var(--radius-md) - 2px);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  color: var(--ink-2);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.segmented__option[aria-pressed="true"] {
+  background-color: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-raised);
+}
+
+/* ---- Sheet -------------------------------------------------------------
+   A bottom sheet on a phone, a centred dialog from 48rem. One of the four places
+   a shadow appears. */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-sheet);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background-color: var(--scrim);
+}
+
+.sheet__panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--sheet-max);
+  max-height: 92dvh;
+  background-color: var(--surface);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow-overlay);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sheet__panel {
+    animation: sheet-in var(--transition-base);
+  }
+
+  @keyframes sheet-in {
+    from {
+      transform: translateY(1.5rem);
+      opacity: 0;
+    }
+  }
+}
+
+.sheet__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.sheet__title {
+  flex: 1;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.sheet__body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-4);
+}
+
+.sheet__foot {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+  border-top: 1px solid var(--line);
+}
+
+.sheet__foot > .btn {
+  flex: 1;
+}
+
+@media (min-width: 48rem) {
+  .sheet {
+    align-items: center;
+    padding: var(--space-5);
+  }
+
+  .sheet__panel {
+    border-radius: var(--radius-xl);
+    max-height: 86dvh;
+  }
+
+  .sheet__foot {
+    padding-bottom: var(--space-4);
+  }
+}
+
+/* ---- Section, inside a sheet ------------------------------------------ */
+.section {
+  margin-bottom: var(--space-6);
+}
+
+.section__title {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: var(--space-1);
+}
+
+.section__hint {
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+  margin-bottom: var(--space-3);
+}
+
+/* ---- Notice -----------------------------------------------------------
+   An inline, dismissible-by-fixing statement. Never a toast: a problem worth
+   naming is worth leaving on screen until it stops being true. */
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background-color: var(--sunken);
+}
+
+.notice--warn {
+  background-color: var(--critical-wash);
+  border-color: color-mix(in srgb, var(--critical) 25%, transparent);
+}
+
+.notice__title {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.notice__body {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-body);
+  color: var(--ink-2);
+}
+
+.notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* ---- Toasts ----------------------------------------------------------- */
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-5) + var(--safe-bottom));
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(24rem, calc(100vw - 2 * var(--space-4)));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background-color: var(--ink);
+  color: var(--surface);
+  font-size: var(--fs-label);
+  box-shadow: var(--shadow-overlay);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .toast {
+    animation: toast-in var(--transition-base);
+  }
+
+  @keyframes toast-in {
+    from {
+      transform: translateY(0.5rem);
+      opacity: 0;
+    }
+  }
+}
+
+/* ---- Disclosure ------------------------------------------------------- */
+.disclosure__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-target);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.disclosure__summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure__chevron {
+  transition: transform var(--transition-fast);
+}
+
+.disclosure[open] .disclosure__chevron {
+  transform: rotate(90deg);
+}

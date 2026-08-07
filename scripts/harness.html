@@ -1,0 +1,27 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  body{margin:0;background:#333;font:12px system-ui;color:#fff}
+  .row{display:flex;gap:12px;padding:12px;align-items:flex-start}
+  .col{display:flex;flex-direction:column;gap:4px}
+  iframe{border:0;background:#faf7f4}
+</style></head><body>
+<div class="row" id="row"></div>
+<script>
+  const params = new URLSearchParams(location.search)
+  const file = params.get('f') || 'preview-en.html'
+  const widths = (params.get('w') || '390,430,768').split(',').map(Number)
+  const height = Number(params.get('h') || 1400)
+  const row = document.getElementById('row')
+  for (const w of widths) {
+    const col = document.createElement('div')
+    col.className = 'col'
+    col.innerHTML = '<span>' + w + 'px</span>'
+    const frame = document.createElement('iframe')
+    frame.src = file
+    frame.width = w
+    frame.height = height
+    col.appendChild(frame)
+    row.appendChild(col)
+  }
+</script>
+</body></html>

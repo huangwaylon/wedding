@@ -1,0 +1,637 @@
+/* app.css — app-specific layout and components. Generic pieces are in
+   primitives.css; every value comes from tokens.css.
+
+   Mobile-first. One column, capped at --column-max from 48rem, two columns at
+   62rem. There is no third breakpoint. */
+
+/* ---- Shell ------------------------------------------------------------- */
+.app {
+  min-height: 100dvh;
+}
+
+.shell {
+  width: 100%;
+  max-width: var(--column-max);
+  margin: 0 auto;
+  padding: var(--space-4);
+  /* Clearance for the FAB, so it never covers the last task in the list. Every
+     layout below keeps this reservation; dropping it in the two-column block is
+     exactly how the button once landed on a row's delete control. */
+  padding-bottom: calc(var(--fab-size) + var(--space-7) + var(--safe-bottom));
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---- Header ------------------------------------------------------------
+   Sticky, and it paints into the top safe area rather than sitting below it. */
+.app__header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  padding-top: var(--safe-top);
+  background-color: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+
+.header__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: var(--shell-max);
+  min-height: var(--header-height);
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-4);
+}
+
+.header__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.header__title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  /* One line, ellipsised: two names and a venue can be long, and a header that
+     reflows to three lines on a 320px phone pushes the board off screen. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header__sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+}
+
+.header__sub-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
+/* ---- Overall progress --------------------------------------------------
+   The one hero figure in the app. `container-type: inline-size` is what lets
+   --fs-display be container-relative, so the same card reads correctly in a
+   320px phone column and in a 23rem desktop aside. */
+.overall {
+  container-type: inline-size;
+}
+
+.overall__figure {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.overall__percent {
+  font-size: var(--fs-display);
+  font-weight: 600;
+  /* The single carve-out from the 1.5 line-height floor: this element renders
+     digits and a percent sign, never Japanese. */
+  line-height: var(--lh-flat);
+  /* Proportional figures deliberately, not tabular — see base.css. */
+  letter-spacing: -0.02em;
+}
+
+.overall__unit {
+  font-size: var(--fs-xl);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.overall__pace {
+  font-size: var(--fs-label);
+  color: var(--ink-2);
+  margin-bottom: var(--space-4);
+}
+
+.overall__meter {
+  margin-bottom: var(--space-2);
+}
+
+.overall__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+  margin-bottom: var(--space-4);
+}
+
+/* A miniature of the meter's tick, so the legend explains the mark by showing it
+   rather than by describing its position. */
+.overall__legend-mark {
+  width: 2px;
+  height: 0.75rem;
+  flex: none;
+  border-radius: var(--radius-full);
+  background-color: var(--ink);
+  box-shadow: 0 0 0 2px var(--surface);
+  margin-left: 2px;
+  margin-right: 2px;
+}
+
+/* Four counts. Two columns on a narrow phone, four once there is room — never a
+   single row of four on 320px, where the numbers and their labels collide. */
+.overall__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+@container (min-width: 22rem) {
+  .overall__stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.stat__value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: var(--lh-tight);
+}
+
+.stat__label {
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+}
+
+.stat--zero .stat__value {
+  color: var(--ink-4);
+}
+
+.overall__method {
+  margin-top: var(--space-4);
+}
+
+/* ---- Controls row ----------------------------------------------------- */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.controls__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ---- Task list -------------------------------------------------------- */
+.group + .group {
+  margin-top: var(--space-5);
+}
+
+.group__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  padding: 0 var(--space-1);
+}
+
+.group__title {
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.group__rule {
+  flex: 1;
+  height: 1px;
+  background-color: var(--line);
+}
+
+.tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* A row is a card. Grid rather than flex so the meter can span the full width
+   underneath the title and controls without a wrapper element. */
+.task {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+/* An unsaved row. Opacity only — no spinner and no skeleton: the row is real and
+   readable, it just has not landed yet. */
+.task--pending {
+  opacity: 0.55;
+}
+
+.task__check {
+  grid-row: 1 / 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-target-sm);
+  height: var(--tap-target-sm);
+  margin-left: calc(var(--space-2) * -1);
+  border-radius: var(--radius-sm);
+  color: var(--ink-3);
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.task__check:hover {
+  background-color: var(--sunken);
+  color: var(--ink);
+}
+
+.task__check--on {
+  color: var(--good);
+}
+
+/* Read-only: the same slot, so a viewer's rows line up with an editor's rather
+   than shifting 36px left. */
+.task__check--static {
+  cursor: default;
+}
+
+.task__main {
+  grid-column: 2 / 3;
+  min-width: 0;
+  padding-top: 0.375rem;
+}
+
+.task__title {
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-tight);
+}
+
+.task--done .task__title {
+  color: var(--ink-2);
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-4);
+  text-decoration-thickness: 1px;
+}
+
+.task__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin-top: var(--space-1);
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+}
+
+.task__notes {
+  margin-top: var(--space-1);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-body);
+  color: var(--ink-2);
+}
+
+.task__actions {
+  grid-column: 3 / 4;
+  grid-row: 1 / 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-right: calc(var(--space-2) * -1);
+}
+
+/* The percentage sits beside the bar rather than on it. A number inside an 8px
+   fill cannot fit at 13px, and the dataviz rule is explicit: a label that will not
+   fit moves outside the mark rather than being clipped. */
+.task__progress {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.task__meter {
+  flex: 1;
+  min-width: 0;
+}
+
+.task__percent {
+  flex: none;
+  width: 2.75rem;
+  text-align: right;
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+/* ---- Empty and seeding ------------------------------------------------- */
+.empty {
+  text-align: center;
+  padding: var(--space-6) var(--space-4);
+}
+
+.empty__title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}
+
+.empty__body {
+  font-size: var(--fs-label);
+  line-height: var(--lh-body);
+  color: var(--ink-2);
+  max-width: 32rem;
+  margin: 0 auto var(--space-5);
+}
+
+.templates {
+  display: grid;
+  gap: var(--space-3);
+  text-align: start;
+}
+
+@media (min-width: 48rem) {
+  .templates {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.template {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.template__title {
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.template__about {
+  flex: 1;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-body);
+  color: var(--ink-2);
+}
+
+.template__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+/* ---- Timeline ---------------------------------------------------------
+   A Gantt, in CSS grid. Every row shares --timeline-gutter so the bars line up
+   with the axis ticks above them, and the whole thing scrolls horizontally on a
+   phone rather than compressing twelve months into 280px.
+
+   The gutter is narrower below 48rem: a phone has no room for a 15rem label
+   column, and truncating the titles is better than losing the bars. */
+.timeline {
+  --timeline-gutter: 7.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (min-width: 48rem) {
+  .timeline {
+    --timeline-gutter: 15rem;
+  }
+}
+
+.timeline__inner {
+  /* Wide enough that months stay legible; the container scrolls past that. */
+  min-width: 34rem;
+}
+
+.timeline__axis {
+  display: grid;
+  grid-template-columns: var(--timeline-gutter) minmax(0, 1fr);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.timeline__ticks {
+  position: relative;
+  height: 1.25rem;
+}
+
+.timeline__tick {
+  position: absolute;
+  top: 0;
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+/* Gridlines and the today line share one mechanism: a 1px solid rule, never
+   dashed, one step off the surface. The today line is the exception that gets
+   --ink-3, because it is the reader's own position rather than chrome. */
+.timeline__plot {
+  position: relative;
+}
+
+.timeline__now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  /* The plot area starts after the gutter, so the fraction applies to what is
+     left. A unitless custom property multiplied by a length is valid calc. */
+  left: calc(var(--timeline-gutter) + var(--now) * (100% - var(--timeline-gutter)));
+  background-color: var(--ink-3);
+  pointer-events: none;
+}
+
+.timeline__now-label {
+  position: absolute;
+  top: 0;
+  left: var(--space-1);
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.timeline__row {
+  display: grid;
+  grid-template-columns: var(--timeline-gutter) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-target-sm);
+  padding: var(--space-1) 0;
+}
+
+.timeline__row + .timeline__row {
+  border-top: 1px solid var(--line);
+}
+
+.timeline__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  color: var(--ink-2);
+}
+
+.timeline__row--done .timeline__label {
+  color: var(--ink-3);
+}
+
+.timeline__track {
+  position: relative;
+  height: 1.25rem;
+}
+
+/* Capped well under the 24px mark spec, and the band's leftover is air. */
+.timeline__bar {
+  position: absolute;
+  top: 0.3125rem;
+  height: 0.625rem;
+  min-width: 3px;
+  border-radius: var(--radius-full);
+  background-color: var(--track);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.timeline__bar-fill {
+  height: 100%;
+  background-color: var(--accent);
+}
+
+.timeline__row--done .timeline__bar-fill {
+  background-color: var(--good);
+}
+
+.timeline__row--overdue .timeline__bar-fill {
+  background-color: var(--critical);
+}
+
+.timeline__row--upcoming .timeline__bar-fill {
+  background-color: var(--ink-4);
+}
+
+/* ---- Deleted ---------------------------------------------------------- */
+.deleted__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-target);
+  padding: var(--space-2) 0;
+}
+
+.deleted__row + .deleted__row {
+  border-top: 1px solid var(--line);
+}
+
+.deleted__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-label);
+  color: var(--ink-2);
+}
+
+/* ---- Swatches --------------------------------------------------------- */
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.swatch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-target-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-caption);
+  color: var(--ink-2);
+}
+
+.swatch[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+  color: var(--ink);
+}
+
+.swatch__dot {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+  border-radius: var(--radius-full);
+  /* Painted by the preset the swatch scopes locally — the reason the accent rules
+     are attribute-scoped rather than :root-scoped. */
+  background-color: var(--accent);
+}
+
+/* ---- Two columns ------------------------------------------------------
+   From 62rem the summary moves into an aside and stays put while the list
+   scrolls, which is the layout a planner on a large monitor is actually using.
+   Timeline view opts out: a Gantt wants the full width. */
+@media (min-width: 62rem) {
+  .shell {
+    max-width: var(--shell-max);
+    display: grid;
+    grid-template-columns: var(--aside-w) minmax(0, 1fr);
+    gap: var(--space-6);
+    align-items: start;
+  }
+
+  .shell--wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shell__aside {
+    position: sticky;
+    top: calc(var(--header-height) + var(--safe-top) + var(--space-4));
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .shell__main {
+    min-width: 0;
+    max-width: var(--main-max);
+  }
+
+  .shell--wide .shell__main {
+    max-width: none;
+  }
+}

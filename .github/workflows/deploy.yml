@@ -1,0 +1,86 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One Pages deployment at a time. Queued runs are not cancelled, so a push that
+# lands mid-deploy still ships instead of being silently dropped.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Without a cap a wedged install can hold a runner for hours.
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # An npm-internal crash prints no stack trace to the step log — it only writes
+      # one to ~/.npm/_logs. Uploading it is what identifies a private-registry URL
+      # baked into package-lock.json, which is otherwise reported only as the useless
+      # "Exit handler never called!". test/lockfile.test.js catches that case first.
+      - name: Collect npm logs
+        if: failure()
+        run: |
+          mkdir -p /tmp/npm-logs
+          cp -r "$HOME/.npm/_logs/." /tmp/npm-logs/ 2>/dev/null || true
+
+      - name: Upload npm logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-debug-log
+          path: /tmp/npm-logs
+          if-no-files-found: ignore
+
+      - name: Run tests
+        run: npm test
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build
+        # An Actions *variable*, not a secret, deliberately. Vite inlines it into the
+        # bundle, so it is public either way; marking it secret would imply a
+        # confidentiality the deployed site cannot provide. It is only the endpoint's
+        # address — and a view-only visitor reads the board through it with no
+        # credential at all, which is the whole point. The edit key never appears in a
+        # build. Full reasoning in the Security model section of README.md.
+        env:
+          VITE_SCRIPT_URL: ${{ vars.VITE_SCRIPT_URL }}
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

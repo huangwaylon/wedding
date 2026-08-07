@@ -1,0 +1,257 @@
+/* base.css — minimal reset plus global element defaults, focus rings, and a11y/motion baselines. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  /* Stop iOS/iPadOS from inflating text after an orientation change. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  /* Kinsoku shori: keeps 、。」 from being orphaned at the start of a line.
+     Harmless for Latin, load-bearing for Japanese. */
+  line-break: strict;
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* break-word, never break-all: break-all splits Latin words mid-glyph. */
+  overflow-wrap: break-word;
+  word-break: normal;
+  /* Horizontal safe area lives here so nothing hides under a landscape notch.
+     Top/bottom insets are intentionally NOT applied globally: the sticky
+     header and the bottom sheet each need to paint *into* their inset and
+     pad their own content. Use var(--safe-top) / var(--safe-bottom) there. */
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+figure,
+blockquote,
+dl,
+dd {
+  margin: 0;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: inherit;
+  font-weight: 600;
+  line-height: var(--lh-tight);
+  text-wrap: balance;
+}
+
+p,
+li,
+dd,
+blockquote,
+figcaption {
+  text-wrap: pretty;
+}
+
+/* This is an app, not a document: lists are structure, not bullets. */
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+img,
+picture,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+svg {
+  flex-shrink: 0;
+}
+
+button,
+input,
+select,
+optgroup {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  /* letter-spacing is deliberately NOT inherited here. Any non-zero tracking
+     inserts a gap between every kana — 「このつき」 becomes 「こ の つ き」. */
+}
+
+/* 16px MINIMUM on form controls. Mobile Safari auto-zooms the viewport when a
+   focused input's font-size is under 16px, and there is no way to zoom back
+   out — a very common and very annoying bug. Do not lower this. */
+input,
+select {
+  font-size: max(1rem, var(--fs-body));
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  /* Removes the ~300ms tap delay on touch without disabling scroll. */
+  touch-action: manipulation;
+}
+
+button[disabled] {
+  cursor: default;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+hr {
+  height: 1px;
+  border: 0;
+  margin: var(--space-4) 0;
+  background-color: var(--line);
+}
+
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+  /* Relative, but floored: 0.9375em inside a 13px hint is 12.19px, and 12px
+     kanji is mush. Every <code> in this app sits inside caption-sized text. */
+  font-size: max(var(--fs-caption), 0.9375em);
+}
+
+[hidden] {
+  display: none;
+}
+
+/* ---- Numerals ----------------------------------------------------------
+   Carried by every figure that sits in a column and must not jitter: the per-task
+   percentages down the list, the timeline's axis ticks, the countdown. Tabular
+   figures line up while keeping the proportional letterforms of the UI sans.
+
+   Deliberately NOT on the hero percentage. `tabular-nums` gives every digit the
+   width of a `0`, and at display size a number like 11% then looks loose — the
+   dataviz rule is proportional figures for a standalone value, tabular only in
+   columns. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ---- Focus -------------------------------------------------------------
+   One visible ring for everything. The default outline is only removed for
+   mouse/touch focus (:focus without :focus-visible), never for keyboard. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+::selection {
+  background-color: var(--accent);
+  color: var(--accent-text);
+}
+
+::placeholder {
+  color: var(--ink-4);
+  opacity: 1;
+}
+
+/* Standard screen-reader-only pattern: stays in the a11y tree, unlike
+   display:none or visibility:hidden. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Scrollbars -------------------------------------------------------
+   Desktop pointers only. Touch platforms keep their native overlay
+   scrollbars, which must not be restyled or they stop auto-hiding. */
+@media (pointer: fine) {
+  html {
+    scrollbar-color: var(--line-input) transparent;
+    scrollbar-width: thin;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--line-input);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: var(--radius-full);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ink-3);
+  }
+}
+
+/* ---- Reduced motion ---------------------------------------------------
+   Safety net for any rule that hardcodes a duration. The authoritative
+   mechanism is the zeroed --transition-* tokens in tokens.css plus the
+   `(prefers-reduced-motion: no-preference)` guards around every @keyframes
+   animation in primitives.css — that combination avoids !important, which
+   a universal-selector override would otherwise need to win the cascade. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-delay: 0s;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+    transition-delay: 0s;
+    scroll-behavior: auto;
+  }
+}

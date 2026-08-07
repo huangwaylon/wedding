@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#faf7f4" />
+    <meta name="color-scheme" content="light" />
+    <!--
+      An inline data-URI favicon rather than a file: it costs no request at all, and
+      without one every page load logs a 404 for /favicon.ico. Two interlocking
+      rings, the same mark as the app icon. Covered by `img-src 'self' data:` below.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%238f2f50'/%3E%3Cg fill='none' stroke='white' stroke-width='2.2'%3E%3Ccircle cx='13' cy='19' r='7'/%3E%3Ccircle cx='21' cy='19' r='7'/%3E%3C/g%3E%3C/svg%3E"
+    />
+    <!--
+      Home Screen install (iOS Safari 26+): Share -> Add to Home Screen. The service
+      worker is generated into dist/ by scripts/build-sw.js and registered from
+      main.jsx in production only — it is what makes a cold launch do no network work,
+      since Pages serves even content-hashed assets with max-age=600.
+      `apple-touch-icon` (not the SVG favicon) is what iOS actually uses for the tile
+      and the splash flash; the PNGs live in `public/`.
+
+      NOTE: `public/manifest.webmanifest` deliberately has NO `start_url`, so it
+      defaults to the document URL. That is what lets an editor install from a URL
+      still carrying `#k=…` and have the installed app — which gets its own storage
+      bucket, separate from Safari's — capture the key on its first launch. See
+      `src/lib/access.js`.
+    -->
+    <!-- Plain absolute paths, like the script tag below: Vite's dev server prepends
+         `base` to a leading-slash href exactly once. %BASE_URL% already resolves to
+         the base itself, so using it here would double it in dev. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+    <!-- Safari still only recognizes the apple- prefixed tag; the unprefixed one is
+         the standards-track name Chromium now asks for instead. Harmless to ship both. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Wedding" />
+    <!--
+      An allowlist, not boilerplate. No third-party JavaScript executes in this app at
+      all: `script-src 'self'` is possible because there is no Google Identity
+      Services script, no Picker iframe and no Sheets API client — the board is read
+      and written entirely through our own Apps Script endpoint over `fetch`.
+
+      `sheets.googleapis.com` is deliberately ABSENT. The browser never talks to the
+      Sheets API, because it never holds a Google token: that is the whole reason a
+      view-only visitor needs no credential. If you find yourself adding that host
+      back, the architecture has changed and README's security model is now wrong.
+
+      `script.googleusercontent.com` looks redundant next to `script.google.com` and
+      is not: `/exec` answers with a 302 to it. Current Chrome does not re-check
+      `connect-src` against a redirect target, but browsers have differed and Safari
+      is the primary target here, so it stays.
+
+      Note this tag does NOT cover the service worker's own execution context — a
+      worker's CSP comes from the headers served with its script, and GitHub Pages
+      sends none. That is why the service worker never intercepts a cross-origin
+      request: it must not end up an uncovered proxy in front of the hosts below.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        script-src 'self';
+        frame-src 'none';
+        connect-src 'self' https://script.google.com https://script.googleusercontent.com;
+        img-src 'self' data:;
+        style-src 'self' 'unsafe-inline';
+        font-src 'self';
+        base-uri 'none';
+        form-action 'none';
+        object-src 'none';
+      "
+    />
+    <title>Wedding</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
