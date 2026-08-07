@@ -166,6 +166,23 @@ Open the app as an editor and set, in **Settings**:
 Then pick a starter checklist, or start adding tasks. Both checklists are ordinary tasks
 once seeded — rename, re-date and delete them freely.
 
+## Updating the script after a code change
+
+A deployment is pinned to a version, so pasting a new `Code.gs` into the editor and saving
+changes **nothing** on the live board. Every time `apps-script/Code.gs` changes in this repo:
+
+1. Sheet → **Extensions** → **Apps Script**, replace `Code.gs` with the current file, save.
+2. **Deploy** → **Manage deployments** → pencil → **Version: New version** → **Deploy**.
+
+The URL does not change, so nobody's link breaks.
+
+The app notices when you have not done this and refuses the writes that would be silently
+mangled: every read carries the deployed script's column list, and a script older than the
+bundle sends none. That absence is the signal, so a board on the older script shows *"The
+spreadsheet's script is out of date"* and the add-subtask field is disabled — the old script
+rewrites a row from the columns it knows, so it would answer `ok: true`, create the row, and
+drop the `parent_id` that makes it a subtask.
+
 ## Rotating the edit key
 
 The only incident response this design has, and it takes about a minute. Do it if a phone is
@@ -177,9 +194,7 @@ lost, if the link gets forwarded by accident, or on any suspicion at all.
    which is how a rotation reaches a device still holding the dead key.
 
 No redeployment: `APP_KEY` is read inside `doPost`, so a property change takes effect on the
-next request. Editing `Code.gs` is the opposite — a deployment is pinned to a version, so
-saving the editor changes nothing until **Deploy → Manage deployments →** pencil → **New
-version**.
+next request. Editing `Code.gs` is the opposite — see the section above.
 
 Rotation is immediate and total; there is no per-device revocation. A device still holding
 the old key drops to view-only and says so — it flags the rejected key rather than silently

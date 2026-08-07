@@ -359,6 +359,16 @@ function board(book) {
     tasks: readTasks(book, timeZone),
     config: readConfig(book),
     /**
+     * The columns THIS deployment understands.
+     *
+     * A deployment is pinned to a version, so the browser can be running a bundle newer than
+     * the script — and the script writes rows by looping its own column list, which means an
+     * older one silently DROPS a field it has never heard of. That is how a subtask arrived as
+     * a stray top-level task with no error anywhere. Reporting the list lets the client refuse
+     * the write and say why instead of quietly making a mess.
+     */
+    schema: TASK_COLUMNS,
+    /**
      * The spreadsheet's own zone, reported so the client can warn when it
      * disagrees with the `timezone` config value. Wall-clock times in the sheet
      * are interpreted in the CONFIG zone, never this one — but a mismatch is

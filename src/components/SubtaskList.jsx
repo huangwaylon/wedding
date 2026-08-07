@@ -20,7 +20,7 @@ import { useRef, useState } from 'react'
 import { isDone } from '../schema.js'
 import { useT } from '../i18n/index.js'
 import DoneToggle from './DoneToggle.jsx'
-import { TrashIcon } from './icons.jsx'
+import { PlusIcon, TrashIcon } from './icons.jsx'
 
 function SubtaskRow({ subtask, canEdit, onToggle, onDelete }) {
   const { t } = useT()
@@ -96,6 +96,23 @@ function AddSubtask({ onAdd, onFocusChange }) {
         autoComplete="off"
         enterKeyHint="done"
       />
+      {/* A VISIBLE way to commit. Enter alone was the only route, with no button and no hint, so
+          typing a subtask and then clicking away discarded it with no sign anything had happened
+          — which is exactly how this read as "adding subtasks does not work". Disabled while the
+          field is empty so it never looks like the thing to press first.
+
+          `onMouseDown` with preventDefault, not `onClick`: the button would otherwise blur the
+          field first, and blur is what closes the keyboard and hides this row on a phone. */}
+      <button
+        type="button"
+        className="btn btn--icon btn--icon-sm subtask-add__submit"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={submit}
+        disabled={!draft.trim()}
+        aria-label={t('list.subtaskAdd')}
+      >
+        <PlusIcon />
+      </button>
     </li>
   )
 }

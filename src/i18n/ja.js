@@ -195,6 +195,9 @@ export default {
 
   'api.unconfigured': 'このビルドにはエンドポイントが設定されていません',
   'api.unconfiguredHint': 'ビルド時に VITE_SCRIPT_URL が空でした。SETUP.md を参照してください。',
+  'api.outdated': 'スプレッドシートのスクリプトが古いままです',
+  'api.outdatedHint':
+    '更新するまでサブタスクは保存できないため、追加を無効にしています。シートの「拡張機能 › Apps Script」で最新の Code.gs を貼り付け、「デプロイ › デプロイを管理 › 新バージョン」を実行してください。',
   'api.unauthorized': '編集リンクが拒否されました',
   'api.not_empty': 'そのスプレッドシートには既に他のシートがあります',
   'api.not_emptyHint':

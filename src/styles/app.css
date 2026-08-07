@@ -684,8 +684,10 @@
    393px viewport — the exact trap it was written to avoid. */
 .timeline {
   /* Fluid rather than stepped: a stepped gutter would need a third breakpoint, and there are
-     two. 26vw lands on ~7.5rem at 393px and ~20rem at 1440px. */
-  --timeline-gutter: clamp(7.5rem, 26vw, 20rem);
+     two. 26vw lands on the 7.5rem floor at 393px and on the ceiling by ~1000px.
+     The ceiling is 16rem, not 20: 20rem spent 320px on labels that measure ~230, and every pixel
+     the gutter takes is a pixel the chart does not have. */
+  --timeline-gutter: clamp(7.5rem, 26vw, 16rem);
   /* Zoom multiplies the plot's width and nothing else — see Timeline.jsx. */
   --timeline-zoom: 1;
   overflow: auto;
@@ -697,13 +699,26 @@
      stacking context and broke `position: sticky` inside the same scroller — which is now
      load-bearing twice over, for the axis and for the label gutter. */
   max-height: max(20rem, 70dvh);
-  /* The chart always continues past the right edge, and iOS paints no scrollbar until you
-     pan. This is the affordance; it is not a shadow and not a new token. */
-  mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
+  /* There is deliberately NO edge fade. It was added as a "there is more to the right"
+     affordance and it was misrepresenting the data: a bar ending near the right edge faded out,
+     so its end read as further right than it is. And now that 1x fits the container exactly on a
+     desktop, a fade there would promise content that does not exist. The zoom control and the
+     cut-off content are the affordance. */
 }
 
 .timeline__inner {
-  /* Wide enough that months stay legible at 1x; zoom scales from here. */
+  /*
+   * WIDTH is what zoom scales; min-width is only the narrow-screen floor.
+   *
+   * min-width alone did not work, and the failure was invisible on a phone and obvious on a
+   * desktop: a floor below the container's own width does nothing, so on a ~1200px window 1x,
+   * 1.5x and 2x all rendered identically at 1200 and 3x was the first step that bound. Zoom now
+   * means multiples of the VISIBLE width, so every step changes by construction.
+   *
+   * The floor still matters: at 393px the container is ~359px, and 34rem keeps a year of months
+   * legible rather than compressing them into the screen.
+   */
+  width: calc(100% * var(--timeline-zoom));
   min-width: calc(34rem * var(--timeline-zoom));
 }
 
@@ -729,6 +744,8 @@
   z-index: 1;
   padding-left: var(--space-4);
   background-color: var(--surface);
+  /* Same seam as the rows below, so the line runs the full height of the chart. */
+  box-shadow: 1px 0 0 var(--line);
 }
 
 .timeline__ticks {
@@ -812,11 +829,15 @@
 .timeline__row {
   position: relative;
   display: flex;
-  align-items: center;
+  /* STRETCH, not center. The label and the track are the two things that paint a row, and while
+     they sized to their own content the row held a 29px label and a 24px track inside 36px — so
+     the sticky label's opaque background did not cover the full row, and anything scrolling
+     behind it (the today rule) showed through the 7px bands above and below as a broken column
+     of dashes. It also made hover a stepped, ragged highlight instead of one band. */
+  align-items: stretch;
   width: 100%;
   min-height: var(--tap-target-sm);
   text-align: start;
-  transition: background-color var(--transition-fast);
 }
 
 /* A phone has no hover to fall back on, so the row is the target and it gets the full 44px. */
@@ -829,11 +850,11 @@
 /* Rows carry no rules between them — fifty hairlines is a grid, not a chart. The hover band is
    what lets a pointer track a label across seven hundred pixels to its bar instead. The band
    goes on the label rather than the row because the label is opaque and painted over it. */
+/* One uniform band across the whole row, which is the only way to track a label to its bar over
+   a thousand-plus pixels of plot. Both halves take it: the sticky label paints over the track, so
+   hovering one alone reads as a misaligned step. */
 @media (hover: hover) and (pointer: fine) {
-  .timeline__row:hover .timeline__label {
-    background-color: var(--sunken);
-  }
-
+  .timeline__row:hover .timeline__label,
   .timeline__row:hover .timeline__track {
     background-color: var(--sunken);
   }
@@ -849,11 +870,18 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-4);
+  /* Inline padding only: the row's `align-items: stretch` supplies the height, and any block
+     padding here would reintroduce the band the plot shows through. */
+  padding-inline: var(--space-4) var(--space-3);
   background-color: var(--surface);
+  /* The seam between the frozen column and the plot, drawn as a shadow rather than a border so
+     it costs no layout width and cannot shift the gutter out of step with the axis. One
+     continuous line makes the two halves read as one table instead of two lists. */
+  box-shadow: 1px 0 0 var(--line);
   font-size: var(--fs-label);
   line-height: var(--lh-tight);
   color: var(--ink);
+  transition: background-color var(--transition-fast);
 }
 
 .timeline__label-text {
@@ -878,7 +906,6 @@
   position: relative;
   flex: 1;
   min-width: 0;
-  height: 1.5rem;
   transition: background-color var(--transition-fast);
 }
 
@@ -891,7 +918,10 @@
      inline fill does nothing, which silently painted every bar as unstarted. */
   display: block;
   position: absolute;
-  top: 0.4375rem;
+  /* Centred in whatever height the row turns out to be, rather than offset by a magic number
+     from a track that was pinned at 1.5rem. The row is 36px on a pointer, 44px on touch. */
+  top: 50%;
+  transform: translateY(-50%);
   height: var(--meter-height);
   min-width: 4px;
   border-radius: var(--radius-full);

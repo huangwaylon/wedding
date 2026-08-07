@@ -406,9 +406,16 @@ describe('layout', () => {
     // A stepped gutter wanted a third breakpoint; clamp() gets the same result — narrow on
     // a phone where the bars matter more than the labels, wide on a monitor where the
     // labels are read — without one.
-    const timeline = /\n\.timeline \{([^}]*)\}/.exec(app)[1]
+    const timeline = ruleFor(app, '.timeline')
     expect(timeline).toMatch(/--timeline-gutter: clamp\(/)
     expect(timeline).toMatch(/overflow: auto/)
+  })
+
+  it('never fades the chart edge', () => {
+    // A mask was added as a "more to the right" hint and it misrepresented the data: a bar
+    // ending near the edge faded out, so its end read as further right than it is. And at 1x the
+    // plot now fits the container exactly, so a fade would promise content that is not there.
+    expect(all).not.toMatch(/mask-image/)
   })
 
   it('caps the timeline height at every width, so its axis always sticks', () => {
@@ -484,10 +491,19 @@ describe('layout', () => {
     // Zoom must change the plot's WIDTH, never the plan window: narrowing the window would
     // clamp out-of-range bars to the edges, so a task running past the edge would look like it
     // ends there, and `min-width: 4px` would render every out-of-window task as a phantom stub.
-    expect(/\.timeline__inner \{([^}]*)\}/.exec(app)[1]).toMatch(
-      /min-width: calc\(34rem \* var\(--timeline-zoom\)\)/,
+    expect(ruleFor(app, '.timeline__inner')).toMatch(
+      /width: calc\(100% \* var\(--timeline-zoom\)\)/,
     )
-    expect(/\n\.timeline \{([^}]*)\}/.exec(app)[1]).toMatch(/--timeline-zoom: 1/)
+    expect(ruleFor(app, '.timeline')).toMatch(/--timeline-zoom: 1/)
+  })
+
+  it('scales WIDTH, not just min-width, or the low zoom steps do nothing', () => {
+    // A `min-width` floor below the container's own width has no effect, so on a ~1200px window
+    // 1x, 1.5x and 2x all rendered identically and 3x was the first step that bound. The floor
+    // stays for the narrow case, but the width is what makes each step change.
+    const inner = ruleFor(app, '.timeline__inner')
+    expect(inner).toMatch(/^\s*width: calc\(100% \* var\(--timeline-zoom\)\);$/m)
+    expect(inner).toMatch(/min-width: calc\(34rem \* var\(--timeline-zoom\)\)/)
   })
 
   it('keeps the zoom toolbar outside the scroller', () => {

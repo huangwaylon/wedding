@@ -137,6 +137,11 @@ function decodeBoard(body) {
     config: parseConfig(body.config),
     needsSetup: Boolean(body.needsSetup),
     sheetTimeZone: typeof body.sheetTimeZone === 'string' ? body.sheetTimeZone : '',
+    /**
+     * The columns the deployed script understands. A deployment older than this bundle sends no
+     * `schema` at all, which is itself the signal — see `SCRIPT_COLUMNS` in `useBoard`.
+     */
+    schema: Array.isArray(body.schema) ? body.schema.map(String) : [],
   }
 }
 

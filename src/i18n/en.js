@@ -208,6 +208,9 @@ export default {
   'api.unconfigured': 'This build has no endpoint address',
   'api.unconfiguredHint':
     'VITE_SCRIPT_URL was empty when the site was built. See SETUP.md.',
+  'api.outdated': 'The spreadsheet’s script is out of date',
+  'api.outdatedHint':
+    'Subtasks cannot be saved until it is updated, so adding one is disabled. In the sheet: Extensions › Apps Script, paste the current Code.gs, then Deploy › Manage deployments › New version.',
   'api.unauthorized': 'The edit link was refused',
   'api.not_empty': 'That spreadsheet already has other tabs',
   'api.not_emptyHint':

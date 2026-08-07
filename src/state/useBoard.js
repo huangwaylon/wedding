@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { mergeConfig, serializeConfig } from '../config.js'
-import { isLive } from '../schema.js'
+import { TASK_COLUMNS, isLive } from '../schema.js'
 import * as api from '../lib/api.js'
 import { API_ERROR } from '../lib/api.js'
 import { readSnapshot, writeSnapshot } from '../lib/snapshot.js'
@@ -29,6 +29,12 @@ import { findTemplate, materialize } from '../lib/templates.js'
 
 /** Focus fires constantly; a read on every one would be wasteful. */
 const REFRESH_FLOOR_MS = 30_000
+
+/**
+ * The column this bundle needs the script to know about. Named from `TASK_COLUMNS` rather than
+ * written as a literal, so it cannot drift from the schema it is checking.
+ */
+const REQUIRED_COLUMN = TASK_COLUMNS[TASK_COLUMNS.length - 1]
 
 export const STATUS = { LOADING: 'loading', READY: 'ready', ERROR: 'error' }
 
@@ -55,6 +61,13 @@ export function useBoard({ editKey, onUnauthorized }) {
   /** True while the only data on screen came from the device, not the sheet. */
   const [stale, setStale] = useState(() => Boolean(seeded.current))
   const [sheetTimeZone, setSheetTimeZone] = useState('')
+  /**
+   * The columns the DEPLOYED script understands. `null` means no read has landed yet, which is
+   * NOT the same as an empty list — an older script sends no `schema` field at all, so `[]` is
+   * the positive signal that the deployment is out of date. Conflating the two is what let the
+   * guard below miss the only case it exists for.
+   */
+  const [schema, setSchema] = useState(null)
   const [saving, setSaving] = useState(0)
 
   const lastRead = useRef(0)
@@ -71,6 +84,7 @@ export function useBoard({ editKey, onUnauthorized }) {
     setTasks(board.tasks)
     setSheetConfig(board.config)
     setSheetTimeZone(board.sheetTimeZone)
+    setSchema(board.schema)
     setStatus(STATUS.READY)
     setError(null)
     setStale(false)
@@ -185,8 +199,29 @@ export function useBoard({ editKey, onUnauthorized }) {
    * A subtask is a task with a parent and no window. It goes through the same `run` as
    * everything else — a second write path would be the fifth try/catch `run` exists to prevent.
    */
+  /**
+   * True when the deployed Apps Script predates a column this bundle relies on.
+   *
+   * A deployment is pinned to a version, so the browser can be running newer code than the
+   * script — and the script writes rows by looping its OWN column list, so an older one silently
+   * DROPS a field it has never heard of. That is what happened with subtasks: the write returned
+   * `{ok: true}`, the row was created, and `parent_id` was thrown away, so the subtask arrived as
+   * a stray top-level task with no error anywhere. Refusing the write is the only honest answer;
+   * a warning alone would still let somebody make the mess.
+   *
+   * An older script sends no `schema` at all, so an EMPTY list is the signal. `null` — nothing
+   * read yet — is deliberately not outdated, or every cold start would flag itself.
+   */
+  const outdatedScript = schema !== null && !schema.includes(REQUIRED_COLUMN)
+
   const addSubtask = useCallback(
     (parent, title) => {
+      // Refused rather than silently reshaped. `not_found` is the closest existing code for
+      // "the endpoint cannot do this"; the UI names the real problem from `outdatedScript`.
+      if (outdatedScript) {
+        setError(API_ERROR.NOT_FOUND)
+        return Promise.resolve(false)
+      }
       const subtask = {
         id: newId(),
         title,
@@ -206,7 +241,7 @@ export function useBoard({ editKey, onUnauthorized }) {
         (previous) => [...previous, subtask],
       )
     },
-    [run],
+    [run, outdatedScript],
   )
 
   /**
@@ -281,6 +316,8 @@ export function useBoard({ editKey, onUnauthorized }) {
     config,
     /** The spreadsheet's OWN zone, only used to warn when it disagrees with config. */
     sheetTimeZone,
+    /** The deployed script is missing a column this bundle writes. See above. */
+    outdatedScript,
     status,
     error,
     stale,

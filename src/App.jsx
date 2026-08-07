@@ -220,6 +220,12 @@ export default function App() {
             <Notice tone="warn" title={t('access.rejected')} body={t('access.rejectedHint')} />
           ) : null}
 
+          {/* A deployment is pinned to a version, so the script can be older than this bundle —
+              and an older one drops a column it has never heard of without erroring. */}
+          {board.outdatedScript ? (
+            <Notice tone="warn" title={t('api.outdated')} body={t('api.outdatedHint')} />
+          ) : null}
+
           {/* A failed read never blanks a board that is already on screen: the cached
               copy is stale, not wrong, and saying so beats an error page. */}
           {board.stale && board.error ? (

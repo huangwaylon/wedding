@@ -17,9 +17,15 @@ import { API_ERROR } from '../src/lib/api.js'
 
 const source = readFileSync('src/state/useBoard.js', 'utf8')
 
-/** Comments discuss the duplication this file forbids, so they have to go first. */
+/**
+ * Comments discuss the duplication this file forbids, so they have to go first.
+ *
+ * They are REMOVED, not blanked. Blanking a `//` line leaves an empty line behind, and
+ * `declarationOf` splits on blank lines — so a comment inside a mutation manufactured a false
+ * block boundary and the assertion read only the half above it.
+ */
 function code(text) {
-  return text.replace(/\/\*\*?[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  return text.replace(/\/\*\*?[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*\n/gm, '')
 }
 
 const body = code(source)
@@ -87,6 +93,32 @@ describe('the mutation primitive', () => {
       /run\(\(key\) => api\.createTasks\(drafts, key\)\)/,
     )
     expect(declarationOf('saveConfig')).not.toMatch(/previous/)
+  })
+
+  it('treats an unread schema and an empty one differently', () => {
+    // The whole point of the guard. A deployment older than this bundle sends no `schema` field,
+    // so an EMPTY list is the positive signal that it cannot store a column we write. `null` —
+    // nothing read yet — must not flag, or every cold start would warn about itself.
+    //
+    // Written as `schema.length > 0 && ...` first, which excluded the only case it exists for:
+    // the old script sends nothing, so `length > 0` was false and the write went through and
+    // silently lost `parent_id`.
+    expect(body).toMatch(/useState\(null\)/)
+    expect(body).toMatch(/const outdatedScript = schema !== null && !schema\.includes\(/)
+    expect(body).not.toMatch(/schema\.length > 0/)
+  })
+
+  it('refuses the write rather than letting the script reshape it', () => {
+    // A warning alone would still let somebody make the mess: the write returns {ok:true}, the
+    // row is created, and the column is dropped.
+    const declaration = declarationOf('addSubtask')
+    expect(declaration).toMatch(/if \(outdatedScript\)/)
+    expect(declaration).toMatch(/return Promise\.resolve\(false\)/)
+  })
+
+  it('names the required column from the schema rather than as a literal', () => {
+    // So the check cannot drift from the column list it is checking.
+    expect(body).toMatch(/REQUIRED_COLUMN = TASK_COLUMNS\[TASK_COLUMNS\.length - 1\]/)
   })
 
   it('knows the unauthorized code it branches on', () => {

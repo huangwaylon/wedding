@@ -130,7 +130,18 @@ still showing edit controls and still failing silently. `test/board.test.js` pin
 is one copy of each half of it. Adding a mutation means calling `run`, never writing a fifth
 try/catch.
 
-**Never trust a cached row number.** Row positions shift whenever anyone edits the sheet
+**Every read carries the deployed script's column list, and ABSENCE is the out-of-date signal.**
+`board()` reports `schema: TASK_COLUMNS`; a deployment older than the bundle sends no `schema` at
+all, so `decodeBoard` yields `[]` and `[]` is what means "cannot store the newest column". In
+`useBoard` the state therefore starts at **`null`** — no read has landed — and the guard is
+`schema !== null && !schema.includes(REQUIRED_COLUMN)`. Written as `schema.length > 0 && …` it
+excluded the only case it exists for and never fired once. This is load-bearing rather than
+cosmetic: `updateTask` and `create` rewrite a row from the columns the *script* knows, so an old
+deployment answers `ok: true`, creates the row, and drops `parent_id` — a subtask that saved
+successfully and came back a top-level task. So the write is REFUSED, not merely warned about,
+and `REQUIRED_COLUMN` is read off the end of `TASK_COLUMNS` rather than written as a literal.
+
+ Row positions shift whenever anyone edits the sheet
 directly in the Sheets UI, so `updateTask` and `stampDeleted` re-resolve id → row immediately
 before writing.
 
@@ -307,6 +318,13 @@ catalogs (`en.js`, `ja.js`) and the registry (`catalogs.js`).
 - **The add row is last, always, with a stable key.** Moving or remounting it drops the iOS
   keyboard mid-checklist, and it does not await the write before clearing — the optimistic update
   has already landed, and awaiting would freeze the field for a second per item.
+- **The add row is NOT a `<form>`, and it has a visible submit button.** It lives inside
+  `TaskFormSheet`'s form, and the HTML parser drops a nested `<form>` outright — so the inner one
+  never existed and Enter submitted the *task*, closing the sheet. Commit is `onKeyDown` on Enter
+  plus a `+` button, and the button is required: with Enter as the only affordance, typing a title
+  and then tapping anywhere else discarded it with no feedback, which is the "adding subtasks is
+  not working" report. Its `onMouseDown` calls `preventDefault` so the click does not blur the
+  field first.
 - **The seeded templates stay flat.** Subtasks would double a curated, sourced, two-language
   content surface and make `template.count` lie, and the feature is fully provable without them.
 
@@ -416,6 +434,17 @@ Four files, loaded in order by `src/main.jsx`: `tokens.css` (custom properties),
   `taskProgress`'s positions are clamped to 0–1, so a task running past the edge would look like
   it ends there, and `min-width: 4px` would render every out-of-window task as a phantom stub
   pinned to the edge.
+- **The multiplier scales `width`, not `min-width`.** `min-width` is a floor, so it did nothing
+  at all until the product exceeded the container — 1x, 1.5x and 2x rendered byte-identically on
+  a desktop and only 3x moved, which is exactly what was reported. `.timeline__inner` is
+  `width: calc(100% * var(--timeline-zoom))` with the `min-width` kept purely as a narrow-phone
+  floor. The steps now measure 1214 → 1821 → 2428 → 3642 → 4856 → 7284px.
+- **`.timeline__row` is `align-items: stretch`, and the sticky label paints the full row height.**
+  Sized to their content, the label was 29px and the track 24px inside a 36px row, so the pinned
+  gutter's opaque background did not cover it and the today rule showed through above and below
+  every label as a column of dashes — the reported "gaps between the rows". The bar is centred
+  with `top: 50%; transform: translateY(-50%)` instead of the track having a fixed height, so
+  nothing depends on the two agreeing.
 - **The tick count is a PIXEL budget, not a constant.** A fixed six drew six gridlines across
   2400px at 8x — losing the date reference exactly when zooming in was meant to provide it.
   `BASE_PLOT_PX` is the *first-paint* value and must stay correct on its own: the measured width
