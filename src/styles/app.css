@@ -539,14 +539,17 @@
   padding-left: var(--space-4);
 }
 
+/* Two bands: the Today pill on the upper line, the month labels on the lower one nearest
+   the gridlines they name. They shared a line at first and the pill sat on top of whichever
+   month happened to be next to it. Deterministic beats measuring the DOM. */
 .timeline__ticks {
   position: relative;
-  height: 1.125rem;
+  height: 2.375rem;
 }
 
 .timeline__tick {
   position: absolute;
-  top: 0;
+  top: 1.25rem;
   font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
   color: var(--ink-3);
@@ -591,10 +594,13 @@
   background-color: var(--accent);
 }
 
+/* Lives in the sticky axis, on its own band above the months, so it stays visible however
+   far the rows are scrolled and never sits on a month label. Anchored to the rule rather
+   than centred on it — centring would put half a pill on the wrong side of the line — and
+   the component flips the anchor near the right edge so it cannot be clipped. */
 .timeline__now-label {
   position: absolute;
   top: 0;
-  left: var(--space-1);
   padding: 0.0625rem var(--space-2);
   border-radius: var(--radius-xs);
   background-color: var(--accent);
@@ -603,6 +609,7 @@
   font-weight: 500;
   line-height: var(--lh-tight);
   white-space: nowrap;
+  transform: translateX(-2px);
 }
 
 .timeline__row {

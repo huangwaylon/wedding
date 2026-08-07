@@ -115,6 +115,21 @@ export default function Timeline({ tasks, nowMs, timeZone }) {
                   {formatWallMonthShort(tick.wall, { locale, year: tick.showYear })}
                 </span>
               ))}
+              {/* The label belongs to the AXIS, not to the rule it names. In the plot it sat
+                  at the top of the scroll content and scrolled out of sight the moment
+                  somebody looked at row twenty — which is exactly when knowing where today
+                  is matters. Here it rides the sticky axis and stays put. */}
+              <span
+                className="timeline__now-label"
+                style={{
+                  left: `${nowFraction * 100}%`,
+                  // Anchored right of the rule, except near the right edge where that would
+                  // run the pill off the chart — there it hangs to the left instead.
+                  transform: nowFraction > 0.85 ? 'translateX(calc(-100% + 2px))' : undefined,
+                }}
+              >
+                {t('timeline.today')}
+              </span>
             </div>
           </div>
 
@@ -131,9 +146,7 @@ export default function Timeline({ tasks, nowMs, timeZone }) {
               ))}
               {/* One continuous rule across every row, not a segment per row: the reader's
                   own position in the plan is a single line. */}
-              <span className="timeline__now" style={{ left: `${nowFraction * 100}%` }}>
-                <span className="timeline__now-label">{t('timeline.today')}</span>
-              </span>
+              <span className="timeline__now" style={{ left: `${nowFraction * 100}%` }} />
             </div>
 
             {drawable.map((task) => {

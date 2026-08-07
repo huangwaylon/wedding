@@ -281,6 +281,21 @@ describe('Timeline', () => {
     expect(now).toBeLessThanOrEqual(100)
   })
 
+  it('puts the Today label in the axis, not in the scrolling plot', () => {
+    // In the plot it sat at the top of the scroll content and scrolled out of sight the
+    // moment somebody looked at row twenty — which is exactly when knowing where today is
+    // matters. The axis is sticky, so it belongs there.
+    const list = rows([task({ start: '2027-01-01T00:00', end: '2027-09-01T23:59' })])
+    const html = renderToStaticMarkup(<Timeline tasks={list} nowMs={NOW} timeZone={TOKYO} />)
+    const axis = html.slice(html.indexOf('timeline__axis'), html.indexOf('timeline__plot'))
+    expect(axis).toContain('timeline__now-label')
+    expect(axis).toContain('Today')
+    // And the bare rule stays in the plot, spanning the rows.
+    const plot = html.slice(html.indexOf('timeline__plot'))
+    expect(plot).toContain('timeline__now"')
+    expect(plot).not.toContain('timeline__now-label')
+  })
+
   it('draws one gridline per axis tick, from the same list as the labels', () => {
     // Two lists would drift, and a gridline half a month from its own label is worse than
     // no gridline at all.
