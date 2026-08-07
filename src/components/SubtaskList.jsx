@@ -28,14 +28,19 @@ function SubtaskRow({ subtask, canEdit, onToggle, onDelete }) {
 
   return (
     <li className={`subtask${done ? ' subtask--done' : ''}${subtask.pending ? ' subtask--pending' : ''}`}>
+      {/* THE WHOLE ROW IS THE TOGGLE, not the circle on its own. A checklist item is tapped by
+          aiming at its text, and with only the 44px glyph live that tap did nothing — which is
+          how this read as "clicking a subtask does not register it as done". The target is now
+          the full width of the row minus the delete button. */}
       <DoneToggle
         done={done}
         title={subtask.title}
         canEdit={canEdit}
         onToggle={() => onToggle(subtask)}
-        className="subtask__check"
-      />
-      <span className="subtask__title">{subtask.title}</span>
+        className="subtask__toggle"
+      >
+        <span className="subtask__title">{subtask.title}</span>
+      </DoneToggle>
       {canEdit ? (
         <button
           type="button"

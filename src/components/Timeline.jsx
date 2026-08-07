@@ -21,6 +21,14 @@
  *   ZOOM. At 1x on a phone the plot is ~240px of visible width for a year: a one-week task is
  *   8px and nine of fifty bars sit on the 4px floor, so bar length stops encoding anything.
  *
+ * SUBTASKS ARE NOT BARS. A subtask has a title and a tick and no dates at all, so on a time axis
+ * it has neither position nor extent, and any bar drawn for one would assert a window the data
+ * does not contain. Two honest things are drawn instead: a `3/5` tally under the parent's title,
+ * which is what tells the reader that a tallied parent's fill is a COUNT rather than a clock
+ * reading — and once the outline is opened, a 1px rail exactly co-extensive with the parent's
+ * bar. The rail states the only date fact the model holds about a subtask, that it happens
+ * somewhere inside that window, in a form too thin and too square to be mistaken for a bar.
+ *
  * Bars are `--meter-height` with a rounded end, well under the 24px mark cap. Colour follows
  * STATE, not category: state is what somebody scans a timeline for, and a second categorical
  * encoding on the same mark would put two palettes in one chart. Colour is not the only
@@ -28,7 +36,8 @@
  * words, because a `title` tooltip does not exist on touch.
  */
 
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { isDone } from '../schema.js'
 import { planWindow, toPercent } from '../lib/progress.js'
 import {
   formatWallMonthShort,
@@ -38,7 +47,14 @@ import {
 } from '../lib/time.js'
 import { useT } from '../i18n/index.js'
 import TaskDetailSheet from './TaskDetailSheet.jsx'
-import { MinusIcon, PlusIcon, TargetIcon } from './icons.jsx'
+import {
+  CheckCircleIcon,
+  ChevronRightIcon,
+  CircleIcon,
+  MinusIcon,
+  PlusIcon,
+  TargetIcon,
+} from './icons.jsx'
 
 /**
  * The zoom ladder. Discrete, not continuous: a slider would relayout fifty rows and a dozen
@@ -135,6 +151,16 @@ export default function Timeline({ tasks, nowMs, timeZone }) {
   const anchor = useRef(null)
   const [detail, setDetail] = useState(null)
   /**
+   * Whether the checklists are open. ONE control for the whole chart, not one per parent:
+   * `.timeline__row` is a `<button>`, whose content model is phrasing content, so a disclosure
+   * inside a row would be a button inside a button and the parser would drop it — the same
+   * failure as the nested `<form>` in `SubtaskList`. It is also fifty controls doing one job.
+   *
+   * Ephemeral, like `zoomStep`, and `false` has to be right on its own: a static render never
+   * runs an effect, so the harness and the render tests only ever see this state.
+   */
+  const [outline, setOutline] = useState(false)
+  /**
    * The plot's rendered width, which is what decides how many month labels fit.
    *
    * Measured, not derived. It is the inner width minus the label gutter minus the right
@@ -146,6 +172,8 @@ export default function Timeline({ tasks, nowMs, timeZone }) {
 
   const zoom = ZOOM_LADDER[zoomStep]
   const drawable = tasks.filter((task) => task.progress.scheduled)
+  // No checklists anywhere on the board means no control for opening them.
+  const anyTallied = drawable.some((task) => task.progress.tally)
 
   /**
    * Where the visible plot is centred, as a fraction of the plot's width. Measured rather
@@ -260,10 +288,28 @@ export default function Timeline({ tasks, nowMs, timeZone }) {
           </div>
         </div>
 
-        <div className="timeline" ref={scroller} style={{ '--timeline-zoom': zoom }}>
+        <div
+          className={`timeline${outline ? ' timeline--outline' : ''}`}
+          ref={scroller}
+          style={{ '--timeline-zoom': zoom }}
+        >
           <div className="timeline__inner">
             <div className="timeline__axis">
-              <span className="timeline__axis-gutter" />
+              {/* The label column's own header, pinned in BOTH axes — which is where every
+                  Gantt puts its outline level, and it costs the toolbar nothing. */}
+              <span className="timeline__axis-gutter">
+                {anyTallied ? (
+                  <button
+                    type="button"
+                    className="timeline__outline"
+                    aria-pressed={outline}
+                    onClick={() => setOutline((open) => !open)}
+                  >
+                    <ChevronRightIcon className="timeline__outline-chevron" />
+                    {t('timeline.outline')}
+                  </button>
+                ) : null}
+              </span>
               <div className="timeline__ticks">
                 {ticks.map((tick) => (
                   <span
@@ -316,46 +362,105 @@ export default function Timeline({ tasks, nowMs, timeZone }) {
                 const right = Math.min(1, at(task.progress.endMs))
                 const width = Math.max(right - left, 0)
                 const percent = toPercent(task.progress.percent)
+                const tally = task.progress.tally
                 const range = formatWallRange(task.start, task.end, {
                   allDay: task.allDay,
                   locale,
                   nowWall,
                   dash: t('common.dash'),
                 })
-                const description = t('timeline.rowLabel', {
-                  title: task.title,
-                  range,
-                  percent,
-                  state: t(`state.${task.progress.state}`),
-                })
+                const state = t(`state.${task.progress.state}`)
+                // A tallied row's fill is a count, so its accessible name has to say the count.
+                const description = tally
+                  ? t('timeline.rowLabelSubs', {
+                      title: task.title,
+                      range,
+                      percent,
+                      state,
+                      subs: t('list.subtasks', { count: tally.total, done: tally.done }),
+                    })
+                  : t('timeline.rowLabel', { title: task.title, range, percent, state })
 
+                // A fragment, so the child rows are the parent's SIBLINGS. Nested inside the
+                // row's `<button>` they would be buttons inside a button; see `outline` above.
                 return (
-                  <button
-                    type="button"
-                    className={`timeline__row timeline__row--${task.progress.state}`}
-                    key={task.id}
-                    onClick={() => setDetail(task)}
-                    aria-label={description}
-                  >
-                    <span className="timeline__label">
-                      <span
-                        className={`dot dot--${task.progress.state} timeline__dot`}
-                        aria-hidden="true"
-                      />
-                      <span className="timeline__label-text">{task.title}</span>
-                    </span>
-                    <span className="timeline__track">
-                      <span
-                        className="timeline__bar"
-                        style={{ left: `${left * 100}%`, width: `${width * 100}%` }}
-                      >
+                  <Fragment key={task.id}>
+                    <button
+                      type="button"
+                      className={`timeline__row timeline__row--${task.progress.state}`}
+                      onClick={() => setDetail(task)}
+                      aria-label={description}
+                    >
+                      <span className="timeline__label">
                         <span
-                          className="timeline__bar-fill"
-                          style={{ width: `${percent}%` }}
+                          className={`dot dot--${task.progress.state} timeline__dot`}
+                          aria-hidden="true"
                         />
+                        <span className="timeline__label-stack">
+                          <span className="timeline__label-text">{task.title}</span>
+                          {/* The tally is what makes the fill legible: for a task with no
+                              checklist the fill's end lands on the today rule by construction,
+                              so a tallied parent's fill sitting short of that rule is the
+                              signal — and this is what tells the reader it is a count. */}
+                          {tally ? (
+                            <span className="timeline__label-tally tnum" aria-hidden="true">
+                              {tally.done}/{tally.total}
+                            </span>
+                          ) : null}
+                        </span>
                       </span>
-                    </span>
-                  </button>
+                      <span className="timeline__track">
+                        <span
+                          className="timeline__bar"
+                          style={{ left: `${left * 100}%`, width: `${width * 100}%` }}
+                        >
+                          <span
+                            className="timeline__bar-fill"
+                            style={{ width: `${percent}%` }}
+                          />
+                        </span>
+                      </span>
+                    </button>
+
+                    {outline && tally
+                      ? task.subtasks.map((subtask) => {
+                          const ticked = isDone(subtask)
+                          return (
+                            <button
+                              type="button"
+                              key={subtask.id}
+                              className={`timeline__row timeline__row--sub${
+                                ticked ? ' timeline__row--sub-done' : ''
+                              }`}
+                              // The PARENT's sheet: it lists every item in full, which is what a
+                              // 120px gutter cannot do.
+                              onClick={() => setDetail(task)}
+                              aria-label={t('timeline.subRowLabel', {
+                                tick: t(ticked ? 'list.isDone' : 'list.isNotDone', {
+                                  title: subtask.title,
+                                }),
+                                parent: task.title,
+                              })}
+                            >
+                              <span className="timeline__label timeline__label--sub">
+                                <span className="timeline__sub-tick" aria-hidden="true">
+                                  {ticked ? <CheckCircleIcon /> : <CircleIcon />}
+                                </span>
+                                <span className="timeline__label-text">{subtask.title}</span>
+                              </span>
+                              <span className="timeline__track">
+                                {/* The parent's own left/width — no new positional arithmetic,
+                                    so zoom still multiplies one thing. */}
+                                <span
+                                  className="timeline__sub-rail"
+                                  style={{ left: `${left * 100}%`, width: `${width * 100}%` }}
+                                />
+                              </span>
+                            </button>
+                          )
+                        })
+                      : null}
+                  </Fragment>
                 )
               })}
             </div>

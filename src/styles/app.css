@@ -495,9 +495,15 @@
    fourth control in row one. At 393px the row already spends 152px on three 44px targets and
    their gaps, so a fourth would cut the title to ~130px; here the toggle is a ~250px target and
    reads as a card footer action. Every destructive control stays in row one. */
+/* Column ONE, not two. From here the chevron lands in the same optical column as the parent's
+   own tick, so the disclosure reads as belonging to that tick and the checklist below can be
+   indented by design instead of inheriting wherever the title column happens to start. Still a
+   full-width target, and still not a fourth control in row one — which is what the placement
+   was for. */
 .task__subs {
-  grid-column: 2 / -1;
+  grid-column: 1 / -1;
   min-width: 0;
+  margin-top: var(--space-1);
 }
 
 .task__subs-toggle {
@@ -524,10 +530,15 @@
   transform: rotate(90deg);
 }
 
-/* No hairlines between rows: the 44px rhythm with aligned check glyphs already reads as a list,
-   and five more rules inside a 361px card is the "fifty hairlines is a grid" problem in
-   miniature. */
+/* ONE vertical hairline, descending from the chevron, and no horizontal ones. The rule ties the
+   group to the parent it belongs to; five rules BETWEEN five items would make a checklist a
+   table, which is the "fifty hairlines is a grid" problem in miniature. --line is the same
+   hairline the month dividers and the card boundaries are drawn with, so it reads as structure
+   rather than as a mark. */
 .subtasks {
+  margin-inline-start: var(--space-2);
+  border-inline-start: 1px solid var(--line);
+  padding-inline-start: var(--space-2);
   padding-bottom: var(--space-1);
 }
 
@@ -542,33 +553,44 @@
   opacity: 0.55;
 }
 
-/* A step smaller than the parent's check, which is a second subordination channel that costs no
-   contrast and no legibility — the type stays at 16px. */
-.subtask__check {
+/* THE WHOLE ROW IS THE CONTROL — glyph and title inside one button, which is what makes a
+   checklist item tappable where somebody actually aims. Only the 44px circle was live before,
+   so a tap on the text did nothing and the feature read as broken. */
+.subtask__toggle {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
-  justify-content: center;
-  width: var(--tap-target);
+  gap: var(--space-2);
   min-height: var(--tap-target);
-  flex: none;
-  margin-left: calc(var(--space-2) * -1);
+  /* Padded rather than pulled: the pressed area extends past the glyph on both sides, and a
+     negative margin here would drag its hover square onto the rail. */
+  padding-inline: var(--space-2);
   border-radius: var(--radius-md);
-  color: var(--ink-2);
-  font-size: 0.8em;
-  transition: color var(--transition-fast), background-color var(--transition-fast);
+  text-align: start;
+  transition: background-color var(--transition-fast);
 }
 
-.subtask__check:hover {
+.subtask__toggle:hover {
   background-color: var(--sunken);
-  color: var(--ink);
 }
 
-.subtask__check--on {
+/* A step smaller than the parent's check, which is a second subordination channel that costs no
+   contrast and no legibility — the type stays at 16px. The colour is on the GLYPH, never on the
+   button: on the button it would tint the title green too. */
+.subtask__toggle > svg {
+  flex: none;
+  font-size: 0.8em;
+  color: var(--ink-2);
+  transition: color var(--transition-fast);
+}
+
+.subtask__toggle--on > svg {
   color: var(--good);
 }
 
 /* The same slot for a viewer, so a planner's list lines up with an editor's. */
-.subtask__check--static {
+.subtask__toggle--static {
   cursor: default;
 }
 
@@ -580,7 +602,9 @@
   padding-block: var(--space-1);
   font-size: var(--fs-body);
   line-height: var(--lh-body);
-  color: var(--ink);
+  /* The ink step the two-channel subordination needs — 16px/400 in --ink-2 against the parent
+     title's 16px/500 in --ink. 7.95:1, so it is a step in emphasis and not in legibility. */
+  color: var(--ink-2);
 }
 
 .subtask--done .subtask__title {
@@ -591,9 +615,14 @@
 }
 
 /* Always last, never moved, never remounted — a changed key or position drops the iOS keyboard
-   mid-checklist. */
+   mid-checklist. Aligned with the item TITLES rather than their ticks, so the glyph column stays
+   a clean column and the field reads as "type the next one" instead of as another item. */
 .subtask-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   padding-block: var(--space-1);
+  padding-inline-start: var(--tap-target);
 }
 
 .subtask-add__field {
@@ -690,6 +719,12 @@
   --timeline-gutter: clamp(7.5rem, 26vw, 16rem);
   /* Zoom multiplies the plot's width and nothing else — see Timeline.jsx. */
   --timeline-zoom: 1;
+  /* Not a third breakpoint: the same clamp with a wider floor, applied when the checklists are
+     open. At 393px the base floor leaves ~76px of title, and an indented subtask title read
+     "Shortli…" — the titles ARE the content while the outline is open, so the column that holds
+     them earns 37 more pixels and the chart gives them up. Everything downstream follows the
+     variable: the axis corner, every row's gutter and the overlay's left edge. */
+  --timeline-gutter-open: clamp(10rem, 40vw, 18rem);
   overflow: auto;
   /* Contain the HORIZONTAL axis only. A pan that chains becomes an iOS back-swipe; but
      `contain` on both axes can swallow a vertical drag that starts on the chart. */
@@ -742,6 +777,8 @@
   position: sticky;
   left: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
   padding-left: var(--space-4);
   background-color: var(--surface);
   /* Same seam as the rows below, so the line runs the full height of the chart. */
@@ -888,6 +925,104 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Two lines for a parent with a checklist, one for everything else. No block padding — the extra
+   height comes from CONTENT, which is why the bar is centred on the track with a transform rather
+   than by the two agreeing about a height. */
+.timeline__label-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* A numeric readout, exactly like the zoom level; the row's accessible name carries the spoken
+   "3 of 5 subtasks". NEVER coloured, and --good least of all: a 5/5 in the done colour would
+   claim a `done_at` the sheet does not have, and all subtasks done deliberately does not make a
+   parent done. */
+.timeline__label-tally {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-tight);
+  color: var(--ink-3);
+}
+
+.timeline--outline {
+  --timeline-gutter: var(--timeline-gutter-open);
+}
+
+/* ---- Timeline: the outline control ------------------------------------
+   In the axis corner, which is the label column's own header and is sticky in both axes.
+   --fs-caption rather than --fs-label because 「サブタスク」 plus the chevron measures ~89px and
+   the gutter's 7.5rem floor leaves about 104. */
+.timeline__outline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-target);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+  transition: color var(--transition-fast);
+}
+
+.timeline__outline:hover {
+  color: var(--ink);
+}
+
+.timeline__outline-chevron {
+  flex: none;
+  transition: transform var(--transition-fast);
+}
+
+.timeline__outline[aria-pressed="true"] .timeline__outline-chevron {
+  transform: rotate(90deg);
+}
+
+/* ---- Timeline: subtask rows -------------------------------------------
+   Indented in the gutter. In the plot, a RAIL and not a bar: a subtask has no dates, so it has
+   no extent of its own to draw — what IS in the model is that it happens inside its parent's
+   window, and the rail says exactly that by being co-extensive with the parent's bar. 1px and
+   square against the bar's 8px filled pill, and never --state-fill, so the two can never be
+   read as the same kind of mark. */
+.timeline__label--sub {
+  padding-inline-start: var(--space-6);
+  color: var(--ink-2);
+}
+
+.timeline__sub-tick {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-inline-end: var(--space-1);
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+}
+
+.timeline__row--sub-done .timeline__sub-tick {
+  color: var(--good);
+}
+
+.timeline__row--sub-done .timeline__label-text {
+  color: var(--ink-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-4);
+  text-decoration-thickness: 1px;
+}
+
+/* --track-line, NOT --line: --line measures 1.2:1 on the surface and this is the child row's
+   only mark, which is the same defect that made the meter hairline draw nothing at all.
+   `display: block` because the row is a `<button>` — an absolutely positioned span is
+   blockified, but that does not extend to its own box model here. */
+.timeline__sub-rail {
+  display: block;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 1px;
+  min-width: 4px;
+  background-color: var(--track-line);
 }
 
 

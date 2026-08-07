@@ -35,7 +35,7 @@ export default function TaskRow({
 }) {
   const { t, locale } = useT()
   const categoryLabel = useCategoryLabel()
-  const { state, percent, tally } = task.progress
+  const { state, percent, tally, timePercent } = task.progress
   const done = state === STATE.DONE
   const shown = toPercent(percent)
   const subtasks = task.subtasks ?? []
@@ -106,7 +106,7 @@ export default function TaskRow({
         <div className="task__subs">
           <button
             type="button"
-            className="task__subs-toggle"
+            className="task__subs-toggle tnum"
             aria-expanded={expanded}
             aria-controls={`subs-${task.id}`}
             onClick={() => onExpand(task.id)}
@@ -132,6 +132,11 @@ export default function TaskRow({
         <div className="task__meter">
           <Meter
             value={percent}
+            /* Only for a parent with a checklist, and it is the honest pair: the fill is work
+               counted, the tick is where the clock has got to. Without a tally the two are the
+               same number by construction — `percent` IS `timePercent` — so a mark would be a
+               tick drawn on top of the fill's own end, every row, meaning nothing. */
+            mark={tally ? timePercent : undefined}
             state={state}
             label={task.title}
             valueText={t('list.percentLabel', { percent: shown })}

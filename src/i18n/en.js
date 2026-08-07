@@ -77,6 +77,11 @@ export default {
   'list.subtaskAdd': 'Add a subtask',
   'list.markDone': 'Mark {title} done',
   'list.markNotDone': 'Mark {title} not done',
+  /* A STATE, not an action — these name a tick nobody can press: a viewer's row, and the
+     detail sheet's read-only checklist. Without them a screen reader gets the title and no
+     way to tell a ticked item from an open one, since the glyph is decorative. */
+  'list.isDone': 'Done: {title}',
+  'list.isNotDone': 'Not done: {title}',
   'list.editTask': 'Edit {title}',
   'list.deleteTask': 'Delete {title}',
 
@@ -176,6 +181,9 @@ export default {
   'timeline.today': 'Today',
   'timeline.empty': 'Nothing with dates to draw yet.',
   'timeline.rowLabel': '{title}: {range}, {percent}% complete, {state}',
+  'timeline.rowLabelSubs': '{title}: {range}, {percent}% complete, {state}, {subs}',
+  'timeline.subRowLabel': '{tick}. Subtask of {parent}',
+  'timeline.outline': 'Subtasks',
 
   'accent.rose': 'Rose',
   'accent.sage': 'Sage',
@@ -203,6 +211,7 @@ export default {
   'status.refresh': 'Refresh',
 
   'toast.saved': 'Saved.',
+  'toast.failed': 'Nothing was saved. Check your connection and try again.',
   'toast.deleted': 'Task deleted.',
 
   'api.unconfigured': 'This build has no endpoint address',

@@ -4,6 +4,7 @@
 
     harness.html?f=en&w=390,430,768
     harness.html?f=en-timeline&w=1440&h=930&scroll=0.35
+    harness.html?f=en&w=393&to=.task__subs                  scrolled to the first checklist
     harness.html?f=en,en-sage,en-gold&w=330&h=480
 
   f       comma-separated preview files. The `preview-` prefix and `.html` are optional.
@@ -64,6 +65,9 @@
       const widths = (params.get('w') || '390,430,768').split(',').map(Number)
       const height = Number(params.get('h') || 900)
       const scroll = Number(params.get('scroll') || 0)
+      /** A CSS selector to scroll the iframe's own page to. The timeline owns its vertical
+          scroll, but a list row is reached by scrolling the DOCUMENT. */
+      const to = params.get('to') || ''
       const row = document.getElementById('row')
 
       for (const file of files) {
@@ -79,8 +83,10 @@
           frame.width = width
           frame.height = height
           frame.onload = () => {
+            const doc = frame.contentDocument
+            if (to) doc?.querySelector(to)?.scrollIntoView({ block: 'center' })
             if (!scroll) return
-            const timeline = frame.contentDocument?.querySelector('.timeline')
+            const timeline = doc?.querySelector('.timeline')
             if (timeline) timeline.scrollTop = Math.round(timeline.scrollHeight * scroll)
           }
           col.appendChild(frame)

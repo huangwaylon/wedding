@@ -141,10 +141,11 @@ describe('the meter', () => {
     expect(mark).toMatch(/background-color: var\(--ink\)/)
   })
 
-  it('lets the large variant show a mark that escapes the bar', () => {
+  it('lets a meter with a mark show it escaping the bar', () => {
     // The tick is taller than the track so its ends sit against the card; clipping it
-    // would hide exactly the part that makes it readable.
-    expect(/\.meter--lg \{([^}]*)\}/.exec(primitives)[1]).toMatch(/overflow: visible/)
+    // would hide exactly the part that makes it readable. It rides on `--marked` rather than
+    // on `--lg` because a task row is 8px tall and now carries one too.
+    expect(/\.meter--marked \{([^}]*)\}/.exec(primitives)[1]).toMatch(/overflow: visible/)
   })
 
   it('does not transition the fill', () => {
@@ -623,5 +624,64 @@ describe('the manifest', () => {
         .map((icon) => icon.purpose)
       expect(purposes.sort(), size).toEqual(['any', 'maskable'])
     }
+  })
+})
+
+describe('subtasks on the timeline', () => {
+  it('draws a subtask as a 1px rail, never as a bar', () => {
+    // A subtask has no dates, so it has no extent of its own to draw. The rail says the one
+    // thing the model does hold — that it happens inside its parent's window — and it has to be
+    // impossible to mistake for a bar: 1px against the bar's 8px, square against its pill, and
+    // no fill at all.
+    const rail = ruleFor(app, '.timeline__sub-rail')
+    expect(rail, '.timeline__sub-rail rule missing').toBeTruthy()
+    expect(rail).toMatch(/height: 1px/)
+    expect(rail).not.toMatch(/border-radius/)
+    expect(rail).not.toMatch(/--state-fill/)
+  })
+
+  it('draws that rail in --track-line, not --line', () => {
+    // It is the child row's ONLY mark, and --line measures 1.2:1 on the surface — the same
+    // defect that made the meter's hairline draw nothing whatsoever.
+    expect(ruleFor(app, '.timeline__sub-rail')).toMatch(/background-color: var\(--track-line\)/)
+  })
+
+  it('never colours the tally', () => {
+    // A 5/5 in the done colour would claim a `done_at` the sheet does not have: all subtasks
+    // done deliberately does not make a parent done.
+    const tally = ruleFor(app, '.timeline__label-tally')
+    expect(tally, '.timeline__label-tally rule missing').toBeTruthy()
+    expect(tally).toMatch(/color: var\(--ink-3\)/)
+    expect(tally).not.toMatch(/--good|--critical|--accent/)
+  })
+
+  it('keeps the label stack free of block padding', () => {
+    // The gutter grows by CONTENT. Block padding there reintroduces the band the plot shows
+    // through behind the sticky label, which is the row-gap defect.
+    expect(ruleFor(app, '.timeline__label-stack')).not.toMatch(/padding/)
+  })
+
+  it('widens the gutter from the same variable rather than a third breakpoint', () => {
+    // The titles are the content while the outline is open, so the column holding them earns
+    // more room — but as one variable, not a media query. There are exactly two breakpoints.
+    expect(ruleFor(app, '.timeline--outline')).toMatch(
+      /--timeline-gutter: var\(--timeline-gutter-open\)/,
+    )
+    expect(ruleFor(app, '.timeline')).toMatch(/--timeline-gutter-open: clamp\(/)
+  })
+
+  it('gives the whole subtask row a target in the list', () => {
+    // Only the 44px circle was live, so a tap on the title — the obvious place to aim on a
+    // checklist — did nothing at all.
+    const toggle = ruleFor(app, '.subtask__toggle')
+    expect(toggle, '.subtask__toggle rule missing').toBeTruthy()
+    expect(toggle).toMatch(/flex: 1/)
+    expect(toggle).toMatch(/min-height: var\(--tap-target\)/)
+  })
+
+  it('ties the checklist to its parent with one vertical rule and no horizontal ones', () => {
+    const list = ruleFor(app, '.subtasks')
+    expect(list).toMatch(/border-inline-start: 1px solid var\(--line\)/)
+    expect(list).not.toMatch(/border-block|border-top|border-bottom/)
   })
 })

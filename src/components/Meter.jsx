@@ -33,7 +33,9 @@ export default function Meter({ value, mark, state, large = false, label, valueT
   const percent = toPercent(value)
   return (
     <div
-      className={`meter${large ? ' meter--lg' : ''}${state ? ` meter--${state}` : ''}`}
+      className={`meter${large ? ' meter--lg' : ''}${mark == null ? '' : ' meter--marked'}${
+        state ? ` meter--${state}` : ''
+      }`}
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}

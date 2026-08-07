@@ -99,7 +99,7 @@ function doGet() {
     if (!book.getSheetByName(TASKS_SHEET)) {
       return json({ ok: true, needsSetup: true, tasks: [], config: {} })
     }
-    return json(board(book))
+    return json(board(book, book.getSpreadsheetTimeZone()))
   } catch (err) {
     return json({ ok: false, error: 'server' })
   }
@@ -135,12 +135,15 @@ function doPost(e) {
     var structure = ensureStructure(book)
     if (structure) return json({ ok: false, error: structure })
 
-    var failure = apply(book, String(body.op || ''), body.payload)
+    // Read once per request and threaded through: `stampDeleted` and `board` both need it, and
+    // it was two service calls for one unchanging fact.
+    var timeZone = book.getSpreadsheetTimeZone()
+    var failure = apply(book, timeZone, String(body.op || ''), body.payload)
     if (failure) return json({ ok: false, error: failure })
 
     // The fresh board rides back on the write's own reply, so a save costs one
     // round trip rather than two.
-    return json(board(book))
+    return json(board(book, timeZone))
   } catch (err) {
     return json({ ok: false, error: 'server' })
   } finally {
@@ -182,15 +185,82 @@ function openBook() {
 // ---------------------------------------------------------------------------
 
 /** @returns {string|null} an error code, or null on success. */
-function apply(book, op, payload) {
+function apply(book, timeZone, op, payload) {
   if (op === 'create') return createTasks(book, [payload && payload.task])
   if (op === 'createMany') return createTasks(book, (payload && payload.tasks) || [])
   if (op === 'update') return updateTask(book, payload && payload.task)
-  if (op === 'delete') return stampDeleted(book, payload && payload.id, nowIso())
-  if (op === 'restore') return stampDeleted(book, payload && payload.id, '')
+  // The zone is only used to normalise a cell somebody hand-edited into a Date; see stampDeleted.
+  if (op === 'delete') return stampDeleted(book, payload && payload.id, nowIso(), timeZone)
+  if (op === 'restore') return stampDeleted(book, payload && payload.id, '', timeZone)
   if (op === 'setConfig') return setConfig(book, payload && payload.config)
   if (op === 'compact') return compact(book)
   return 'bad_op'
+}
+
+/**
+ * The tasks tab and its whole grid, read ONCE, with the header repaired from what was read.
+ *
+ * One door rather than four call sites, so no op can forget the heal and none can pay for a
+ * second read to do it. `healHeader` used to run inside `ensureStructure` with a read of its own,
+ * on every single write, to check a row this already has in hand.
+ *
+ * @returns {{sheet: Sheet, block: Array[]}}
+ */
+function openTasks(book) {
+  var sheet = book.getSheetByName(TASKS_SHEET)
+  var block = readBlock(sheet)
+  healHeader(sheet, block[0])
+  return { sheet: sheet, block: block }
+}
+
+/**
+ * The whole tasks grid INCLUDING the header row, read once.
+ *
+ * Every op that has to find a row by id used to pay for its own `getValues` and then a second
+ * one for the row it found; `stampDeleted` additionally read the parent column. A Sheets service
+ * call is the unit of cost in Apps Script — the arithmetic in between is free — so the ops share
+ * one read and work from the array. The lock is held, so nothing can move underneath it.
+ *
+ * The header is row 0 of the result, which is also what lets `healHeader` check itself without a
+ * read of its own.
+ *
+ * @returns {Array[]} at least one row (the header)
+ */
+function readBlock(sheet) {
+  var last = sheet.getLastRow()
+  var rows = Math.max(1, last)
+  return sheet.getRange(1, 1, rows, TASK_COLUMNS.length).getValues()
+}
+
+/** id -> 1-based row number within a block from `readBlock`, or 0. */
+function rowOfId(block, id) {
+  var wanted = String(id == null ? '' : id)
+  if (!wanted) return 0
+  var column = indexOf('id')
+  for (var i = 1; i < block.length; i++) {
+    if (String(block[i][column]) === wanted) return i + 1
+  }
+  return 0
+}
+
+/**
+ * One column of a block, written in a single call.
+ *
+ * The point of this is that its cost does not depend on how many cells changed: stamping a
+ * parent and its four subtasks was ten separate `setValue`s, each its own round trip, and
+ * measured 3.6–4.0s against 2.66s for a single row. Two calls of this replace all of them.
+ *
+ * Only the script's OWN bookkeeping columns go through here (`updated_at`, `deleted_at`), which
+ * is what makes rewriting untouched cells harmless — they are rewritten with the value the
+ * client is already being shown.
+ */
+function writeColumn(sheet, index, values) {
+  if (!values.length) return
+  var range = sheet.getRange(2, index + 1, values.length, 1)
+  // Format before values, always: with the default format `setValues` parses a timestamp string
+  // into a Date and the sheet's locale decides what comes back out.
+  range.setNumberFormat('@')
+  range.setValues(values)
 }
 
 function createTasks(book, tasks) {
@@ -203,9 +273,10 @@ function createTasks(book, tasks) {
     rows.push(row)
   }
 
-  var sheet = book.getSheetByName(TASKS_SHEET)
-  var first = sheet.getLastRow() + 1
-  var range = sheet.getRange(first, 1, rows.length, TASK_COLUMNS.length)
+  var opened = openTasks(book)
+  // `readBlock` returns exactly the used rows, so its length IS the last row.
+  var first = opened.block.length + 1
+  var range = opened.sheet.getRange(first, 1, rows.length, TASK_COLUMNS.length)
   // Format BEFORE values, and never the other way round: with the default
   // format, `setValues` parses "2026-08-07T10:00" into a Date and the sheet's
   // own locale then decides what comes back out. Plain text ('@') is what keeps
@@ -220,16 +291,19 @@ function updateTask(book, task) {
   var row = toRow(task)
   if (!row) return 'bad_payload'
 
-  var sheet = book.getSheetByName(TASKS_SHEET)
-  // Resolve id -> row immediately before writing. A row number cached by the
-  // client is advisory only: positions shift whenever anyone sorts or inserts in
-  // the Sheets UI, and writing to a stale index overwrites someone else's task.
-  var found = findRow(sheet, task.id)
+  // Resolved by ID immediately before writing, never from an index the client sent: positions
+  // shift whenever anyone sorts or inserts in the Sheets UI, and writing to a stale one
+  // overwrites somebody else's task. One read serves the lookup, the created_at rescue and the
+  // header check.
+  var opened = openTasks(book)
+  var sheet = opened.sheet
+  var block = opened.block
+  var found = rowOfId(block, task.id)
   if (!found) return 'not_found'
 
   // created_at belongs to the row, not to whatever the client is holding.
-  var existing = sheet.getRange(found, 1, 1, TASK_COLUMNS.length).getValues()[0]
-  row[indexOf('created_at')] = existing[indexOf('created_at')] || row[indexOf('created_at')]
+  var created = block[found - 1][indexOf('created_at')]
+  if (created) row[indexOf('created_at')] = created
 
   var range = sheet.getRange(found, 1, 1, TASK_COLUMNS.length)
   range.setNumberFormat('@')
@@ -248,36 +322,39 @@ function updateTask(book, task) {
  * Restore is the exact inverse for the same reason: a parent that came back without its
  * children would look repaired and be missing work.
  */
-function stampDeleted(book, id, value) {
+function stampDeleted(book, id, value, timeZone) {
   if (!id) return 'bad_payload'
-  var sheet = book.getSheetByName(TASKS_SHEET)
-  var row = findRow(sheet, id)
-  if (!row) return 'not_found'
+  var opened = openTasks(book)
+  var sheet = opened.sheet
+  var block = opened.block
+  var target = rowOfId(block, id)
+  if (!target) return 'not_found'
 
-  stampOne(sheet, row, value)
+  var parentIndex = indexOf('parent_id')
+  var updatedIndex = indexOf('updated_at')
+  var deletedIndex = indexOf('deleted_at')
+  var stamp = nowIso()
 
-  // Children by parent_id. A subtask has no children of its own — one level only — so this
-  // cannot recurse and needs no visited set.
-  var last = sheet.getLastRow()
-  if (last < 2) return null
-  var parents = sheet.getRange(2, indexOf('parent_id') + 1, last - 1, 1).getValues()
-  for (var i = 0; i < parents.length; i++) {
-    if (String(parents[i][0]) === String(id)) stampOne(sheet, i + 2, value)
+  /**
+   * Two whole-column writes, and their cost does NOT depend on how many rows changed. A parent
+   * with four subtasks was ten single-cell `setValue`s — measured 3.6–4.0s against 2.66s for a
+   * one-row stamp, all of it round trips.
+   *
+   * Untouched cells are rewritten with what they already hold, normalised through `readCell` —
+   * so a cell the Sheets UI had coerced to a Date comes back as the wall-clock string the client
+   * is already being shown, rather than as "Fri Aug 07 2026 …". These are the script's own two
+   * bookkeeping columns and nothing else writes them, which is what makes that safe.
+   */
+  var updated = []
+  var deleted = []
+  for (var i = 1; i < block.length; i++) {
+    var mine = i + 1 === target || String(block[i][parentIndex]) === String(id)
+    updated.push([mine ? stamp : readCell(block[i][updatedIndex], timeZone)])
+    deleted.push([mine ? value : readCell(block[i][deletedIndex], timeZone)])
   }
+  writeColumn(sheet, updatedIndex, updated)
+  writeColumn(sheet, deletedIndex, deleted)
   return null
-}
-
-function stampOne(sheet, row, value) {
-  var cell = sheet.getRange(row, indexOf('deleted_at') + 1)
-  cell.setNumberFormat('@')
-  cell.setValue(value)
-  touch(sheet, row)
-}
-
-function touch(sheet, row) {
-  var cell = sheet.getRange(row, indexOf('updated_at') + 1)
-  cell.setNumberFormat('@')
-  cell.setValue(nowIso())
 }
 
 function setConfig(book, config) {
@@ -316,11 +393,11 @@ function setConfig(book, config) {
  * the first one.
  */
 function compact(book) {
-  var sheet = book.getSheetByName(TASKS_SHEET)
-  var last = sheet.getLastRow()
-  if (last < 2) return null
+  var opened = openTasks(book)
+  var sheet = opened.sheet
+  if (opened.block.length < 2) return null
 
-  var rows = sheet.getRange(2, 1, last - 1, TASK_COLUMNS.length).getValues()
+  var rows = opened.block.slice(1)
   var deletedIndex = indexOf('deleted_at')
   var parentIndex = indexOf('parent_id')
   var idIndex = indexOf('id')
@@ -352,8 +429,7 @@ function compact(book) {
 // Reading
 // ---------------------------------------------------------------------------
 
-function board(book) {
-  var timeZone = book.getSpreadsheetTimeZone()
+function board(book, timeZone) {
   return {
     ok: true,
     tasks: readTasks(book, timeZone),
@@ -448,7 +524,9 @@ function ensureStructure(book) {
   var ours = names[TASKS_SHEET] || names[CONFIG_SHEET]
   if (!ours && sheets.length > 1) return 'not_empty'
 
+  var built = false
   if (!names[TASKS_SHEET]) {
+    built = true
     var tasks = book.insertSheet(TASKS_SHEET)
     var header = tasks.getRange(1, 1, 1, TASK_COLUMNS.length)
     header.setValues([TASK_COLUMNS])
@@ -457,11 +535,10 @@ function ensureStructure(book) {
     // The whole column, not just the used range: a row typed by hand below the
     // data would otherwise be parsed by the sheet's locale.
     tasks.getRange(1, 1, tasks.getMaxRows(), TASK_COLUMNS.length).setNumberFormat('@')
-  } else {
-    healHeader(book.getSheetByName(TASKS_SHEET))
   }
 
   if (!names[CONFIG_SHEET]) {
+    built = true
     var config = book.insertSheet(CONFIG_SHEET)
     var configHeader = config.getRange(1, 1, 1, 2)
     configHeader.setValues([['key', 'value']])
@@ -470,12 +547,15 @@ function ensureStructure(book) {
     config.getRange(1, 1, config.getMaxRows(), 2).setNumberFormat('@')
   }
 
-  // The default "Sheet1" left behind by a brand-new spreadsheet. Removed only
-  // when it is empty and ours exist, so it can never take a populated tab with
-  // it.
-  var leftover = book.getSheetByName('Sheet1')
-  if (leftover && book.getSheets().length > 2 && leftover.getLastRow() === 0) {
-    book.deleteSheet(leftover)
+  // The default "Sheet1" left behind by a brand-new spreadsheet. Only worth looking for on the
+  // write that CREATED a tab — after that it is either long gone or somebody's real sheet, and
+  // asking every write costs a service call for nothing. Removed only when it is empty and ours
+  // both exist, so it can never take a populated tab with it.
+  if (built) {
+    var leftover = book.getSheetByName('Sheet1')
+    if (leftover && book.getSheets().length > 2 && leftover.getLastRow() === 0) {
+      book.deleteSheet(leftover)
+    }
   }
 
   return null
@@ -490,10 +570,9 @@ function ensureStructure(book) {
  * header, which is exactly the kind of thing somebody deletes by hand. Idempotent, and it
  * writes only when the row actually differs.
  */
-function healHeader(sheet) {
-  if (!sheet) return
+function healHeader(sheet, header) {
+  if (!sheet || !header) return
   var width = TASK_COLUMNS.length
-  var header = sheet.getRange(1, 1, 1, width).getValues()[0]
   for (var i = 0; i < width; i++) {
     if (String(header[i]) !== TASK_COLUMNS[i]) {
       var range = sheet.getRange(1, 1, 1, width)
@@ -511,19 +590,6 @@ function healHeader(sheet) {
 
 function indexOf(column) {
   return TASK_COLUMNS.indexOf(column)
-}
-
-/** id -> 1-based row number, or 0. */
-function findRow(sheet, id) {
-  var wanted = String(id == null ? '' : id)
-  if (!wanted) return 0
-  var last = sheet.getLastRow()
-  if (last < 2) return 0
-  var ids = sheet.getRange(2, indexOf('id') + 1, last - 1, 1).getValues()
-  for (var i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]) === wanted) return i + 2
-  }
-  return 0
 }
 
 /** @returns {Array|null} the cell values for one task, or null if unusable. */

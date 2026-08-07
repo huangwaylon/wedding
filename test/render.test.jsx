@@ -288,7 +288,7 @@ describe('subtasks in a task row', () => {
     // a progressbar — slicing to the end read that and passed for the wrong reason.
     const start = open.indexOf('class="subtasks"')
     const list = open.slice(start, open.indexOf('</ul>', start))
-    expect(list).toContain('subtask__check')
+    expect(list).toContain('subtask__toggle')
     expect(list).toContain('aria-label="Delete Step 1"')
     expect(list).not.toContain('role="progressbar"')
     expect(list).not.toContain('class="badge')
@@ -323,7 +323,7 @@ describe('subtasks in a task row', () => {
     )
     expect(viewer).not.toContain('subtask-add__field')
     // But the check slot stays occupied, so the two lists line up.
-    expect(viewer).toContain('subtask__check--static')
+    expect(viewer).toContain('subtask__toggle--static')
   })
 
   it('drives the parent meter from the tally, not the clock', () => {
@@ -392,6 +392,33 @@ describe('Timeline', () => {
     const html = renderToStaticMarkup(<Timeline tasks={list} nowMs={NOW} timeZone={TOKYO} />)
     expect(html).toMatch(/<button[^>]*class="timeline__row/)
     expect(html).toContain('type="button"')
+  })
+
+  it('shows a parent\'s tally in the gutter and names it in the row\'s label', () => {
+    // The tally is what makes a tallied bar legible. For a task with NO checklist the fill's end
+    // lands on the today rule by construction, so a parent's fill sitting short of that rule is
+    // the signal — and the reader needs to be told the fill is a count for that to read as
+    // information rather than as a glitch.
+    const list = rows([task(), sub('a', 1, true), sub('a', 2), sub('a', 3)])
+    const html = renderToStaticMarkup(<Timeline tasks={list} nowMs={NOW} timeZone={TOKYO} />)
+    expect(html).toMatch(/class="timeline__label-tally tnum"[^>]*>1\/3</)
+    expect(html).toMatch(/aria-label="[^"]*1 of 3 subtasks"/)
+  })
+
+  it('draws no subtask row until the outline is opened', () => {
+    // The default has to be independently correct: a static render never runs an effect, so
+    // this markup is all the preview harness and these tests will ever see — and fifty parents
+    // expanded by default is a phone scrolling through three hundred rows.
+    const list = rows([task(), sub('a', 1), sub('a', 2)])
+    const html = renderToStaticMarkup(<Timeline tasks={list} nowMs={NOW} timeZone={TOKYO} />)
+    expect(html).toContain('timeline__outline')
+    expect(html).not.toContain('timeline__sub-rail')
+    expect(html).not.toContain('timeline__row--sub')
+  })
+
+  it('offers no outline control on a board with no checklists', () => {
+    const html = renderToStaticMarkup(<Timeline tasks={rows([task()])} nowMs={NOW} timeZone={TOKYO} />)
+    expect(html).not.toContain('timeline__outline')
   })
 
   it('carries a state dot in the gutter, so state is not colour alone', () => {
@@ -552,7 +579,7 @@ describe('TaskDetailSheet', () => {
     expect(html).toContain('1 of 2 subtasks')
     expect(html).toContain('Step 1')
     // Read-only: static glyphs, no checkbox buttons, no add row.
-    expect(html).toContain('subtask__check--static')
+    expect(html).toContain('subtask__toggle--static')
     expect(html).not.toContain('subtask-add__field')
   })
 

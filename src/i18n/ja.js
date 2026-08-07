@@ -68,6 +68,8 @@ export default {
   'list.subtaskAdd': 'サブタスクを追加',
   'list.markDone': '{title}を完了にする',
   'list.markNotDone': '{title}を未完了に戻す',
+  'list.isDone': '完了：{title}',
+  'list.isNotDone': '未完了：{title}',
   'list.editTask': '{title}を編集',
   'list.deleteTask': '{title}を削除',
 
@@ -164,6 +166,9 @@ export default {
   'timeline.today': '今日',
   'timeline.empty': '日程が入ったタスクがまだありません。',
   'timeline.rowLabel': '{title}：{range}、{percent}%完了、{state}',
+  'timeline.rowLabelSubs': '{title}：{range}、{percent}%完了、{state}、{subs}',
+  'timeline.subRowLabel': '{tick}。{parent}のサブタスク',
+  'timeline.outline': 'サブタスク',
 
   'accent.rose': '薔薇',
   'accent.sage': '若草',
@@ -191,6 +196,7 @@ export default {
   'status.refresh': '再読み込み',
 
   'toast.saved': '保存しました。',
+  'toast.failed': '保存できませんでした。通信状況を確認してもう一度お試しください。',
   'toast.deleted': 'タスクを削除しました。',
 
   'api.unconfigured': 'このビルドにはエンドポイントが設定されていません',

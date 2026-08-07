@@ -71,7 +71,20 @@ export function useBoard({ editKey, onUnauthorized }) {
   const [saving, setSaving] = useState(0)
 
   const lastRead = useRef(0)
-  const inFlight = useRef(false)
+  const reading = useRef(false)
+  /**
+   * Writes, and the two refs that keep them from fighting each other.
+   *
+   * `chain` serialises them: each call waits for the previous one, so the order they were made
+   * in is the order the script's lock sees and the order the replies come back in. Fired
+   * concurrently they would contend on that lock anyway — the queue costs nothing and buys
+   * ordering.
+   *
+   * `writes` counts what is still outstanding, and it is what decides whether a reply may
+   * replace the board. See `run`.
+   */
+  const chain = useRef(Promise.resolve())
+  const writes = useRef(0)
   // Read inside callbacks that must not be re-created when the key changes.
   const keyRef = useRef(editKey)
   keyRef.current = editKey
@@ -95,10 +108,15 @@ export function useBoard({ editKey, onUnauthorized }) {
   }, [])
 
   const refresh = useCallback(async ({ force = false } = {}) => {
-    if (inFlight.current) return
+    if (reading.current) return
+    // A read must never land on top of an unsaved write. Its board was composed before that
+    // write reached the sheet, so accepting it would wipe the optimistic edit off the screen —
+    // the same clobber `run` guards against, arriving from the other direction. The write's own
+    // reply carries a fresh board anyway, so nothing is lost by skipping.
+    if (writes.current > 0) return
     const at = Date.now()
     if (!force && at - lastRead.current < REFRESH_FLOOR_MS) return
-    inFlight.current = true
+    reading.current = true
     lastRead.current = at
     try {
       accept(await api.readBoard())
@@ -109,7 +127,7 @@ export function useBoard({ editKey, onUnauthorized }) {
       // snapshot is stale, not wrong, and saying so beats an error page.
       setStatus((previous) => (previous === STATUS.LOADING ? STATUS.ERROR : previous))
     } finally {
-      inFlight.current = false
+      reading.current = false
     }
   }, [accept])
 
@@ -145,6 +163,14 @@ export function useBoard({ editKey, onUnauthorized }) {
    * the first one's starting point. Without it the call just waits, which is right when a
    * partial result would be worse than a spinner.
    *
+   * ONLY THE LAST WRITE STILL IN FLIGHT MAY REPLACE THE BOARD, and that rule is what makes a
+   * burst of edits survivable. Every reply carries the WHOLE board as it stood when that write
+   * committed, so an earlier one's reply describes a sheet that does not yet contain the later
+   * edits — and accepting it wipes them off the screen. Ticking three subtasks in a row
+   * measurably did that: 3 of 3, then back to 2 of 3 for a second and a half, then 3 again.
+   * Dropping the intermediate boards is safe because `chain` guarantees the last reply is the
+   * one composed after every earlier write had already been applied.
+   *
    * @param {(key: string) => Promise<object>} call
    * @param {(tasks: object[]) => object[]} [optimistic]
    * @returns {Promise<boolean>} whether it landed
@@ -158,9 +184,15 @@ export function useBoard({ editKey, onUnauthorized }) {
           return optimistic(previous)
         })
       }
+      writes.current += 1
       setSaving((count) => count + 1)
+      // Queued behind whatever is already going, and the chain swallows failures so one
+      // rejected write cannot break the queue for everything after it.
+      const mine = chain.current.then(() => call(keyRef.current))
+      chain.current = mine.catch(() => {})
       try {
-        accept(await call(keyRef.current))
+        const board = await mine
+        if (writes.current === 1) accept(board)
         return true
       } catch (failure) {
         if (rollback) setTasks(rollback)
@@ -169,6 +201,7 @@ export function useBoard({ editKey, onUnauthorized }) {
         if (code === API_ERROR.UNAUTHORIZED) unauthorizedRef.current?.()
         return false
       } finally {
+        writes.current -= 1
         setSaving((count) => count - 1)
       }
     },

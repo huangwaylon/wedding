@@ -137,27 +137,59 @@ export default function App() {
     setSafeToReload(() => !busy)
   }, [busy])
 
-  const save = useCallback(
-    async (task) => {
-      const ok = task.id ? await board.editTask(task) : await board.addTask(task)
-      if (ok) show(t('toast.saved'))
+  /**
+   * Every optimistic mutation reports through here.
+   *
+   * A FAILURE NEEDS A TOAST OF ITS OWN, and it did not have one. The sheets close before the
+   * write lands now, so a failure is a row that quietly rolls back OUT of a list somebody is
+   * no longer looking at — invisible unless it is said out loud. `run` restores the previous
+   * tasks, so "nothing was saved" is literally true.
+   */
+  const report = useCallback(
+    async (work, message) => {
+      const ok = await work
+      show(ok ? message : t('toast.failed'))
       return ok
     },
-    [board, show, t],
+    [show, t],
+  )
+
+  const save = useCallback(
+    (task) => report(task.id ? board.editTask(task) : board.addTask(task), t('toast.saved')),
+    [board, report, t],
   )
 
   const confirmDelete = useCallback(
-    async (task) => {
+    (task) => {
       setPendingDelete(null)
       setEditing(null)
-      if (await board.removeTask(task.id)) show(t('toast.deleted'))
+      return report(board.removeTask(task.id), t('toast.deleted'))
+    },
+    [board, report, t],
+  )
+
+  const restore = useCallback(
+    (id) => report(board.restoreTask(id), t('deleted.restored')),
+    [board, report, t],
+  )
+
+  /**
+   * Adding a subtask is the one mutation with NO success toast. A checklist is entered five
+   * items at a time, and five "Saved." toasts stacking up over the field somebody is still
+   * typing into is worse than silence — the row appearing in the list is the confirmation.
+   * A failure still speaks.
+   */
+  const addSubtask = useCallback(
+    async (parent, title) => {
+      if (!(await board.addSubtask(parent, title))) show(t('toast.failed'))
     },
     [board, show, t],
   )
 
-  const restore = useCallback(
-    async (id) => {
-      if (await board.restoreTask(id)) show(t('deleted.restored'))
+  /** Same reasoning: ticking is the highest-frequency action there is, so only a failure talks. */
+  const toggleDone = useCallback(
+    async (task) => {
+      if (!(await board.toggleDone(task))) show(t('toast.failed'))
     },
     [board, show, t],
   )
@@ -305,11 +337,11 @@ export default function App() {
                   nowWall={nowWall}
                   canEdit={canEdit}
                   expanded={expanded}
-                  onToggle={board.toggleDone}
+                  onToggle={toggleDone}
                   onEdit={setEditing}
                   onDelete={setPendingDelete}
                   onExpand={toggleExpanded}
-                  onAddSubtask={board.addSubtask}
+                  onAddSubtask={addSubtask}
                   onSubtaskFocus={setAddingSubtask}
                 />
               )}
@@ -342,8 +374,8 @@ export default function App() {
           defaultDay={nowWall.slice(0, 10)}
           onSave={save}
           onDelete={(task) => setPendingDelete(task)}
-          onAddSubtask={board.addSubtask}
-          onToggleSubtask={board.toggleDone}
+          onAddSubtask={addSubtask}
+          onToggleSubtask={toggleDone}
           onDeleteSubtask={setPendingDelete}
           onClose={() => setEditing(null)}
         />

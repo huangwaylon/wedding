@@ -13,13 +13,14 @@
  * task gets deleted by accident.
  */
 
+import { isDone } from '../schema.js'
 import { toPercent } from '../lib/progress.js'
 import { formatWallRange } from '../lib/time.js'
 import { useCategoryLabel, useT } from '../i18n/index.js'
 import BottomSheet from './BottomSheet.jsx'
+import DoneToggle from './DoneToggle.jsx'
 import Meter from './Meter.jsx'
 import StateBadge from './StateBadge.jsx'
-import { CheckCircleIcon, CircleIcon } from './icons.jsx'
 
 export default function TaskDetailSheet({ task, nowWall, onClose }) {
   const { t, locale } = useT()
@@ -79,14 +80,17 @@ export default function TaskDetailSheet({ task, nowWall, onClose }) {
               <ul className="subtasks">
                 {(task.subtasks ?? []).map((subtask) => (
                   <li className="subtask subtask--static" key={subtask.id}>
-                    <span
-                      className={`subtask__check subtask__check--static${
-                        subtask.doneAt ? ' subtask__check--on' : ''
-                      }`}
+                    {/* `DoneToggle` rather than a hand-rolled glyph: this WAS a second copy of
+                        the same markup, which is the drift that component exists to prevent —
+                        and it duly drifted, keeping a class name the checklist no longer uses. */}
+                    <DoneToggle
+                      done={isDone(subtask)}
+                      title={subtask.title}
+                      canEdit={false}
+                      className="subtask__toggle"
                     >
-                      {subtask.doneAt ? <CheckCircleIcon /> : <CircleIcon />}
-                    </span>
-                    <span className="subtask__title">{subtask.title}</span>
+                      <span className="subtask__title">{subtask.title}</span>
+                    </DoneToggle>
                   </li>
                 ))}
               </ul>

@@ -442,7 +442,11 @@
 
 .meter--lg {
   height: var(--meter-height-lg);
-  /* The tick has to escape the bar to stay legible, so this variant cannot clip. */
+}
+
+/* The tick is taller than the bar on purpose, so a meter carrying one cannot clip. Applied by
+   `Meter` whenever a mark is passed, which is what lets an 8px task row carry one. */
+.meter--marked {
   overflow: visible;
 }
 

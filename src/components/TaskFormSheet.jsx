@@ -86,11 +86,10 @@ export default function TaskFormSheet({
   const categoryLabel = useCategoryLabel()
   const [draft, setDraft] = useState(() => draftFrom(task, defaultDay))
   const [codes, setCodes] = useState([])
-  const [busy, setBusy] = useState(false)
 
   const set = (patch) => setDraft((previous) => ({ ...previous, ...patch }))
 
-  const submit = async (event) => {
+  const submit = (event) => {
     event.preventDefault()
     const window = draftToWindow(draft)
     const next = {
@@ -113,10 +112,18 @@ export default function TaskFormSheet({
     setCodes(failures)
     if (failures.length) return
 
-    setBusy(true)
-    const saved = await onSave(next)
-    setBusy(false)
-    if (saved) onClose()
+    /**
+     * CLOSED IMMEDIATELY, AND THE WRITE IS NOT AWAITED.
+     *
+     * A round trip to the Apps Script endpoint measures ~3s, and this sheet used to sit on
+     * screen saying "Saving…" for the whole of it — on every single add and edit, which is what
+     * "saving takes many seconds" was. Nothing is gained by waiting: the mutation is optimistic,
+     * so the row is already in the list behind this panel. `onSave` still reports what happened,
+     * as a toast, and a failure rolls the row back out — which is why there is a toast for the
+     * failure too. Validation above is synchronous and still keeps the sheet open.
+     */
+    onSave(next)
+    onClose()
   }
 
   const has = (code) => codes.includes(code)
@@ -134,8 +141,8 @@ export default function TaskFormSheet({
           <button type="button" className="btn btn--secondary" onClick={onClose}>
             {t('common.cancel')}
           </button>
-          <button type="submit" form="task-form" className="btn btn--primary" disabled={busy}>
-            {busy ? t('common.saving') : t('common.save')}
+          <button type="submit" form="task-form" className="btn btn--primary">
+            {t('common.save')}
           </button>
         </>
       }
