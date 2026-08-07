@@ -64,6 +64,7 @@ describe('the mutation primitive', () => {
       'saveConfig',
       'seedTemplate',
       'addTask',
+      'addSubtask',
       'editTask',
       'removeTask',
       'restoreTask',

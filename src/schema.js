@@ -29,6 +29,12 @@ export const TASK_COLUMNS = [
   'created_at',
   'updated_at',
   'deleted_at',
+  /**
+   * The id of this row's parent, or empty for a top-level task. APPENDED LAST, and it must
+   * stay last: appending is the only change that cannot shift an existing column's index, and
+   * it keeps the human-meaningful columns leftmost where somebody reading the sheet is looking.
+   */
+  'parent_id',
 ]
 
 export const TASKS_SHEET = 'tasks'
@@ -75,6 +81,7 @@ export function rowToTask(row) {
     createdAt: cellText(row?.created_at),
     updatedAt: cellText(row?.updated_at),
     deletedAt: cellText(row?.deleted_at),
+    parentId: cellText(row?.parent_id),
   }
 }
 
@@ -102,6 +109,11 @@ export function taskToRow(task) {
     notes: cellText(task.notes),
     owner: cellText(task.owner),
     deleted_at: cellText(task.deletedAt),
+    /**
+     * Never omit this. `updateTask` writes the WHOLE row from the payload, so a task object
+     * built without `parentId` blanks the cell and silently promotes a subtask to a task.
+     */
+    parent_id: cellText(task.parentId),
   }
 }
 
@@ -112,6 +124,11 @@ export function isLive(task) {
 
 export function isDone(task) {
   return Boolean(task.doneAt)
+}
+
+/** A row that names a parent. Whether that parent is USABLE is decided by `partitionSubtasks`. */
+function isSubtask(task) {
+  return Boolean(task?.parentId)
 }
 
 /**
@@ -126,6 +143,15 @@ export function isDone(task) {
 export function validateTask(task, isValidWall) {
   const codes = []
   if (!cellText(task?.title)) codes.push('MISSING_TITLE')
+
+  /**
+   * A subtask is a checklist item: a title and a tick. It carries no window, so the date rules
+   * below do not apply to it — requiring two date wheels per item would make entering five of
+   * them in a row unusable on a phone, and then no parent's progress would ever advance, which
+   * is the whole point of the feature. One branch rather than a second function, so the title
+   * check cannot drift between them.
+   */
+  if (isSubtask(task)) return codes
 
   const start = cellText(task?.start)
   const end = cellText(task?.end)

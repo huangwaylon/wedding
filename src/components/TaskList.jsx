@@ -33,7 +33,7 @@ function groupByMonth(tasks) {
   return groups
 }
 
-export default function TaskList({ tasks, nowWall, canEdit, onToggle, onEdit, onDelete }) {
+export default function TaskList({ tasks, nowWall, canEdit, expanded, ...handlers }) {
   const { t, locale } = useT()
   const groups = groupByMonth(tasks)
 
@@ -58,9 +58,8 @@ export default function TaskList({ tasks, nowWall, canEdit, onToggle, onEdit, on
                 task={task}
                 nowWall={nowWall}
                 canEdit={canEdit}
-                onToggle={onToggle}
-                onEdit={onEdit}
-                onDelete={onDelete}
+                expanded={Boolean(expanded?.has(task.id))}
+                {...handlers}
               />
             ))}
           </ul>

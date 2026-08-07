@@ -182,6 +182,34 @@ export function useBoard({ editKey, onUnauthorized }) {
   )
 
   /**
+   * A subtask is a task with a parent and no window. It goes through the same `run` as
+   * everything else — a second write path would be the fifth try/catch `run` exists to prevent.
+   */
+  const addSubtask = useCallback(
+    (parent, title) => {
+      const subtask = {
+        id: newId(),
+        title,
+        parentId: parent.id,
+        category: '',
+        start: '',
+        end: '',
+        allDay: false,
+        doneAt: '',
+        notes: '',
+        owner: '',
+        deletedAt: '',
+        pending: true,
+      }
+      return run(
+        (key) => api.createTask(subtask, key),
+        (previous) => [...previous, subtask],
+      )
+    },
+    [run],
+  )
+
+  /**
    * Done is a timestamp, not a boolean, because "when did this get finished" is worth
    * keeping and because a blank cell is the obvious spelling of not-done in a spreadsheet
    * somebody may open by hand.
@@ -191,26 +219,21 @@ export function useBoard({ editKey, onUnauthorized }) {
     [editTask],
   )
 
+  /**
+   * The server cascades to subtasks under one lock, so the optimistic update has to as well —
+   * otherwise the children stay on screen for a second and then vanish when the reply lands.
+   */
+  const stamp = (id, deletedAt) => (previous) =>
+    previous.map((row) =>
+      row.id === id || row.parentId === id ? { ...row, deletedAt, pending: true } : row,
+    )
+
   const removeTask = useCallback(
-    (id) =>
-      run(
-        (key) => api.deleteTask(id, key),
-        (previous) =>
-          previous.map((row) =>
-            row.id === id ? { ...row, deletedAt: new Date().toISOString(), pending: true } : row,
-          ),
-      ),
+    (id) => run((key) => api.deleteTask(id, key), stamp(id, new Date().toISOString())),
     [run],
   )
 
-  const restoreTask = useCallback(
-    (id) =>
-      run(
-        (key) => api.restoreTask(id, key),
-        (previous) => previous.map((row) => (row.id === id ? { ...row, deletedAt: '', pending: true } : row)),
-      ),
-    [run],
-  )
+  const restoreTask = useCallback((id) => run((key) => api.restoreTask(id, key), stamp(id, '')), [run])
 
   /**
    * Seed a starter checklist. Deliberately NOT optimistic: forty rows appearing and then
@@ -237,7 +260,20 @@ export function useBoard({ editKey, onUnauthorized }) {
 
   const compact = useCallback(() => run((key) => api.compact(key)), [run])
 
-  const deletedTasks = useMemo(() => tasks.filter((task) => !isLive(task)), [tasks])
+  /**
+   * Tombstoned rows worth offering a Restore for.
+   *
+   * A subtask whose parent is ALSO deleted is excluded: the delete cascaded, so restoring the
+   * parent brings it back too. Listing it separately turns one delete into four restore rows,
+   * three of which would resurrect an orphan under a still-deleted parent.
+   *
+   * A subtask deleted on its own still appears — its parent is live, so restoring it alone is
+   * exactly what somebody wants.
+   */
+  const deletedTasks = useMemo(() => {
+    const gone = new Set(tasks.filter((task) => !isLive(task)).map((task) => task.id))
+    return tasks.filter((task) => !isLive(task) && !gone.has(task.parentId))
+  }, [tasks])
 
   return {
     tasks,
@@ -252,6 +288,7 @@ export function useBoard({ editKey, onUnauthorized }) {
     saving,
     refresh,
     addTask,
+    addSubtask,
     editTask,
     toggleDone,
     removeTask,

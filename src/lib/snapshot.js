@@ -16,7 +16,7 @@ import { STORAGE_KEYS, readStored, writeStored } from '../config.js'
  * ignored and re-fetched, which is free — the sheet is the source of truth and
  * this is only a cache. Bump it whenever the stored shape changes.
  */
-const VERSION = 1
+const VERSION = 2
 
 /**
  * Roughly 3000 tasks. WebKit charges localStorage in UTF-16 code units, so the
@@ -60,7 +60,10 @@ export function writeSnapshot(tasks, sheetConfig) {
   const payload = JSON.stringify({
     v: VERSION,
     config: sheetConfig ?? {},
-    tasks: tasks.map(({ pending, progress, ...task }) => task),
+    // `subtasks` is stripped alongside the other derived fields. It is rebuilt from the flat
+    // rows on every read, and persisting it would re-seed a stale percentage on each cold
+    // launch and double the payload against MAX_CHARS.
+    tasks: tasks.map(({ pending, progress, subtasks, ...task }) => task),
   })
   if (payload === lastPayload) return
   if (payload.length > MAX_CHARS) return

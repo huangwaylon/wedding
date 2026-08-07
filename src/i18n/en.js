@@ -51,7 +51,8 @@ export default {
   },
   'overall.pace.ontrack': 'On schedule',
   'overall.tasks': { one: '{count} task', other: '{count} tasks' },
-  'overall.method': 'Every task counts equally. A task counts as 100% once marked done.',
+  'overall.method':
+    'Every task counts equally, however many subtasks it has. A task with subtasks is measured by how many are ticked; the rest by how much of their window has passed.',
 
   'state.done': 'Done',
   'state.overdue': 'Overdue',
@@ -69,8 +70,13 @@ export default {
   'list.emptyFiltered': 'Nothing matches this filter.',
   'list.showAll': 'Show everything',
   'list.percentLabel': '{percent}% complete',
-  'list.markDone': 'Mark done',
-  'list.markNotDone': 'Mark not done',
+  'list.subtasks': {
+    one: '{done} of {count} subtask',
+    other: '{done} of {count} subtasks',
+  },
+  'list.subtaskAdd': 'Add a subtask',
+  'list.markDone': 'Mark {title} done',
+  'list.markNotDone': 'Mark {title} not done',
   'list.editTask': 'Edit {title}',
   'list.deleteTask': 'Delete {title}',
 
@@ -108,6 +114,8 @@ export default {
   'form.ownerPlaceholder': 'Either of us',
   'form.notes': 'Notes',
   'form.notesPlaceholder': 'Anything worth remembering',
+  'form.subtasks': 'Subtasks',
+  'form.subtasksHint': 'Subtasks save as you add them, not when you press Save.',
   'form.done': 'Already done',
   'form.deleteThis': 'Delete this task',
 
@@ -120,8 +128,13 @@ export default {
 
   'confirm.deleteTitle': 'Delete this task?',
   'confirm.deleteBody': '“{title}” goes to the Deleted list, where you can put it back.',
+  'confirm.deleteSubtasks': {
+    one: 'Its {count} subtask goes with it.',
+    other: 'Its {count} subtasks go with it.',
+  },
 
   'detail.state': 'Status',
+  'detail.subtasks': 'Subtasks',
   'detail.window': 'When',
   'detail.progress': 'Progress',
 

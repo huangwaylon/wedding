@@ -57,6 +57,10 @@ var TASK_COLUMNS = [
   'created_at',
   'updated_at',
   'deleted_at',
+  // Appended LAST and it must stay last: appending is the only change that cannot shift an
+  // existing column's index. Deliberately not in TEXT_COLUMNS — it is an id, and an id never
+  // starts with =, +, - or @.
+  'parent_id',
 ]
 
 var TASKS_SHEET = 'tasks'
@@ -179,7 +183,6 @@ function openBook() {
 
 /** @returns {string|null} an error code, or null on success. */
 function apply(book, op, payload) {
-  if (op === 'ensure') return null
   if (op === 'create') return createTasks(book, [payload && payload.task])
   if (op === 'createMany') return createTasks(book, (payload && payload.tasks) || [])
   if (op === 'update') return updateTask(book, payload && payload.task)
@@ -235,19 +238,40 @@ function updateTask(book, task) {
 }
 
 /**
- * Soft delete, and its inverse. One cell write, so rows never change position
- * and nobody else's cached indices move — which is also why a restore is free.
+ * Soft delete, and its inverse. One cell write per row, so rows never change position and
+ * nobody else's cached indices move — which is also why a restore is free.
+ *
+ * IT CASCADES TO SUBTASKS, and it does so HERE rather than in the client. Deleting a parent
+ * from the browser as N separate calls would be N round trips that can half-fail, leaving some
+ * children tombstoned and some not. Done here it is one lock, one reply, all-or-nothing.
+ *
+ * Restore is the exact inverse for the same reason: a parent that came back without its
+ * children would look repaired and be missing work.
  */
 function stampDeleted(book, id, value) {
   if (!id) return 'bad_payload'
   var sheet = book.getSheetByName(TASKS_SHEET)
   var row = findRow(sheet, id)
   if (!row) return 'not_found'
+
+  stampOne(sheet, row, value)
+
+  // Children by parent_id. A subtask has no children of its own — one level only — so this
+  // cannot recurse and needs no visited set.
+  var last = sheet.getLastRow()
+  if (last < 2) return null
+  var parents = sheet.getRange(2, indexOf('parent_id') + 1, last - 1, 1).getValues()
+  for (var i = 0; i < parents.length; i++) {
+    if (String(parents[i][0]) === String(id)) stampOne(sheet, i + 2, value)
+  }
+  return null
+}
+
+function stampOne(sheet, row, value) {
   var cell = sheet.getRange(row, indexOf('deleted_at') + 1)
   cell.setNumberFormat('@')
   cell.setValue(value)
   touch(sheet, row)
-  return null
 }
 
 function touch(sheet, row) {
@@ -296,10 +320,30 @@ function compact(book) {
   var last = sheet.getLastRow()
   if (last < 2) return null
 
-  var column = indexOf('deleted_at') + 1
-  var values = sheet.getRange(2, column, last - 1, 1).getValues()
-  for (var i = values.length - 1; i >= 0; i--) {
-    if (String(values[i][0] || '').trim()) sheet.deleteRow(i + 2)
+  var rows = sheet.getRange(2, 1, last - 1, TASK_COLUMNS.length).getValues()
+  var deletedIndex = indexOf('deleted_at')
+  var parentIndex = indexOf('parent_id')
+  var idIndex = indexOf('id')
+
+  // The ids about to disappear. A live child pointing at one of them would be left naming a
+  // row that no longer exists; the read promotes it to top level either way, but the sheet is
+  // what a person looks at and this is the only moment the information still exists.
+  var dying = {}
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][deletedIndex] || '').trim()) dying[String(rows[i][idIndex])] = true
+  }
+  for (var j = 0; j < rows.length; j++) {
+    if (String(rows[j][deletedIndex] || '').trim()) continue
+    if (!dying[String(rows[j][parentIndex])]) continue
+    var cell = sheet.getRange(j + 2, parentIndex + 1)
+    cell.setNumberFormat('@')
+    cell.setValue('')
+  }
+
+  // DESCENDING: deleting row 5 shifts row 9 up to row 8, so an ascending pass deletes the
+  // wrong rows after the first one.
+  for (var k = rows.length - 1; k >= 0; k--) {
+    if (String(rows[k][deletedIndex] || '').trim()) sheet.deleteRow(k + 2)
   }
   return null
 }
@@ -403,6 +447,8 @@ function ensureStructure(book) {
     // The whole column, not just the used range: a row typed by hand below the
     // data would otherwise be parsed by the sheet's locale.
     tasks.getRange(1, 1, tasks.getMaxRows(), TASK_COLUMNS.length).setNumberFormat('@')
+  } else {
+    healHeader(book.getSheetByName(TASKS_SHEET))
   }
 
   if (!names[CONFIG_SHEET]) {
@@ -423,6 +469,30 @@ function ensureStructure(book) {
   }
 
   return null
+}
+
+/**
+ * Bring an existing tab's header row up to date when the column list grows.
+ *
+ * This is not migration code and it moves no data: reads and writes already address columns by
+ * index, so a board created before a column existed keeps working with a blank cell. What it
+ * fixes is the SHEET a person looks at — otherwise the new column has data under an empty
+ * header, which is exactly the kind of thing somebody deletes by hand. Idempotent, and it
+ * writes only when the row actually differs.
+ */
+function healHeader(sheet) {
+  if (!sheet) return
+  var width = TASK_COLUMNS.length
+  var header = sheet.getRange(1, 1, 1, width).getValues()[0]
+  for (var i = 0; i < width; i++) {
+    if (String(header[i]) !== TASK_COLUMNS[i]) {
+      var range = sheet.getRange(1, 1, 1, width)
+      range.setNumberFormat('@')
+      range.setValues([TASK_COLUMNS])
+      range.setFontWeight('bold')
+      return
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ import { validateTask } from '../schema.js'
 import { endOfDay, isValidWall, normalizeWall, startOfDay, wallDay } from '../lib/time.js'
 import { useCategoryLabel, useT } from '../i18n/index.js'
 import BottomSheet from './BottomSheet.jsx'
+import SubtaskList from './SubtaskList.jsx'
 
 /** '2027-04-18T14:00' -> '14:00'. '' for anything unusable. */
 function timeOf(wall) {
@@ -70,7 +71,17 @@ export function draftToWindow(draft) {
   }
 }
 
-export default function TaskFormSheet({ task, categories, defaultDay, onSave, onDelete, onClose }) {
+export default function TaskFormSheet({
+  task,
+  categories,
+  defaultDay,
+  onSave,
+  onDelete,
+  onAddSubtask,
+  onToggleSubtask,
+  onDeleteSubtask,
+  onClose,
+}) {
   const { t } = useT()
   const categoryLabel = useCategoryLabel()
   const [draft, setDraft] = useState(() => draftFrom(task, defaultDay))
@@ -83,6 +94,8 @@ export default function TaskFormSheet({ task, categories, defaultDay, onSave, on
     event.preventDefault()
     const window = draftToWindow(draft)
     const next = {
+      // Spread first so `parentId` survives: `updateTask` writes the WHOLE row, and a payload
+      // without it blanks the cell and silently promotes a subtask to a task.
       ...(task ?? {}),
       title: draft.title,
       category: draft.category,
@@ -261,6 +274,25 @@ export default function TaskFormSheet({ task, categories, defaultDay, onSave, on
             placeholder={t('form.notesPlaceholder')}
           />
         </div>
+
+        {/* Only when editing: a new task has no id yet, so there is nothing to parent to. And
+            these adds are IMMEDIATE writes rather than part of the draft — hence the hint,
+            because Cancel will not undo them. The alternative was a permanent "add a subtask"
+            row on all fifty-two parents, three phone screens of height for a rare action. */}
+        {task ? (
+          <div className="field">
+            <span className="label">{t('form.subtasks')}</span>
+            <SubtaskList
+              subtasks={task.subtasks ?? []}
+              canEdit
+              onToggle={onToggleSubtask}
+              onDelete={onDeleteSubtask}
+              onAdd={(title) => onAddSubtask(task, title)}
+              onFocusChange={() => {}}
+            />
+            <span className="hint">{t('form.subtasksHint')}</span>
+          </div>
+        ) : null}
 
         <div className="field">
           <label className="switch">

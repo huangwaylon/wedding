@@ -40,6 +40,28 @@ subtraction. Nor can it be inferred from an in-flight task — one halfway throu
 with no work done is not late, and this app never asks anybody to estimate how far along
 something is. So the overdue count decides it.
 
+## Subtasks
+
+A task can hold a checklist. **Ticking subtasks is what moves the parent's bar** — a parent with
+subtasks is measured by how many are ticked, and one without is measured by how much of its
+window has passed. One level of nesting, deliberately: a subtask is a title and a tick with no
+dates of its own, because requiring two date pickers per item would make entering five of them
+on a phone unusable, and then nothing would ever get ticked.
+
+Precedence is **explicit done > the tally > the clock**. Marking the parent done still wins,
+because that is the only thing a person actually asserted — somebody closing out a task with two
+items open is saying the rest turned out not to be needed. And all-subtasks-done does *not* mark
+the parent done: the app suggests the tick, the person makes it.
+
+Subtasks never enter the overall percentage. A parent with ten of them would otherwise carry
+eleven twentieths of a ten-task board, which would mean writing more detail about one task
+deflated every other. They move their parent's single share and nothing else.
+
+One thing this bought for free: because a parent's percentage is now real work done while the
+on-schedule mark stays elapsed time, **the app can finally tell you that you are behind before a
+deadline passes** rather than only after. Overdue is retrospective; a parent trailing its own
+window is not.
+
 ## Views
 
 **List**, grouped by the month a task starts in. Grouped by month rather than by state
@@ -91,6 +113,7 @@ One spreadsheet, two tabs — `tasks` and `config` — laid out in exactly one p
 | J | `created_at` | `2026-08-07T…Z` | Stamped by the script, never by the browser |
 | K | `updated_at` | `2026-08-07T…Z` | Same |
 | L | `deleted_at` | *(empty)* | A timestamp here soft-deletes the row |
+| M | `parent_id` | *(empty)* | The id of this row's parent. Empty for a task; set for a subtask |
 
 **`start` and `end` are wall-clock strings with no offset and no `Z`.** They mean that
 reading of a clock *at the wedding*, and they are resolved against the board's configured

@@ -27,7 +27,13 @@ export function ConfirmDeleteSheet({ task, onConfirm, onClose }) {
         </>
       }
     >
-      <p className="caption">{t('confirm.deleteBody', { title: task.title })}</p>
+      <p className="caption">
+        {t('confirm.deleteBody', { title: task.title })}
+        {/* The delete cascades server-side under one lock, so saying so is not optional. */}
+        {task.progress?.tally ? (
+          <> {t('confirm.deleteSubtasks', { count: task.progress.tally.total })}</>
+        ) : null}
+      </p>
     </BottomSheet>
   )
 }

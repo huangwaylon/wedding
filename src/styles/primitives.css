@@ -330,23 +330,63 @@
   /* Pill, matching `.chip--static`, which it sits beside on every task row. The two were the
      same size, padding, type and ink at two different corner radii. */
   border-radius: var(--radius-full);
-  background-color: var(--neutral-wash);
+  background-color: var(--state-wash, var(--neutral-wash));
   font-size: var(--fs-caption);
   font-weight: 500;
   color: var(--ink-2);
   white-space: nowrap;
 }
 
-.badge--done {
-  background-color: var(--good-wash);
+/* ---- The state table -------------------------------------------------
+   ONE table for every mark that carries state. Four families — the badge's wash, its dot, the
+   standalone dot, a meter fill — plus the timeline bar in app.css used to restate the same
+   five-row mapping in nineteen separate blocks across two files, and it had already produced
+   two defects: `.badge--unscheduled` is rendered by StateBadge for every state and had no rule
+   at all, so its dot fell back to currentColor while every other grey dot was --ink-4; and
+   `.dot--upcoming` was a no-op restating the base.
+
+   The class names are unchanged, so components and tests are untouched. What changed is that a
+   state now sets two custom properties in one place and every mark reads them. A new mark type
+   costs one line instead of an edit in six families. */
+.badge--done,
+.dot--done,
+.meter--done,
+.timeline__row--done {
+  --state-fill: var(--good);
+  --state-wash: var(--good-wash);
 }
 
-.badge--overdue {
-  background-color: var(--critical-wash);
+.badge--overdue,
+.dot--overdue,
+.meter--overdue,
+.timeline__row--overdue {
+  --state-fill: var(--critical);
+  --state-wash: var(--critical-wash);
 }
 
-.badge--active {
-  background-color: var(--accent-wash);
+.badge--active,
+.dot--active,
+.meter--active,
+.timeline__row--active {
+  --state-fill: var(--accent);
+  --state-wash: var(--accent-wash);
+}
+
+.badge--upcoming,
+.dot--upcoming,
+.meter--upcoming,
+.timeline__row--upcoming {
+  --state-fill: var(--ink-4);
+  --state-wash: var(--neutral-wash);
+}
+
+/* Explicit rather than left to the fallbacks: this is the state whose badge had no rule. */
+.badge--unscheduled,
+.dot--unscheduled,
+.meter--unscheduled,
+.timeline__row--unscheduled {
+  --state-fill: var(--ink-4);
+  --state-wash: var(--neutral-wash);
 }
 
 /* The dot is the icon half of the icon+label pairing: it puts the state's colour
@@ -356,24 +396,9 @@
   height: 0.5rem;
   flex: none;
   border-radius: var(--radius-full);
-  background-color: currentColor;
+  background-color: var(--state-fill, var(--ink-4));
 }
 
-.badge--done .badge__dot {
-  background-color: var(--good);
-}
-
-.badge--overdue .badge__dot {
-  background-color: var(--critical);
-}
-
-.badge--active .badge__dot {
-  background-color: var(--accent);
-}
-
-.badge--upcoming .badge__dot {
-  background-color: var(--ink-4);
-}
 
 /* The same dot, standalone — for the stat tiles, where there is no badge wrapper
    to scope the colour. Kept as its own modifier rather than reusing
@@ -384,24 +409,9 @@
   height: 0.5rem;
   flex: none;
   border-radius: var(--radius-full);
-  background-color: var(--ink-4);
+  background-color: var(--state-fill, var(--ink-4));
 }
 
-.dot--done {
-  background-color: var(--good);
-}
-
-.dot--overdue {
-  background-color: var(--critical);
-}
-
-.dot--active {
-  background-color: var(--accent);
-}
-
-.dot--upcoming {
-  background-color: var(--ink-4);
-}
 
 /* ---- Meter -------------------------------------------------------------
    The core primitive of this app. A track, a fill, and — on the large variant —
@@ -426,20 +436,9 @@
 .meter__fill {
   height: 100%;
   border-radius: var(--radius-full);
-  background-color: var(--accent);
+  background-color: var(--state-fill, var(--accent));
 }
 
-.meter--done .meter__fill {
-  background-color: var(--good);
-}
-
-.meter--overdue .meter__fill {
-  background-color: var(--critical);
-}
-
-.meter--upcoming .meter__fill {
-  background-color: var(--ink-4);
-}
 
 .meter--lg {
   height: var(--meter-height-lg);
@@ -447,9 +446,6 @@
   overflow: visible;
 }
 
-.meter--lg .meter__fill {
-  height: 100%;
-}
 
 /* The on-schedule mark. A dark tick with a 2px ring in the surface colour, which
    is the dataviz surface-ring rule: that ring is why it stays visible whether it

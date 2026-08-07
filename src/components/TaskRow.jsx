@@ -15,16 +15,30 @@
 import { STATE, toPercent } from '../lib/progress.js'
 import { formatWallRange } from '../lib/time.js'
 import { useCategoryLabel, useT } from '../i18n/index.js'
+import DoneToggle from './DoneToggle.jsx'
 import Meter from './Meter.jsx'
 import StateBadge from './StateBadge.jsx'
-import { CheckCircleIcon, CircleIcon, PencilIcon, TrashIcon } from './icons.jsx'
+import SubtaskList from './SubtaskList.jsx'
+import { ChevronRightIcon, PencilIcon, TrashIcon } from './icons.jsx'
 
-export default function TaskRow({ task, nowWall, canEdit, onToggle, onEdit, onDelete }) {
+export default function TaskRow({
+  task,
+  nowWall,
+  canEdit,
+  expanded,
+  onToggle,
+  onEdit,
+  onDelete,
+  onExpand,
+  onAddSubtask,
+  onSubtaskFocus,
+}) {
   const { t, locale } = useT()
   const categoryLabel = useCategoryLabel()
-  const { state, percent } = task.progress
+  const { state, percent, tally } = task.progress
   const done = state === STATE.DONE
   const shown = toPercent(percent)
+  const subtasks = task.subtasks ?? []
 
   const range =
     state === STATE.UNSCHEDULED
@@ -36,27 +50,17 @@ export default function TaskRow({ task, nowWall, canEdit, onToggle, onEdit, onDe
           dash: t('common.dash'),
         })
 
-  const CheckGlyph = done ? CheckCircleIcon : CircleIcon
-
   return (
     <li
       className={`task${done ? ' task--done' : ''}${task.pending ? ' task--pending' : ''}`}
     >
-      {canEdit ? (
-        <button
-          type="button"
-          className={`task__check${done ? ' task__check--on' : ''}`}
-          onClick={() => onToggle(task)}
-          aria-pressed={done}
-          aria-label={done ? t('list.markNotDone') : t('list.markDone')}
-        >
-          <CheckGlyph />
-        </button>
-      ) : (
-        <span className={`task__check task__check--static${done ? ' task__check--on' : ''}`}>
-          <CheckGlyph />
-        </span>
-      )}
+      <DoneToggle
+        done={done}
+        title={task.title}
+        canEdit={canEdit}
+        onToggle={() => onToggle(task)}
+        className="task__check"
+      />
 
       <div className="task__main">
         <p className="task__title">{task.title}</p>
@@ -89,6 +93,38 @@ export default function TaskRow({ task, nowWall, canEdit, onToggle, onEdit, onDe
           >
             <TrashIcon />
           </button>
+        </div>
+      ) : null}
+
+      {/* The disclosure lives on its own grid row spanning from the title column, not as a
+          fourth control in row one: at 393px the row already spends 152px on three 44px targets
+          and gaps, and a fourth would cut the title to ~130px. Here it is a ~250px target.
+
+          The row only grows when the task actually HAS subtasks, so a freshly seeded 52-task
+          board adds no height at all. The first subtask is added from the edit form. */}
+      {tally ? (
+        <div className="task__subs">
+          <button
+            type="button"
+            className="task__subs-toggle"
+            aria-expanded={expanded}
+            aria-controls={`subs-${task.id}`}
+            onClick={() => onExpand(task.id)}
+          >
+            <ChevronRightIcon className="task__subs-chevron" />
+            {t('list.subtasks', { count: tally.total, done: tally.done })}
+          </button>
+          {expanded ? (
+            <SubtaskList
+              id={`subs-${task.id}`}
+              subtasks={subtasks}
+              canEdit={canEdit}
+              onToggle={onToggle}
+              onDelete={onDelete}
+              onAdd={(title) => onAddSubtask(task, title)}
+              onFocusChange={onSubtaskFocus}
+            />
+          ) : null}
         </div>
       ) : null}
 

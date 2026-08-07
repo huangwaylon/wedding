@@ -45,7 +45,8 @@ export default {
   'overall.pace.behind': { other: '遅れ：{count}件が期限を過ぎています' },
   'overall.pace.ontrack': '予定どおりです',
   'overall.tasks': { other: '{count}件' },
-  'overall.method': 'すべてのタスクを同じ重みで数えます。完了にすると100%として数えます。',
+  'overall.method':
+    'サブタスクの数に関係なく、すべてのタスクを同じ重みで数えます。サブタスクがあるタスクは完了した件数で、それ以外は期間の経過で測ります。',
 
   'state.done': '完了',
   'state.overdue': '期限切れ',
@@ -63,8 +64,10 @@ export default {
   'list.emptyFiltered': '条件に合うタスクがありません。',
   'list.showAll': 'すべて表示',
   'list.percentLabel': '{percent}%完了',
-  'list.markDone': '完了にする',
-  'list.markNotDone': '未完了に戻す',
+  'list.subtasks': { other: '{count}件中{done}件完了' },
+  'list.subtaskAdd': 'サブタスクを追加',
+  'list.markDone': '{title}を完了にする',
+  'list.markNotDone': '{title}を未完了に戻す',
   'list.editTask': '{title}を編集',
   'list.deleteTask': '{title}を削除',
 
@@ -102,6 +105,8 @@ export default {
   'form.ownerPlaceholder': 'どちらでも',
   'form.notes': 'メモ',
   'form.notesPlaceholder': '覚えておきたいこと',
+  'form.subtasks': 'サブタスク',
+  'form.subtasksHint': 'サブタスクは追加した時点で保存されます。',
   'form.done': 'すでに完了',
   'form.deleteThis': 'このタスクを削除',
 
@@ -114,8 +119,10 @@ export default {
 
   'confirm.deleteTitle': 'このタスクを削除しますか?',
   'confirm.deleteBody': '「{title}」は削除済みリストに移動し、元に戻せます。',
+  'confirm.deleteSubtasks': { other: 'サブタスク{count}件も一緒に移動します。' },
 
   'detail.state': '状態',
+  'detail.subtasks': 'サブタスク',
   'detail.window': '期間',
   'detail.progress': '進捗',
 

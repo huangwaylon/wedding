@@ -147,12 +147,6 @@ describe('the meter', () => {
     expect(/\.meter--lg \{([^}]*)\}/.exec(primitives)[1]).toMatch(/overflow: visible/)
   })
 
-  it('has a fill colour for every state that gets one', () => {
-    for (const state of ['done', 'overdue', 'upcoming']) {
-      expect(primitives, state).toContain(`.meter--${state} .meter__fill`)
-    }
-  })
-
   it('does not transition the fill', () => {
     // It advances on its own once a minute; an animation would make it look like a
     // control responding to a tap.
@@ -160,24 +154,52 @@ describe('the meter', () => {
   })
 })
 
-describe('state colour is never the only channel', () => {
-  it('paints badge text with ink, not with a state colour', () => {
-    const badge = /\n\.badge \{([^}]*)\}/.exec(primitives)[1]
-    expect(badge).toMatch(/color: var\(--ink-2\)/)
-    for (const state of ['done', 'overdue', 'active']) {
-      const block = new RegExp(`\\.badge--${state} \\{([^}]*)\\}`).exec(primitives)[1]
-      // The modifier may only change the wash. A `color:` here would put a state hue on
-      // type, and one of them cannot clear 4.5:1 on white.
-      expect(block, state).toMatch(/background-color/)
-      expect(block, state).not.toMatch(/[^-]color:/)
+/** Every state's entry in the one table, keyed on the state name. */
+function stateEntry(state) {
+  const found = new RegExp(`\\.badge--${state},[\\s\\S]*?\\{([^}]*)\\}`).exec(code(primitives))
+  return found ? found[1] : null
+}
+
+describe('the state table', () => {
+  it('maps every state exactly once, in one place', () => {
+    // Four families — the badge's wash, its dot, the standalone dot, a meter fill — plus the
+    // timeline bar used to restate this same mapping in nineteen blocks across two files.
+    for (const state of ['done', 'overdue', 'active', 'upcoming', 'unscheduled']) {
+      const entry = stateEntry(state)
+      expect(entry, `${state} has no entry`).toBeTruthy()
+      expect(entry, `${state} sets no fill`).toMatch(/--state-fill:/)
+      expect(entry, `${state} sets no wash`).toMatch(/--state-wash:/)
     }
   })
 
-  it('has a standalone dot modifier for the stat tiles', () => {
-    // Reusing `.badge--done .badge__dot` needs the ancestor and silently paints grey
-    // without it, which is how a stat row loses its colour.
-    for (const state of ['done', 'overdue', 'active', 'upcoming']) {
-      expect(primitives, state).toContain(`.dot--${state}`)
+  it('covers `unscheduled`, which had no rule at all', () => {
+    // StateBadge builds `badge--${state}` for EVERY state, so this one was rendered with no
+    // matching rule and its dot fell back to currentColor — grey, but a different grey from
+    // every other unstarted state.
+    expect(stateEntry('unscheduled')).toMatch(/--state-fill: var\(--ink-4\)/)
+  })
+
+  it('is read by every mark that carries state', () => {
+    expect(ruleFor(primitives, '.badge')).toMatch(/background-color: var\(--state-wash,/)
+    expect(ruleFor(primitives, '.badge__dot')).toMatch(/background-color: var\(--state-fill,/)
+    expect(ruleFor(primitives, '.dot')).toMatch(/background-color: var\(--state-fill,/)
+    expect(ruleFor(primitives, '.meter__fill')).toMatch(/background-color: var\(--state-fill,/)
+    expect(ruleFor(app, '.timeline__bar-fill')).toMatch(/background-color: var\(--state-fill,/)
+  })
+
+  it('falls back rather than painting nothing for a state it has never heard of', () => {
+    // A new state name must degrade to the neutral treatment, not to `transparent`.
+    expect(ruleFor(primitives, '.badge')).toMatch(/var\(--neutral-wash\)\)/)
+    expect(ruleFor(primitives, '.dot')).toMatch(/var\(--ink-4\)\)/)
+    expect(ruleFor(primitives, '.meter__fill')).toMatch(/var\(--accent\)\)/)
+  })
+
+  it('never puts a state colour on type', () => {
+    // The wash carries the tint; the label stays ink. One of the state colours cannot clear
+    // 4.5:1 on white, which is the whole reason the badge pattern exists.
+    expect(ruleFor(primitives, '.badge')).toMatch(/color: var\(--ink-2\)/)
+    for (const state of ['done', 'overdue', 'active', 'upcoming', 'unscheduled']) {
+      expect(stateEntry(state), state).not.toMatch(/[^-]color:/)
     }
   })
 })

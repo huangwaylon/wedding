@@ -28,6 +28,53 @@
 import { isDone, isLive } from '../schema.js'
 import { isValidWall, wallToInstant } from './time.js'
 
+/**
+ * Split a flat row list into top-level tasks and the subtasks hanging off them.
+ *
+ * ONE LEVEL, AND THE READ IS WHAT ENFORCES IT. A row is a subtask iff its `parentId` names a
+ * LIVE row whose own `parentId` is empty. That rule is depth-1 by construction, so it cannot
+ * recurse, cannot walk a cycle, and needs no visited set or depth counter — and it has an
+ * answer for every state a hand-edited spreadsheet can reach:
+ *
+ *   a grandchild      its parent has a parentId, so the parent is not top-level -> promoted
+ *   a self-parent     same reasoning, the row is its own non-top-level parent  -> promoted
+ *   a two-cycle       neither member is top-level                              -> both promoted
+ *   an orphan         the parent is tombstoned, so not live                    -> promoted
+ *   a dangling id     names nothing                                            -> promoted
+ *
+ * PROMOTED, NEVER HIDDEN. A one-pass "group children under parents" that dropped an
+ * unresolvable row would make tasks vanish from the board with no error and quietly shrink the
+ * roll-up's denominator. On a wedding checklist a silently hidden task is the worst thing this
+ * app could do, so the rule fails open: anything it cannot place is a task.
+ */
+export function partitionSubtasks(tasks) {
+  const live = tasks.filter(isLive)
+  const topLevel = new Set()
+  for (const task of live) if (!task.parentId) topLevel.add(task.id)
+
+  const parents = []
+  const children = new Map()
+  for (const task of live) {
+    if (task.parentId && topLevel.has(task.parentId)) {
+      const siblings = children.get(task.parentId)
+      if (siblings) siblings.push(task)
+      else children.set(task.parentId, [task])
+    } else {
+      parents.push(task)
+    }
+  }
+  return { parents, children }
+}
+
+/**
+ * The order a checklist is read is the order it was typed. `createMany` stamps one timestamp
+ * for a whole batch, so ties fall back to sheet order via `Array.sort`'s stability.
+ */
+function byCreated(a, b) {
+  if (a.createdAt === b.createdAt) return 0
+  return a.createdAt < b.createdAt ? -1 : 1
+}
+
 export const STATE = {
   DONE: 'done',
   OVERDUE: 'overdue',
@@ -51,24 +98,43 @@ function clamp01(value) {
  * @param {object} task as returned by `rowToTask`
  * @param {number} nowMs
  * @param {string} timeZone the board's zone; task times are wall-clock in it
- * @returns {{percent:number, timePercent:number, state:string,
- *            startMs:number, endMs:number, scheduled:boolean}}
+ * @param {object[]} [subtasks] this task's LIVE subtasks, if any
+ * @returns {{percent:number, timePercent:number, state:string, startMs:number, endMs:number,
+ *            scheduled:boolean, tally:{done:number,total:number}|null}}
  *   percentages are 0–1
  */
-export function taskProgress(task, nowMs, timeZone) {
+export function taskProgress(task, nowMs, timeZone, subtasks = []) {
   const scheduled = isValidWall(task?.start) && isValidWall(task?.end)
   const startMs = scheduled ? wallToInstant(task.start, timeZone) : NaN
   const endMs = scheduled ? wallToInstant(task.end, timeZone) : NaN
   const done = isDone(task)
 
+  /**
+   * The subtask tally, and why it can be trusted where an estimate could not.
+   *
+   * The header says this app never asks anybody how far along a task is. Ticking a subtask is
+   * not an estimate, it is a count — so this is the first real work-done measurement the app
+   * has, and it did not have to ask for it.
+   *
+   * LIVE subtasks only, which `partitionSubtasks` has already filtered. A parent whose subtasks
+   * are all tombstoned therefore has no tally and falls back to the clock, exactly as before.
+   */
+  const total = subtasks.length
+  const tally = total ? { done: subtasks.filter(isDone).length, total } : null
+  const tallied = tally ? tally.done / tally.total : null
+
   if (!scheduled) {
+    // A task with no schedule cannot be ahead of one, so both figures stay equal and it
+    // contributes nothing to the pace in either direction.
+    const value = done ? 1 : (tallied ?? 0)
     return {
-      percent: done ? 1 : 0,
-      timePercent: done ? 1 : 0,
+      percent: value,
+      timePercent: value,
       state: done ? STATE.DONE : STATE.UNSCHEDULED,
       startMs,
       endMs,
       scheduled,
+      tally,
     }
   }
 
@@ -86,12 +152,23 @@ export function taskProgress(task, nowMs, timeZone) {
   else state = STATE.UPCOMING
 
   return {
-    percent: done ? 1 : timePercent,
+    /**
+     * PRECEDENCE: `done_at` > the subtask tally > the clock.
+     *
+     * `done_at` wins because it is the only explicit human assertion in the model — somebody
+     * ticking a parent with two items open is saying "the rest turned out not to be needed",
+     * and answering 60% tells them the app knows better. The tally beats the clock because it
+     * is evidence and the clock is a stand-in for evidence. Nothing is blended: "3 of 5 = 60%"
+     * is a sentence somebody can check by counting, and `0.5 × elapsed + 0.5 × tally` is not.
+     */
+    percent: done ? 1 : (tallied ?? timePercent),
+    /** Always the clock. This is the pace reference, and merging it would destroy the signal. */
     timePercent,
     state,
     startMs,
     endMs,
     scheduled,
+    tally,
   }
 }
 
@@ -102,11 +179,20 @@ export function taskProgress(task, nowMs, timeZone) {
  * matches how the plan is read ("what is coming next"). Unscheduled tasks sort
  * last: they have no place on a timeline, and putting them first would bury the
  * thing happening this week.
+ *
+ * TOP-LEVEL TASKS ONLY, each carrying its own `subtasks`. Subtasks are never sorted into this
+ * list: they are dateless, so `compareForDisplay` would tear every one of them away from its
+ * parent into a trailing pile.
  */
 export function withProgress(tasks, nowMs, timeZone) {
-  return tasks
-    .filter(isLive)
-    .map((task) => ({ ...task, progress: taskProgress(task, nowMs, timeZone) }))
+  const { parents, children } = partitionSubtasks(tasks)
+  return parents
+    .map((task) => {
+      // A superset of the old element shape: `subtasks` is added and nothing is removed, so
+      // grouping, the timeline's bars and the roll-up all keep working untouched.
+      const subtasks = (children.get(task.id) ?? []).slice().sort(byCreated)
+      return { ...task, subtasks, progress: taskProgress(task, nowMs, timeZone, subtasks) }
+    })
     .sort(compareForDisplay)
 }
 
@@ -123,7 +209,13 @@ function compareForDisplay(a, b) {
  * had been finished early or late. The gap between the two is the whole point of
  * showing both — ahead of the marker is ahead of schedule.
  *
- * @param {Array} tasks live tasks WITH `progress` attached (`withProgress`)
+ * TOP-LEVEL TASKS ONLY, which `withProgress` already guarantees. A subtask must never enter
+ * this mean: a parent with ten subtasks would otherwise carry eleven twentieths of a ten-task
+ * board — one task outweighing nine — which is duration weighting wearing a different hat, and
+ * worse, because decomposing a task is a bookkeeping choice rather than a fact about the
+ * wedding. Writing more detail into one task would silently deflate every other.
+ *
+ * @param {Array} tasks live TOP-LEVEL tasks WITH `progress` attached (`withProgress`)
  */
 export function overallProgress(tasks) {
   const counts = { done: 0, overdue: 0, active: 0, upcoming: 0, unscheduled: 0 }
@@ -143,33 +235,42 @@ export function overallProgress(tasks) {
     expected: total ? expectedSum / total : 0,
     ...counts,
     /**
-     * How far the headline sits ahead of where the clock alone would put it — which is
-     * to say, how much was finished EARLY. Only ever positive or zero: finishing late
-     * cannot show up here, because a task whose window has run out contributes 1 to
-     * both sums. That is why `paceLabel` takes the overdue count as well.
+     * How far the headline sits ahead of where the clock alone would put it.
+     *
+     * For a task with no subtasks this is still positive-or-zero: `percent` is
+     * `done ? 1 : timePercent`, so an expired unfinished window contributes 1 to both sums and
+     * cancels out. That is why `paceLabel` needs the overdue count.
+     *
+     * A parent WITH subtasks breaks that identity, and deliberately: its `percent` is work done
+     * while its `timePercent` is time elapsed, so one trailing its own window drives this
+     * NEGATIVE — while the window is still open. That is the app's first prospective lateness
+     * signal; overdue only ever fires after a deadline has already passed.
      */
     pace: total ? percentSum / total - expectedSum / total : 0,
   }
 }
 
-/** Anything past this reads as genuinely ahead rather than rounding. */
+/** Anything past this reads as genuinely ahead or behind rather than rounding. Symmetric. */
 export const PACE_DEAD_BAND = 0.02
 
 /**
- * The one-line verdict, and the reason it needs two arguments.
+ * The one-line verdict, and the reason it still needs two arguments.
  *
- * `pace` can only ever be positive: an overdue task counts as 100% elapsed in the
- * headline AND 100% elapsed in the reference, so lateness cancels out of the
- * subtraction entirely. A version of this that took `pace` alone therefore reported
- * "On schedule" for a board with eight tasks past their date, which is the most
- * misleading thing this app could say.
+ * THE OVERDUE BRANCH IS FIRST AND UNCONDITIONAL. For a task with no subtasks, `pace` cannot go
+ * negative — an expired unfinished window counts 100% elapsed in the headline AND in the
+ * reference, so lateness cancels out of the subtraction. A version taking `pace` alone reported
+ * "On schedule" for a board with eight tasks past their date. That branch is not superseded by
+ * anything below it: on a board with no subtasks it is still the only evidence there is.
  *
- * So being BEHIND is decided by the only hard evidence of it there is — a window that
- * ran out unfinished. Nothing else can prove it: a task halfway through its window with
- * no work done is not late, and this app never asks anybody how far along a task is.
+ * THE NEGATIVE BRANCH IS STRICTLY ADDITIVE, and it exists because subtasks gave the app a
+ * work-done measurement it never had. A parent 80% through its window with one of five items
+ * ticked contributes 0.2 to the headline and 0.8 to the reference — a negative term, and one
+ * that does not need the window to have expired. It is the only warning a planner can act on
+ * before a deadline rather than after it.
  */
 export function paceLabel(pace, overdue = 0) {
   if (overdue > 0) return 'behind'
+  if (pace < -PACE_DEAD_BAND) return 'behind'
   if (pace > PACE_DEAD_BAND) return 'ahead'
   return 'ontrack'
 }

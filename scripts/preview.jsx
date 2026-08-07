@@ -91,9 +91,46 @@ function board(locale) {
   })
 }
 
+/**
+ * Subtasks for one in-progress parent, so the disclosure, the tally and the tally-driven meter
+ * are all on screen. One parent only: that is the realistic case, and it is what shows that a
+ * board without subtasks costs no height.
+ */
+function withSubtasks(tasks, locale) {
+  const parent = tasks[11]
+  const titles =
+    locale === 'ja'
+      ? ['候補を3つに絞る', '候補を見学する', '見積もりを比較する', '契約書に署名する', '手付金を払う']
+      : [
+          'Shortlist three venues',
+          'Visit the shortlist',
+          'Compare quotes in writing',
+          'Sign the contract',
+          'Pay the deposit',
+        ]
+  return [
+    ...tasks,
+    ...titles.map((title, index) => ({
+      id: `${parent.id}-s${index}`,
+      title,
+      category: '',
+      start: '',
+      end: '',
+      allDay: false,
+      doneAt: index < 3 ? '2026-08-01T00:00:00.000Z' : '',
+      notes: '',
+      owner: '',
+      createdAt: `2026-07-0${index + 1}T00:00:00.000Z`,
+      updatedAt: '',
+      deletedAt: '',
+      parentId: parent.id,
+    })),
+  ]
+}
+
 /** Built per locale, for the reason in `board`. */
 function surfaces(locale) {
-  const tasks = withProgress(board(locale), NOW, TOKYO)
+  const tasks = withProgress(withSubtasks(board(locale), locale), NOW, TOKYO)
   return { tasks, overall: overallProgress(tasks) }
 }
 
@@ -140,9 +177,13 @@ function ListView({ locale, canEdit = true }) {
           tasks={tasks}
           nowWall={NOW_WALL}
           canEdit={canEdit}
+          expanded={new Set(tasks.filter((row) => row.progress.tally).map((row) => row.id))}
           onToggle={noop}
           onEdit={noop}
           onDelete={noop}
+          onExpand={noop}
+          onAddSubtask={noop}
+          onSubtaskFocus={noop}
         />
       </div>
     </Shell>

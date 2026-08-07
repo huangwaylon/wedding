@@ -51,12 +51,19 @@ done, and rolled up it is the on-schedule reference the meter's mark points at. 
 window ran out unfinished has `percent` of 1 while being emphatically incomplete, which is
 why the roll-up always ships its counts alongside.
 
-**`paceLabel` takes the overdue count, not just the pace.** `pace` can only ever be positive:
-an overdue task counts as 100% elapsed in the headline *and* in the reference, so lateness
-cancels out of the subtraction entirely. A version taking `pace` alone reported "On schedule"
-for a board with eight tasks past their date. Overdue is the only hard evidence of lateness
-there is — a task halfway through its window with no work done is not late, and this app
-never asks anybody to estimate progress.
+**`paceLabel` takes the overdue count AND a signed pace.** For a task with no subtasks `pace` is still
+positive-only — `percent` is `done ? 1 : timePercent`, so an expired unfinished window counts 1
+in both sums and cancels — and there, overdue is the only evidence of lateness there is. A
+version taking `pace` alone reported "On schedule" for a board with eight tasks past their date,
+so **the overdue branch is first and unconditional**.
+
+The negative branch is strictly additive, and it exists because subtasks gave the app a
+work-done measurement it never had. A parent 80% through its window with one of five items
+ticked contributes 0.2 to the headline and 0.8 to the reference — a negative term that does not
+need the window to have expired. **That is the app's first prospective lateness signal**;
+overdue only ever fires after a deadline has already passed. The dead band is symmetric, and
+`test/progress.test.js` pins that the negative branch is unreachable on a board with no
+subtasks anywhere.
 
 **`time.js` memoises three things, and the expensive one is not the obvious one.**
 `formatToParts` was assumed to be the cost; measured, it was `new Intl.DateTimeFormat` inside
@@ -76,10 +83,44 @@ never hit as written — `withProgress` allocates a fresh `{...task, progress}` 
 reconciliation is the cheap half. React already writes zero DOM properties on a typical tick,
 because the interpolated `width: "43%"` string is unchanged.
 
-**Every task counts equally in the roll-up — never weighted by duration.** "36% of our tasks"
-is a sentence somebody can check by counting. A duration-weighted mean silently makes a
-six-month venue hunt worth thirty times the cake tasting and nobody can reconstruct it from
-the screen.
+**Every TOP-LEVEL task counts equally in the roll-up — never weighted by duration, and never
+by how many subtasks it was broken into.** "36% of our tasks" is a sentence somebody can check
+by counting the cards on screen. A duration-weighted mean silently makes a six-month venue hunt
+worth thirty times the cake tasting; a subtask in the mean would let a parent with ten of them
+carry eleven twentieths of a ten-task board. Decomposing one task more finely must not change
+what the rest of the board is worth, or writing detail into one task would deflate every other.
+A subtask moves its parent's single share and nothing else.
+
+**Nesting is exactly one level, and the READ is what enforces it.** A row is a subtask iff its
+`parent_id` names a LIVE row whose own `parent_id` is empty (`partitionSubtasks`). That rule is
+depth-1 by construction, so it cannot recurse, walk a cycle, or need a visited set — and it has
+an answer for every state a hand-edited sheet can reach. Everything else is TOP-LEVEL: a
+grandchild, a self-parent, a cycle member, and an orphan whose parent was tombstoned or
+compacted away are all **promoted, never hidden**. Promotion puts the row where somebody can see
+and fix it; hiding loses live work, which is the one thing this app must never do. The Apps
+Script deliberately does not check the graph — it would cost a second `findRow` scan per write
+and would not catch the case that actually happens, which is somebody typing in the Sheets UI.
+
+**A parent's `percent` is its subtasks done; `done_at` still outranks it.** Precedence is
+`done_at` > the subtask tally > the clock. A parent with no LIVE subtasks falls back to the
+clock exactly as before, so a parent whose subtasks are all tombstoned is a parent with none.
+Nothing is blended: "3 of 5 = 60%" is checkable by counting and `0.5 × elapsed + 0.5 × tally` is
+not. **All subtasks done does NOT make a parent done.** `isDone` is `Boolean(doneAt)` and the
+roll-up's done count comes from the state, so a derived DONE would put a task in that count with
+an empty cell in the spreadsheet and no answer to "when was it finished" — the app writing data
+on somebody's behalf, in the one place it never does. The app suggests the tick; the person
+makes it.
+
+**`taskToRow` must always send `parent_id`.** `updateTask` in the script rewrites the WHOLE row
+from the payload, so a task object built without it blanks the cell and silently promotes a
+subtask to a top-level task. `TaskFormSheet` spreads the existing task first for exactly this
+reason.
+
+**The delete cascade lives in the Apps Script, not the client.** `stampDeleted` stamps the parent
+and every row naming it, under the one lock, in one reply. From the browser it would be N round
+trips that can half-fail, leaving some children tombstoned and some not. `restoreTask` is the
+exact inverse, and `useBoard`'s optimistic updater stamps children too — otherwise they sit on
+screen for a second and then vanish when the reply lands.
 
 **Every mutation goes through `run()` in `useBoard`, and there is exactly one of it.**
 Bump `saving`, call, accept the fresh board, classify the failure, flag a rejected key,
@@ -244,6 +285,31 @@ catalogs (`en.js`, `ja.js`) and the registry (`catalogs.js`).
 - **A test that calls `setLocale` must restore it** in `afterEach`, or the state leaks into
   other files.
 
+### Subtasks
+
+- **A subtask is a checklist item: a title and a tick, no dates.** `validateTask` returns early
+  for anything with a `parentId`, because requiring two date wheels per item would make entering
+  five in a row unusable on a phone — and then no parent's progress would ever advance, which is
+  the whole point. It gets no meter (a dateless bar would encode the one bit the checkbox beside
+  it already does) and no state badge.
+- **`withProgress` returns TOP-LEVEL rows, each carrying its own `subtasks`.** That element shape
+  is a superset of the old one, which is why grouping, the timeline's bars and the roll-up all
+  kept working untouched. Subtasks are never sorted into that list: they are dateless, so
+  `compareForDisplay` would tear every one away from its parent into a trailing pile. Within a
+  parent they sort by `createdAt` — the order a checklist was typed is the order it is read.
+- **`writeSnapshot` strips `subtasks` along with `pending` and `progress`.** Persisting the
+  derived tree would re-seed a stale percentage on every cold launch and double the payload
+  against `MAX_CHARS`.
+- **The disclosure only exists once a task has a subtask.** A freshly seeded 52-task board must
+  add zero pixels, which is also why the FIRST subtask is added from the edit form rather than
+  from a permanent "add" row on every parent — that would be three phone screens of height for a
+  rare action. Those adds are immediate writes, not part of the draft, and the form says so.
+- **The add row is last, always, with a stable key.** Moving or remounting it drops the iOS
+  keyboard mid-checklist, and it does not await the write before clearing — the optimistic update
+  has already landed, and awaiting would freeze the field for a second per item.
+- **The seeded templates stay flat.** Subtasks would double a curated, sourced, two-language
+  content surface and make `template.count` lie, and the feature is fully provable without them.
+
 ### Charts
 
 The meter and the Gantt are hand-rolled — no charting library. `Meter` is a track, a fill and
@@ -258,6 +324,12 @@ one tick; `Timeline` is CSS grid plus percentages.
 - **The on-schedule mark is ink with a 2px ring in the surface colour**, which is what keeps
   it legible whether it crosses the fill or the bare track. It must never be given a hue of
   its own; no single colour clears both backgrounds.
+- **The state → colour mapping lives in ONE table** at the top of `primitives.css`. Four
+  families — a badge's wash, its dot, the standalone dot, a meter fill — plus the timeline bar
+  used to restate it in nineteen blocks across two files, and that had already produced two
+  defects: `badge--unscheduled` is rendered for every state and had no rule at all, and
+  `.dot--upcoming` was a no-op. Each state now sets `--state-fill` and `--state-wash` once and
+  every mark reads them with a fallback. A new mark type costs one line.
 - **State colour is never the only channel.** A badge is a wash plus an *ink* label and a
   coloured dot; `--good` and `--critical` are fills only. One of them cannot clear 4.5:1 on
   white, and a viewer with any form of colour vision has to read the same thing.

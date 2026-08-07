@@ -89,6 +89,15 @@ export default function App() {
 
   const [filter, setFilter] = useState(() => readStored(STORAGE_KEYS.filter) || FILTER_ALL)
   const [view, setView] = useState(VIEWS.LIST)
+  /**
+   * Which parents are open. Session-only, never `localStorage`: relaunching into twelve
+   * expanded parents is the same failure as relaunching into an 8x timeline. It lives here
+   * rather than in `TaskList` because that unmounts on a view switch, and it cannot ride on the
+   * task because `withProgress` allocates fresh objects every minute.
+   */
+  const [expanded, setExpanded] = useState(() => new Set())
+  /** True while a subtask field has focus, so the fixed FAB stops covering it. */
+  const [addingSubtask, setAddingSubtask] = useState(false)
   const [editing, setEditing] = useState(null)
   const [pendingDelete, setPendingDelete] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -105,6 +114,15 @@ export default function App() {
     () => (filter === FILTER_ALL ? tasks : tasks.filter((task) => task.progress.state === filter)),
     [tasks, filter],
   )
+
+  const toggleExpanded = useCallback((id) => {
+    setExpanded((previous) => {
+      const next = new Set(previous)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
 
   const chooseFilter = useCallback((next) => {
     setFilter(next)
@@ -178,6 +196,14 @@ export default function App() {
 
   const weddingDay = wallDay(weddingWall(board.config))
   const wide = view === VIEWS.TIMELINE
+
+  /**
+   * The task being edited, re-read from the live list every render rather than kept as the
+   * snapshot `setEditing` captured. Subtasks added from inside the form are immediate writes, so
+   * a snapshot meant they did not appear until the sheet was closed and reopened — and the same
+   * staleness would hide any change the other person made while the form was open.
+   */
+  const editingTask = editing?.id ? (tasks.find((row) => row.id === editing.id) ?? editing) : null
 
   return (
     <div className="app">
@@ -272,9 +298,13 @@ export default function App() {
                   tasks={shown}
                   nowWall={nowWall}
                   canEdit={canEdit}
+                  expanded={expanded}
                   onToggle={board.toggleDone}
                   onEdit={setEditing}
                   onDelete={setPendingDelete}
+                  onExpand={toggleExpanded}
+                  onAddSubtask={board.addSubtask}
+                  onSubtaskFocus={setAddingSubtask}
                 />
               )}
             </>
@@ -285,7 +315,10 @@ export default function App() {
       {/* Not in timeline view: the FAB is a 56px disc fixed over the bottom-right of the
           chart, which is where the newest months and often the today rule are. The chart's own
           toolbar is its action surface, and adding a task is a list-view job. */}
-      {canEdit && !wide ? (
+      {/* Also hidden while a subtask field has focus: the FAB is fixed bottom-right, does not
+          move with the keyboard, and would sit over the trailing end of the add field — where a
+          tap opens the new-task sheet and discards what was typed. */}
+      {canEdit && !wide && !addingSubtask ? (
         <button
           type="button"
           className="fab"
@@ -298,11 +331,14 @@ export default function App() {
 
       {editing ? (
         <TaskFormSheet
-          task={editing.id ? editing : null}
+          task={editingTask}
           categories={board.config.categories}
           defaultDay={nowWall.slice(0, 10)}
           onSave={save}
           onDelete={(task) => setPendingDelete(task)}
+          onAddSubtask={board.addSubtask}
+          onToggleSubtask={board.toggleDone}
+          onDeleteSubtask={setPendingDelete}
           onClose={() => setEditing(null)}
         />
       ) : null}

@@ -10,6 +10,7 @@ import {
   STATE,
   overallProgress,
   paceLabel,
+  partitionSubtasks,
   planWindow,
   taskProgress,
   toPercent,
@@ -33,9 +34,28 @@ function task(overrides = {}) {
     createdAt: '',
     updatedAt: '',
     deletedAt: '',
+    parentId: '',
     ...overrides,
   }
 }
+
+/**
+ * A dateless checklist item under `parent`. The id is namespaced by the parent and cannot be
+ * clobbered by the overrides — spreading them last silently un-namespaced it.
+ */
+function sub(parent, overrides = {}) {
+  const { id = 's', ...rest } = overrides
+  return task({
+    title: 'Ring the venue',
+    start: '',
+    end: '',
+    ...rest,
+    id: `${parent}-${id}`,
+    parentId: parent,
+  })
+}
+
+const DONE_AT = '2027-01-02T00:00:00.000Z'
 
 const at = (wall) => wallToInstant(wall, TOKYO)
 
@@ -287,5 +307,191 @@ describe('toPercent', () => {
     expect(toPercent(2)).toBe(100)
     expect(toPercent(-1)).toBe(0)
     expect(toPercent(Number.NaN)).toBe(0)
+  })
+})
+
+
+describe('partitionSubtasks', () => {
+  it('hangs a subtask off its parent and keeps the parent top-level', () => {
+    const { parents, children } = partitionSubtasks([
+      task({ id: 'p' }),
+      sub('p', { id: 'a' }),
+      sub('p', { id: 'b' }),
+    ])
+    expect(parents.map((row) => row.id)).toEqual(['p'])
+    expect(children.get('p').map((row) => row.id)).toEqual(['p-a', 'p-b'])
+  })
+
+  it('PROMOTES rather than hides every shape a hand-edited sheet can reach', () => {
+    // The rule fails open on purpose. A one-pass grouping that dropped an unresolvable row
+    // would make tasks vanish from the board with no error and shrink the roll-up's
+    // denominator — on a wedding checklist, the worst thing this app could do.
+    const cases = {
+      grandchild: [task({ id: 'p' }), sub('p', { id: 'mid' }), task({ id: 'deep', parentId: 'p-mid' })],
+      selfParent: [task({ id: 'me', parentId: 'me' })],
+      twoCycle: [task({ id: 'a', parentId: 'b' }), task({ id: 'b', parentId: 'a' })],
+      dangling: [task({ id: 'lost', parentId: 'nobody' })],
+      orphan: [task({ id: 'p', deletedAt: DONE_AT }), sub('p', { id: 'a' })],
+    }
+    for (const [name, rows] of Object.entries(cases)) {
+      const { parents } = partitionSubtasks(rows)
+      const liveCount = rows.filter((row) => !row.deletedAt).length
+      expect(parents.length, `${name} lost a row`).toBe(
+        name === 'grandchild' ? liveCount - 1 : liveCount,
+      )
+    }
+  })
+
+  it('is depth-1 by construction, so a cycle cannot make it recurse', () => {
+    // No visited set, no depth counter — a subtask's parent must have no parent, which cannot
+    // be satisfied twice in a row.
+    const rows = [task({ id: 'a', parentId: 'b' }), task({ id: 'b', parentId: 'c' }), task({ id: 'c', parentId: 'a' })]
+    expect(() => partitionSubtasks(rows)).not.toThrow()
+    expect(partitionSubtasks(rows).parents).toHaveLength(3)
+  })
+
+  it('drops tombstoned rows from both sides', () => {
+    const { parents, children } = partitionSubtasks([
+      task({ id: 'p' }),
+      sub('p', { id: 'live' }),
+      sub('p', { id: 'gone', deletedAt: DONE_AT }),
+    ])
+    expect(parents).toHaveLength(1)
+    expect(children.get('p').map((row) => row.id)).toEqual(['p-live'])
+  })
+})
+
+describe('a parent with subtasks', () => {
+  const now = at('2027-01-06T00:00')
+  const parented = (subs) => withProgress([task({ id: 'p' }), ...subs], now, TOKYO)[0]
+
+  it('takes its percentage from the tally, not from the clock', () => {
+    // The feature, in one assertion. The window is half elapsed; three of five are ticked.
+    const row = parented([
+      sub('p', { id: '1', doneAt: DONE_AT }),
+      sub('p', { id: '2', doneAt: DONE_AT }),
+      sub('p', { id: '3', doneAt: DONE_AT }),
+      sub('p', { id: '4' }),
+      sub('p', { id: '5' }),
+    ])
+    expect(row.progress.percent).toBeCloseTo(0.6, 5)
+    expect(row.progress.tally).toEqual({ done: 3, total: 5 })
+    // And the clock is still reported, untouched, because it is the pace reference.
+    expect(row.progress.timePercent).toBeCloseTo(0.5, 5)
+  })
+
+  it('advances as a subtask is ticked', () => {
+    const before = parented([sub('p', { id: '1' }), sub('p', { id: '2' })])
+    const after = parented([sub('p', { id: '1', doneAt: DONE_AT }), sub('p', { id: '2' })])
+    expect(before.progress.percent).toBe(0)
+    expect(after.progress.percent).toBeCloseTo(0.5, 5)
+  })
+
+  it('lets an explicit done_at outrank the tally', () => {
+    // Somebody ticking a parent with two items open is saying the rest turned out not to be
+    // needed. Answering 60% would tell them the app knows better.
+    const row = withProgress(
+      [task({ id: 'p', doneAt: DONE_AT }), sub('p', { id: '1', doneAt: DONE_AT }), sub('p', { id: '2' })],
+      now,
+      TOKYO,
+    )[0]
+    expect(row.progress.percent).toBe(1)
+    expect(row.progress.state).toBe(STATE.DONE)
+    // Both claims stay visible: the tally is still reported alongside.
+    expect(row.progress.tally).toEqual({ done: 1, total: 2 })
+  })
+
+  it('does NOT become done just because every subtask is', () => {
+    // `isDone` is `Boolean(doneAt)` and the roll-up's done count comes from the state, so a
+    // derived DONE would put a task in that count with an empty cell in the spreadsheet and no
+    // answer to "when was it finished". The app suggests the tick; the person makes it.
+    const row = parented([sub('p', { id: '1', doneAt: DONE_AT }), sub('p', { id: '2', doneAt: DONE_AT })])
+    expect(row.progress.percent).toBe(1)
+    expect(row.progress.state).toBe(STATE.ACTIVE)
+    expect(row.doneAt).toBe('')
+  })
+
+  it('falls back to the clock when every subtask is tombstoned', () => {
+    const row = parented([sub('p', { id: '1', deletedAt: DONE_AT })])
+    expect(row.progress.tally).toBeNull()
+    expect(row.progress.percent).toBeCloseTo(0.5, 5)
+  })
+
+  it('has no tally at all when it has no subtasks', () => {
+    expect(parented([]).progress.tally).toBeNull()
+  })
+
+  it('carries its subtasks on the row, sorted by when they were typed', () => {
+    const row = parented([
+      sub('p', { id: 'late', createdAt: '2027-01-03T00:00:00.000Z' }),
+      sub('p', { id: 'early', createdAt: '2027-01-01T00:00:00.000Z' }),
+    ])
+    expect(row.subtasks.map((s) => s.id)).toEqual(['p-early', 'p-late'])
+  })
+
+  it('keeps subtasks out of the roll-up entirely', () => {
+    // A parent with ten subtasks would otherwise carry eleven twentieths of a ten-task board.
+    const rows = withProgress(
+      [task({ id: 'p' }), task({ id: 'q' }), ...Array.from({ length: 10 }, (_, i) => sub('p', { id: `${i}` }))],
+      now,
+      TOKYO,
+    )
+    const overall = overallProgress(rows)
+    expect(overall.total).toBe(2)
+    expect(rows).toHaveLength(2)
+  })
+})
+
+describe('pace becomes signed once subtasks exist', () => {
+  const now = at('2027-01-06T00:00')
+
+  it('goes NEGATIVE for a parent trailing its own window', () => {
+    // The app's first prospective lateness signal: the window is still open, nothing is
+    // overdue, and there is already hard evidence of being behind.
+    const rows = withProgress(
+      [task({ id: 'p' }), sub('p', { id: '1' }), sub('p', { id: '2' }), sub('p', { id: '3' })],
+      now,
+      TOKYO,
+    )
+    const overall = overallProgress(rows)
+    expect(overall.overdue).toBe(0)
+    expect(overall.pace).toBeLessThan(-PACE_DEAD_BAND)
+    expect(paceLabel(overall.pace, overall.overdue)).toBe('behind')
+  })
+
+  it('goes positive for a parent ahead of its own window', () => {
+    const rows = withProgress(
+      [task({ id: 'p' }), sub('p', { id: '1', doneAt: DONE_AT }), sub('p', { id: '2', doneAt: DONE_AT })],
+      now,
+      TOKYO,
+    )
+    const overall = overallProgress(rows)
+    expect(overall.pace).toBeGreaterThan(PACE_DEAD_BAND)
+    expect(paceLabel(overall.pace, overall.overdue)).toBe('ahead')
+  })
+
+  it('is unreachable on a board with no subtasks anywhere', () => {
+    // The acceptance criterion for the whole change: today's arithmetic, term for term, for
+    // every task that has no subtasks. `percent` is `done ? 1 : timePercent`, so an expired
+    // unfinished window contributes 1 to both sums and cancels.
+    const shapes = [
+      task({ id: 'a' }),
+      task({ id: 'b', doneAt: DONE_AT }),
+      task({ id: 'c', start: '2026-01-01T00:00', end: '2026-02-01T00:00' }),
+      task({ id: 'd', start: '2027-06-01T00:00', end: '2027-07-01T00:00' }),
+      task({ id: 'e', start: '', end: '' }),
+      task({ id: 'f', start: '2027-04-18T14:00', end: '2027-04-18T14:00' }),
+    ]
+    for (let size = 1; size <= shapes.length; size += 1) {
+      const overall = overallProgress(withProgress(shapes.slice(0, size), now, TOKYO))
+      expect(overall.pace, `first ${size}`).toBeGreaterThanOrEqual(0)
+    }
+  })
+
+  it('still lets overdue outrank a healthy pace', () => {
+    // The overdue branch is first and unconditional, and the negative branch is additive.
+    expect(paceLabel(0.5, 1)).toBe('behind')
+    expect(paceLabel(-0.5, 0)).toBe('behind')
+    expect(paceLabel(-PACE_DEAD_BAND, 0)).toBe('ontrack')
   })
 })

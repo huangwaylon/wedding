@@ -19,6 +19,7 @@ import { useCategoryLabel, useT } from '../i18n/index.js'
 import BottomSheet from './BottomSheet.jsx'
 import Meter from './Meter.jsx'
 import StateBadge from './StateBadge.jsx'
+import { CheckCircleIcon, CircleIcon } from './icons.jsx'
 
 export default function TaskDetailSheet({ task, nowWall, onClose }) {
   const { t, locale } = useT()
@@ -63,6 +64,35 @@ export default function TaskDetailSheet({ task, nowWall, onClose }) {
           />
           <span className="detail__percent tnum">{shown}%</span>
         </dd>
+
+        {task.progress.tally ? (
+          <>
+            <dt className="detail__term">{t('detail.subtasks')}</dt>
+            {/* Stacked, because `.detail__value` is a centred row and this is a list. */}
+            <dd className="detail__value detail__value--stack">
+              <span className="tnum">
+                {t('list.subtasks', {
+                  count: task.progress.tally.total,
+                  done: task.progress.tally.done,
+                })}
+              </span>
+              <ul className="subtasks">
+                {(task.subtasks ?? []).map((subtask) => (
+                  <li className="subtask subtask--static" key={subtask.id}>
+                    <span
+                      className={`subtask__check subtask__check--static${
+                        subtask.doneAt ? ' subtask__check--on' : ''
+                      }`}
+                    >
+                      {subtask.doneAt ? <CheckCircleIcon /> : <CircleIcon />}
+                    </span>
+                    <span className="subtask__title">{subtask.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </dd>
+          </>
+        ) : null}
 
         {task.category ? (
           <>

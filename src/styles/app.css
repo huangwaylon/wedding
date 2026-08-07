@@ -427,7 +427,7 @@
   line-height: var(--lh-tight);
 }
 
-.task--done .task__title {
+.task--done > .task__main > .task__title {
   color: var(--ink-2);
   text-decoration: line-through;
   text-decoration-color: var(--ink-4);
@@ -485,6 +485,121 @@
   font-size: var(--fs-caption);
   font-weight: 500;
   color: var(--ink-2);
+}
+
+/* ---- Subtasks ---------------------------------------------------------
+   A checklist inside the parent's card, not a card of its own: a sibling card reads as a
+   sibling TASK, and the parent's own boundary is what says "these belong to that".
+
+   The disclosure sits on its own grid row spanning from the title column rather than as a
+   fourth control in row one. At 393px the row already spends 152px on three 44px targets and
+   their gaps, so a fourth would cut the title to ~130px; here the toggle is a ~250px target and
+   reads as a card footer action. Every destructive control stays in row one. */
+.task__subs {
+  grid-column: 2 / -1;
+  min-width: 0;
+}
+
+.task__subs-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-target);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  color: var(--ink-2);
+  transition: color var(--transition-fast);
+}
+
+.task__subs-toggle:hover {
+  color: var(--ink);
+}
+
+.task__subs-chevron {
+  flex: none;
+  transition: transform var(--transition-fast);
+}
+
+.task__subs-toggle[aria-expanded="true"] .task__subs-chevron {
+  transform: rotate(90deg);
+}
+
+/* No hairlines between rows: the 44px rhythm with aligned check glyphs already reads as a list,
+   and five more rules inside a 361px card is the "fifty hairlines is a grid" problem in
+   miniature. */
+.subtasks {
+  padding-bottom: var(--space-1);
+}
+
+.subtask {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-target);
+}
+
+.subtask--pending {
+  opacity: 0.55;
+}
+
+/* A step smaller than the parent's check, which is a second subordination channel that costs no
+   contrast and no legibility — the type stays at 16px. */
+.subtask__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-target);
+  min-height: var(--tap-target);
+  flex: none;
+  margin-left: calc(var(--space-2) * -1);
+  border-radius: var(--radius-md);
+  color: var(--ink-2);
+  font-size: 0.8em;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.subtask__check:hover {
+  background-color: var(--sunken);
+  color: var(--ink);
+}
+
+.subtask__check--on {
+  color: var(--good);
+}
+
+/* The same slot for a viewer, so a planner's list lines up with an editor's. */
+.subtask__check--static {
+  cursor: default;
+}
+
+/* 16px and weight 400 against the parent title's 16px and 500. Subordination comes from weight,
+   ink, the glyph size and the indent — never from going under the 13px floor. */
+.subtask__title {
+  flex: 1;
+  min-width: 0;
+  padding-block: var(--space-1);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--ink);
+}
+
+.subtask--done .subtask__title {
+  color: var(--ink-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-4);
+  text-decoration-thickness: 1px;
+}
+
+/* Always last, never moved, never remounted — a changed key or position drops the iOS keyboard
+   mid-checklist. */
+.subtask-add {
+  padding-block: var(--space-1);
+}
+
+.subtask-add__field {
+  /* Inherits `.input`'s 16px floor. Do NOT shrink it to look more subordinate: mobile Safari
+     zooms on focus below 16px and will not zoom back out. */
+  min-height: var(--tap-target);
 }
 
 /* ---- Empty and seeding ------------------------------------------------- */
@@ -747,13 +862,6 @@
   white-space: nowrap;
 }
 
-/* State as a shape as well as a hue, in the gutter where it is always on screen. Without it a
-   fully-filled green bar and a fully-filled red one are identical to a touch user, since the
-   bar's state lives only in a `title` that never renders — which would break the app's own
-   "state colour is never the only channel" rule. */
-.timeline__dot {
-  flex: none;
-}
 
 .timeline__row--done .timeline__label-text {
   color: var(--ink-3);
@@ -795,20 +903,10 @@
 .timeline__bar-fill {
   display: block;
   height: 100%;
-  background-color: var(--accent);
+  /* Reads the state table in primitives.css, like every other mark that carries state. */
+  background-color: var(--state-fill, var(--accent));
 }
 
-.timeline__row--done .timeline__bar-fill {
-  background-color: var(--good);
-}
-
-.timeline__row--overdue .timeline__bar-fill {
-  background-color: var(--critical);
-}
-
-.timeline__row--upcoming .timeline__bar-fill {
-  background-color: var(--ink-4);
-}
 
 /* ---- Timeline toolbar -------------------------------------------------
    Outside .timeline, so it does not scroll away with the chart. Zoom is the only way to read
@@ -846,6 +944,12 @@
   font-feature-settings: "tnum" 1;
   color: var(--ink-2);
 }
+
+/* ---- Deleted ----------------------------------------------------------
+   This rule lost its selector at some point. Per CSS error recovery the parser then swallowed
+   the FOLLOWING selector into the malformed prelude too, so both `.deleted__row` and its
+   sibling hairline were dropped — the Restore rows shipped with no layout and no 44px target. */
+.deleted__row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -982,6 +1086,13 @@
 .detail__value > .meter {
   flex: 1;
   min-width: 0;
+}
+
+.detail__value--stack {
+  /* `.detail__value` is a centred row; a list of subtasks is a column. */
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
 }
 
 .detail__percent {

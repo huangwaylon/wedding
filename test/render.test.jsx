@@ -56,6 +56,18 @@ function task(overrides = {}) {
 }
 
 const rows = (list) => withProgress(list, NOW, TOKYO)
+
+/** A dateless checklist item under `parent`. */
+function sub(parent, id, done = false) {
+  return task({
+    id: `${parent}-${id}`,
+    title: `Step ${id}`,
+    start: '',
+    end: '',
+    parentId: parent,
+    doneAt: done ? '2027-01-02T00:00:00.000Z' : '',
+  })
+}
 const noop = () => {}
 
 describe('Meter', () => {
@@ -181,13 +193,15 @@ describe('TaskRow', () => {
     const open = renderToStaticMarkup(
       <TaskRow task={row} nowWall={NOW_WALL} canEdit onToggle={noop} onEdit={noop} onDelete={noop} />,
     )
-    expect(open).toContain('aria-label="Mark done"')
+    // The title is interpolated now: thirty buttons all called "Mark done" is not navigable by
+    // the VoiceOver rotor, unlike the Edit/Delete buttons beside them which always carried it.
+    expect(open).toContain('aria-label="Mark Book the venue done"')
 
     const [done] = rows([task({ doneAt: '2027-01-02T00:00:00.000Z' })])
     const closed = renderToStaticMarkup(
       <TaskRow task={done} nowWall={NOW_WALL} canEdit onToggle={noop} onEdit={noop} onDelete={noop} />,
     )
-    expect(closed).toContain('aria-label="Mark not done"')
+    expect(closed).toContain('aria-label="Mark Book the venue not done"')
     expect(closed).toContain('task--done')
   })
 
@@ -220,6 +234,104 @@ describe('TaskRow', () => {
     )
     expect(html).toContain('task--pending')
     expect(html).toContain('Book the venue')
+  })
+})
+
+describe('subtasks in a task row', () => {
+  const parented = (subs) => rows([task({ id: 'p' }), ...subs])[0]
+  const render = (row, extra = {}) =>
+    renderToStaticMarkup(
+      <TaskRow
+        task={row}
+        nowWall={NOW_WALL}
+        canEdit
+        expanded={false}
+        onToggle={noop}
+        onEdit={noop}
+        onDelete={noop}
+        onExpand={noop}
+        onAddSubtask={noop}
+        onSubtaskFocus={noop}
+        {...extra}
+      />,
+    )
+
+  it('shows no disclosure at all when a task has none', () => {
+    // The load-bearing decision: a freshly seeded 52-task board adds zero pixels.
+    expect(render(parented([]))).not.toContain('task__subs')
+  })
+
+  it('labels the disclosure with the tally', () => {
+    const html = render(parented([sub('p', 1, true), sub('p', 2), sub('p', 3)]))
+    expect(html).toContain('1 of 3 subtasks')
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).toContain('aria-controls="subs-p"')
+  })
+
+  it('pluralises the tally rather than using a count === 1 ternary', () => {
+    expect(render(parented([sub('p', 1)]))).toContain('0 of 1 subtask')
+  })
+
+  it('renders the list only when expanded, and wires it to the disclosure', () => {
+    expect(render(parented([sub('p', 1)]))).not.toContain('class="subtasks"')
+    const open = render(parented([sub('p', 1)]), { expanded: true })
+    expect(open).toContain('aria-expanded="true"')
+    expect(open).toContain('id="subs-p"')
+    expect(open).toContain('Step 1')
+  })
+
+  it('gives a subtask a check and a delete, but no meter and no badge', () => {
+    // A dateless item has nothing for a bar to measure, and a meter would encode exactly the
+    // one bit the checkbox beside it already does.
+    const open = render(parented([sub('p', 1)]), { expanded: true })
+    // Bounded to the list: everything after it is the PARENT's own meter, which of course has
+    // a progressbar — slicing to the end read that and passed for the wrong reason.
+    const start = open.indexOf('class="subtasks"')
+    const list = open.slice(start, open.indexOf('</ul>', start))
+    expect(list).toContain('subtask__check')
+    expect(list).toContain('aria-label="Delete Step 1"')
+    expect(list).not.toContain('role="progressbar"')
+    expect(list).not.toContain('class="badge')
+  })
+
+  it('adds with Enter rather than a nested form', () => {
+    // This list also renders inside the task form's own <form>, and HTML forbids nested forms:
+    // the parser drops the inner one, so Enter reached the TASK form's submit and tried to save
+    // the task. A static render cannot catch that — the nesting only becomes invalid once a
+    // browser parses it — so the shape is pinned here instead.
+    const open = render(parented([sub('p', 1)]), { expanded: true })
+    const start = open.indexOf('class="subtasks"')
+    expect(open.slice(start, open.indexOf('</ul>', start))).not.toContain('<form')
+  })
+
+  it('offers the add row to an editor and not to a viewer', () => {
+    const open = render(parented([sub('p', 1)]), { expanded: true })
+    expect(open).toContain('subtask-add__field')
+    const viewer = renderToStaticMarkup(
+      <TaskRow
+        task={parented([sub('p', 1)])}
+        nowWall={NOW_WALL}
+        canEdit={false}
+        expanded
+        onToggle={noop}
+        onEdit={noop}
+        onDelete={noop}
+        onExpand={noop}
+        onAddSubtask={noop}
+        onSubtaskFocus={noop}
+      />,
+    )
+    expect(viewer).not.toContain('subtask-add__field')
+    // But the check slot stays occupied, so the two lists line up.
+    expect(viewer).toContain('subtask__check--static')
+  })
+
+  it('drives the parent meter from the tally, not the clock', () => {
+    // The window is half elapsed; three of four are ticked.
+    const row = parented([sub('p', 1, true), sub('p', 2, true), sub('p', 3, true), sub('p', 4)])
+    const html = render(row)
+    expect(html).toMatch(/task__percent[^>]*>75%/)
+    expect(html).toContain('width:75%')
   })
 })
 
@@ -431,6 +543,19 @@ describe('TaskDetailSheet', () => {
     expect(terms[0]).toBe('Status')
   })
 
+  it('lists the subtasks, read-only', () => {
+    const parent = rows([task({ id: 'p' }), sub('p', 1, true), sub('p', 2)])[0]
+    const html = renderToStaticMarkup(
+      <TaskDetailSheet task={parent} nowWall={NOW_WALL} onClose={noop} />,
+    )
+    expect(html).toContain('Subtasks')
+    expect(html).toContain('1 of 2 subtasks')
+    expect(html).toContain('Step 1')
+    // Read-only: static glyphs, no checkbox buttons, no add row.
+    expect(html).toContain('subtask__check--static')
+    expect(html).not.toContain('subtask-add__field')
+  })
+
   it('omits a row for every field the task does not have', () => {
     const [bare] = rows([task()])
     const html = renderToStaticMarkup(
@@ -592,6 +717,14 @@ describe('Deleted', () => {
       <ConfirmDeleteSheet task={task()} onConfirm={noop} onClose={noop} />,
     )
     expect(html).toContain('Book the venue')
+  })
+
+  it('says the subtasks go with it, because the delete cascades', () => {
+    const parent = rows([task({ id: 'p' }), sub('p', 1), sub('p', 2)])[0]
+    const html = renderToStaticMarkup(
+      <ConfirmDeleteSheet task={parent} onConfirm={noop} onClose={noop} />,
+    )
+    expect(html).toContain('Its 2 subtasks go with it.')
   })
 })
 

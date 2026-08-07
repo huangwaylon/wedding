@@ -50,11 +50,17 @@ describe('snapshot', () => {
   })
 
   it('drops optimistic and derived fields', () => {
-    // `pending` would come back looking like a saved task; `progress` is recomputed from
-    // the clock on every render and persisting it would pin a stale percentage.
-    writeSnapshot([{ ...TASKS[0], pending: true, progress: { percent: 0.5 } }], CONFIG)
-    expect(readSnapshot().tasks[0]).not.toHaveProperty('pending')
-    expect(readSnapshot().tasks[0]).not.toHaveProperty('progress')
+    // `pending` would come back looking like a saved task; `progress` and `subtasks` are both
+    // rebuilt from the flat rows on every read, and persisting them would re-seed a stale
+    // percentage on each cold launch.
+    writeSnapshot(
+      [{ ...TASKS[0], pending: true, progress: { percent: 0.5 }, subtasks: [{ id: 'x' }] }],
+      CONFIG,
+    )
+    const stored = readSnapshot().tasks[0]
+    expect(stored).not.toHaveProperty('pending')
+    expect(stored).not.toHaveProperty('progress')
+    expect(stored).not.toHaveProperty('subtasks')
   })
 
   it('ignores an unrecognised version rather than migrating it', () => {
@@ -67,8 +73,8 @@ describe('snapshot', () => {
   it('ignores a corrupt or structurally wrong payload', () => {
     for (const bad of [
       'not json',
-      JSON.stringify({ v: 1, tasks: 'nope', config: {} }),
-      JSON.stringify({ v: 1, tasks: [], config: null }),
+      JSON.stringify({ v: 2, tasks: 'nope', config: {} }),
+      JSON.stringify({ v: 2, tasks: [], config: null }),
     ]) {
       store.set(STORAGE_KEYS.snapshot, bad)
       expect(readSnapshot()).toBeNull()
