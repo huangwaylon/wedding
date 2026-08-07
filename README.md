@@ -49,8 +49,15 @@ chips instead.
 
 **Timeline**, a Gantt. This is the view that earns its keep on a planner's large monitor: a
 list cannot show whether two things overlap or where the gaps are. Bars are coloured by
-state, with a partial fill for progress and one continuous "today" rule down the whole
-plot. It scrolls horizontally on a phone rather than compressing a year into 280px.
+state with a partial fill for progress, month gridlines let a bar's date be read off without
+looking back up at the axis, and the axis itself stays put while the rows scroll. "Today" is
+the one place this chart raises its voice — an accent rule with a label, because in a
+countdown-driven app that is the most important thing on it. It scrolls horizontally on a
+phone rather than compressing a year into 280px, and takes the full window width from 768px
+up.
+
+In timeline view the summary above it collapses to a single band. There the chart is the
+subject and the summary is context, and the full card pushed the Gantt off the screen.
 
 ## Data model
 

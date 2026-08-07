@@ -36,6 +36,8 @@ const SURFACE = '#ffffff'
 const SUNKEN = '#f3ece7'
 /** The unfilled half of a meter. Deliberately darker than --sunken. */
 const TRACK = '#e7ddd3'
+/** The hairline around a meter or a timeline bar. Must outline the track, not match it. */
+const TRACK_LINE = '#c9b7a3'
 
 const INK = { ink: '#1c1a17', 'ink-2': '#56504a', 'ink-3': '#736a61', 'ink-4': '#8c8377' }
 
@@ -103,6 +105,12 @@ for (const [name, hex] of Object.entries(WASHES)) {
 // 3:1 and stay a warm neutral, which is why every meter also carries a hairline —
 // the boundary, not the fill difference, is what identifies the control.
 add('track on surface', contrast(TRACK, SURFACE), 1.25)
+
+// The hairline is the mechanism that makes an EMPTY bar read as a bar, so it has to be
+// visible against both the track it outlines and the card it sits on. --line fails this
+// (1.035:1 on the track), which is why --track-line exists.
+add('track-line on track', contrast(TRACK_LINE, TRACK), 1.35)
+add('track-line on surface', contrast(TRACK_LINE, SURFACE), 1.8)
 
 // The fill against the track: this one IS the value, so it takes the 3:1
 // non-text floor with no relief.

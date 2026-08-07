@@ -37,6 +37,25 @@ const offsetFormatters = new Map()
 const displayFormatters = new Map()
 
 /**
+ * Zone offsets, cached by zone and hour.
+ *
+ * `formatToParts` is the expensive call in this module and it is made a lot: every task
+ * needs two `wallToInstant`s, each of which samples the offset twice, and the whole board
+ * is recomputed once a minute as the clock ticks. A fifty-task board is therefore ~400
+ * `formatToParts` calls a minute, all of them re-deriving the same handful of answers.
+ *
+ * Keyed by the HOUR the instant falls in, not the day: DST transitions happen on the hour,
+ * so an hour bucket can never straddle one, while a day bucket would return the wrong
+ * offset for every lookup on a transition day. Across ticks the same buckets recur, so
+ * after the first pass this is nearly all hits.
+ */
+const offsetCache = new Map()
+
+/** Bounded so a long-lived tab cannot grow this without limit. */
+const OFFSET_CACHE_MAX = 4096
+const MS_PER_HOUR = 3_600_000
+
+/**
  * `hour12: false` rather than `hourCycle: 'h23'` for reach, which means some
  * engines report midnight as hour 24 — normalised at both call sites.
  */
@@ -213,7 +232,12 @@ export function wallToInstant(wall, timeZone) {
 
 /** How far the zone is ahead of UTC at a given instant, in ms. */
 export function offsetMsAt(instantMs, timeZone) {
-  const parts = partsIn(instantMs, resolveTimeZone(timeZone))
+  const zone = resolveTimeZone(timeZone)
+  const key = `${zone}|${Math.floor(instantMs / MS_PER_HOUR)}`
+  const hit = offsetCache.get(key)
+  if (hit !== undefined) return hit
+
+  const parts = partsIn(instantMs, zone)
   const asUtc = Date.UTC(
     parts.year,
     parts.month - 1,
@@ -222,9 +246,15 @@ export function offsetMsAt(instantMs, timeZone) {
     parts.minute,
     parts.second,
   )
-  // Round to the minute: the formatter drops sub-second detail, and a raw
-  // difference would otherwise carry the instant's own milliseconds.
-  return asUtc - Math.floor(instantMs / 1000) * 1000
+  // Round to the second: the formatter drops sub-second detail, and a raw difference
+  // would otherwise carry the instant's own milliseconds.
+  const offset = asUtc - Math.floor(instantMs / 1000) * 1000
+
+  // Clear rather than evict one entry: the cache is a pure function of its key, so
+  // dropping all of it costs one recompute and keeps this branch free of bookkeeping.
+  if (offsetCache.size >= OFFSET_CACHE_MAX) offsetCache.clear()
+  offsetCache.set(key, offset)
+  return offset
 }
 
 /** The instant -> the wall clock a person in that zone is reading. */

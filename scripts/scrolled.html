@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#333;font:11px system-ui;color:#fff}
+.row{display:flex;gap:10px;padding:10px}.col{display:flex;flex-direction:column;gap:3px}
+iframe{border:0}
+</style></head><body><div class="row" id="r"></div><script>
+const p=new URLSearchParams(location.search)
+const specs=(p.get('s')||'preview-en-timeline.html:1400:900').split(',')
+const r=document.getElementById('r')
+let loaded=0
+for(const spec of specs){
+  const [f,w,h]=spec.split(':')
+  const c=document.createElement('div');c.className='col'
+  c.innerHTML='<span>'+f.replace('preview-','').replace('.html','')+' @'+w+' (scrolled)</span>'
+  const i=document.createElement('iframe');i.src=f;i.width=w;i.height=h
+  i.onload=()=>{ // scroll the timeline's own container to the middle
+    const d=i.contentDocument
+    const tl=d.querySelector('.timeline')
+    if(tl) tl.scrollTop = Math.round(tl.scrollHeight/2)
+    d.documentElement.scrollTop = 200
+  }
+  c.appendChild(i);r.appendChild(c)
+}
+</script></body></html>

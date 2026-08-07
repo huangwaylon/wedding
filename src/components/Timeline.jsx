@@ -1,20 +1,29 @@
 /**
- * The timeline. A Gantt, because start-and-end across a year is the one thing a
- * list cannot show: whether two things overlap, and where the gaps are.
+ * The timeline. A Gantt, because start-and-end across a year is the one thing a list
+ * cannot show: whether two things overlap, and where the gaps are.
  *
- * This is the view for the planners' large monitors, and it is CSS grid plus
- * percentages — no SVG and no chart library. Every row shares `--timeline-gutter`
- * with the axis, which is why the bars line up with the month ticks; the plot area
- * is `100% - gutter` wide and every position is a fraction of it.
+ * This is the view for the planners' large monitors, and it is CSS grid plus percentages —
+ * no SVG and no chart library. The axis and every row share `--timeline-gutter`, which is
+ * why the bars line up with the month ticks; the plot area is `100% - gutter` wide, and
+ * `.timeline__overlay` spans exactly that, so a gridline and a bar at the same date land on
+ * the same pixel without either doing arithmetic about the gutter.
  *
- * Bars are 10px with a 4px-radius end, well under the 24px mark cap, and the band's
- * leftover is air. Colour follows STATE, not category: state is what somebody scans
- * a timeline for, and a second categorical encoding on the same mark would put two
- * palettes in one chart. Category stays in the list, as text.
+ * Three things carry the readability, and all three were missing in the first version:
  *
- * There is no legend, because the fill colours repeat the state that each row's own
- * title-attribute and `aria-label` already state in words — the identity channel is
- * text, throughout.
+ *   MONTH GRIDLINES. Without them a bar's position is unreadable — the axis is at the top
+ *   and the row you care about is four hundred pixels below it.
+ *
+ *   A STICKY AXIS. Thirty-eight rows scroll well past the labels, so the axis stays put at
+ *   the top of the timeline's own scroll container.
+ *
+ *   THE TODAY LINE IN THE ACCENT. In a countdown-driven app "where we are now" is the most
+ *   important thing on the chart, and a 1px grey rule is not it.
+ *
+ * Bars are 10px with a rounded end, well under the 24px mark cap, and the band's leftover
+ * is air. Colour follows STATE, not category: state is what somebody scans a timeline for,
+ * and a second categorical encoding on the same mark would put two palettes in one chart.
+ * Category stays in the list, as text. There is no legend, because every bar's own
+ * `aria-label` and tooltip state the same thing in words — identity is text, throughout.
  */
 
 import { planWindow, toPercent } from '../lib/progress.js'
@@ -37,24 +46,24 @@ import { useT } from '../i18n/index.js'
 const MAX_TICKS = 6
 
 /**
- * Month boundaries inside the window, as fractions of it, for the axis ticks.
+ * Month boundaries inside the window, as fractions of it. Used twice — for the axis labels
+ * and for the gridlines beneath them — from one list, so the two can never disagree.
  *
  * Each boundary is converted to a real instant through the board's zone, so a tick and the
- * bars beside it are positioned by the same arithmetic — deriving one from wall-clock
- * string maths and the other from instants is how an axis ends up half a day out of step
- * with its data.
+ * bars beside it are positioned by the same arithmetic. Deriving one from wall-clock string
+ * maths and the other from instants is how an axis ends up half a day out of step with its
+ * data.
  *
- * Thinned to `MAX_TICKS` from the count rather than from a measured pixel width, because
- * this has to work without touching the DOM. `showYear` is set on the first tick and
- * wherever the year rolls over, so a plan spanning a new year says so exactly once.
+ * `showYear` is set on the first tick and wherever the year rolls over, so a plan spanning
+ * a new year says so exactly once.
  */
 export function monthTicks(window, timeZone) {
   const opening = instantToWall(window.min, timeZone)
   const [year, month] = opening.split('-').map(Number)
   const found = []
 
-  // From the first boundary AFTER the window opens: a tick sitting exactly on the left
-  // edge is half-clipped and says nothing the first bar does not.
+  // From the first boundary AFTER the window opens: a tick sitting exactly on the left edge
+  // is half-clipped and says nothing the first bar does not.
   for (let index = 1; index <= 400; index += 1) {
     const boundary = new Date(Date.UTC(year, month - 1 + index, 1))
     const wall = `${boundary.getUTCFullYear()}-${String(boundary.getUTCMonth() + 1).padStart(2, '0')}-01T00:00`
@@ -88,15 +97,16 @@ export default function Timeline({ tasks, nowMs, timeZone }) {
   const at = (instant) => (instant - window.min) / window.span
   const nowFraction = Math.min(1, Math.max(0, at(nowMs)))
   const nowWall = instantToWall(nowMs, timeZone)
+  const ticks = monthTicks(window, timeZone)
 
   return (
     <section className="card card--flush" aria-label={t('timeline.title')}>
       <div className="timeline">
         <div className="timeline__inner">
           <div className="timeline__axis">
-            <span />
+            <span className="timeline__axis-gutter" />
             <div className="timeline__ticks">
-              {monthTicks(window, timeZone).map((tick) => (
+              {ticks.map((tick) => (
                 <span
                   className="timeline__tick"
                   key={tick.wall}
@@ -108,11 +118,22 @@ export default function Timeline({ tasks, nowMs, timeZone }) {
             </div>
           </div>
 
-          <div className="timeline__plot" style={{ '--now': nowFraction }}>
-            {/* One continuous rule across every row, not a segment per row: the
-                reader's own position in the plan is a single line. */}
-            <div className="timeline__now" aria-hidden="true">
-              <span className="timeline__now-label">{t('timeline.today')}</span>
+          <div className="timeline__plot">
+            {/* Spans exactly the plot area, so everything inside positions as a plain
+                percentage and nothing has to reason about the gutter. */}
+            <div className="timeline__overlay" aria-hidden="true">
+              {ticks.map((tick) => (
+                <span
+                  className="timeline__gridline"
+                  key={tick.wall}
+                  style={{ left: `${tick.fraction * 100}%` }}
+                />
+              ))}
+              {/* One continuous rule across every row, not a segment per row: the reader's
+                  own position in the plan is a single line. */}
+              <span className="timeline__now" style={{ left: `${nowFraction * 100}%` }}>
+                <span className="timeline__now-label">{t('timeline.today')}</span>
+              </span>
             </div>
 
             {drawable.map((task) => {
@@ -149,10 +170,7 @@ export default function Timeline({ tasks, nowMs, timeZone }) {
                       role="img"
                       aria-label={description}
                     >
-                      <div
-                        className="timeline__bar-fill"
-                        style={{ width: `${percent}%` }}
-                      />
+                      <div className="timeline__bar-fill" style={{ width: `${percent}%` }} />
                     </div>
                   </div>
                 </div>

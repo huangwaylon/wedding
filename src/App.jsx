@@ -210,7 +210,9 @@ export default function App() {
             </section>
           ) : null}
 
-          <OverallCard overall={overall} />
+          {/* Compact in timeline view: there the chart is the subject and the summary is
+              context, and the full card pushed the Gantt off the screen. */}
+          <OverallCard overall={overall} compact={wide} />
 
           {canEdit ? (
             <DeletedList tasks={board.deletedTasks} onRestore={restore} />

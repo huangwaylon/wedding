@@ -85,6 +85,19 @@ describe('the meter', () => {
     expect(meter[1]).toMatch(/background-color: var\(--track\)/)
   })
 
+  it('draws that hairline in --track-line, never --line', () => {
+    // --line on --track measures 1.035:1: the outline it was supposed to draw is invisible,
+    // which left an empty bar held up by the fill step alone. Both the meter and the
+    // timeline bar shipped with this.
+    expect(tokens).toMatch(/--track-line:/)
+    expect(/\.meter \{([^}]*)\}/.exec(primitives)[1]).toMatch(
+      /border: 1px solid var\(--track-line\)/,
+    )
+    expect(/\.timeline__bar \{([^}]*)\}/.exec(app)[1]).toMatch(
+      /border: 1px solid var\(--track-line\)/,
+    )
+  })
+
   it('gives the on-schedule mark a surface ring rather than a colour of its own', () => {
     // That ring is what keeps it legible whether it lands on the fill or on the bare
     // track. Replacing it with a hue would fail against one or the other.
@@ -252,12 +265,55 @@ describe('layout', () => {
     expect(app).toContain('.shell--wide')
   })
 
-  it('gives the timeline a narrower label gutter on a phone', () => {
-    // 15rem of labels on a 390px screen leaves no room for the bars, and losing the bars
-    // loses the whole point of the view.
+  it('un-stickies the aside in one-column mode', () => {
+    // THE bug this app shipped. `--wide` is one column, so the aside and the main are
+    // stacked ROWS — and a sticky element in a stack does not sit beside the content, it
+    // floats over it. Scrolling the timeline dragged the summary card down across the rows
+    // and drew it on top of them, text over text.
+    const wide = /\.shell--wide \.shell__aside \{([^}]*)\}/.exec(app)
+    expect(wide, '.shell--wide .shell__aside rule is missing').toBeTruthy()
+    expect(wide[1]).toMatch(/position: static/)
+    // And it must come after the sticky rule, or it loses the cascade.
+    expect(app.indexOf('.shell--wide .shell__aside')).toBeGreaterThan(
+      app.indexOf('.shell__aside {'),
+    )
+  })
+
+  it('sizes the timeline gutter fluidly rather than adding a breakpoint', () => {
+    // A stepped gutter wanted a third breakpoint; clamp() gets the same result — narrow on
+    // a phone where the bars matter more than the labels, wide on a monitor where the
+    // labels are read — without one.
     const timeline = /\n\.timeline \{([^}]*)\}/.exec(app)[1]
-    expect(timeline).toMatch(/--timeline-gutter: 7\.5rem/)
-    expect(timeline).toMatch(/overflow-x: auto/)
+    expect(timeline).toMatch(/--timeline-gutter: clamp\(/)
+    expect(timeline).toMatch(/overflow: auto/)
+  })
+
+  it('caps the timeline height so its axis can stick', () => {
+    // Sticky resolves against the nearest scrollport. Without a height cap the timeline IS
+    // its own content's height, nothing ever scrolls inside it, and the axis never sticks —
+    // which leaves row thirty with no axis in sight.
+    expect(app).toMatch(/\.timeline \{[^}]*overflow: auto/)
+    expect(app).toMatch(/max-height: max\(24rem/)
+    const axis = /\.timeline__axis \{([^}]*)\}/.exec(app)[1]
+    expect(axis).toMatch(/position: sticky/)
+    expect(axis).toMatch(/top: 0/)
+    // Opaque, or rows show through it as they pass behind.
+    expect(axis).toMatch(/background-color: var\(--surface\)/)
+  })
+
+  it('draws month gridlines, solid and one step off the surface', () => {
+    // Without these a bar's position is unreadable: the axis is at the top and the row
+    // somebody cares about is hundreds of pixels below it.
+    const gridline = /\.timeline__gridline \{([^}]*)\}/.exec(app)[1]
+    expect(gridline).toMatch(/width: 1px/)
+    expect(gridline).toMatch(/background-color: var\(--line\)/)
+    expect(gridline).not.toMatch(/dashed/)
+  })
+
+  it('gives the today rule the accent, and the gridlines do not compete with it', () => {
+    const now = /\.timeline__now \{([^}]*)\}/.exec(app)[1]
+    expect(now).toMatch(/background-color: var\(--accent\)/)
+    expect(now).toMatch(/width: 2px/)
   })
 })
 

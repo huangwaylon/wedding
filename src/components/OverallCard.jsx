@@ -21,7 +21,14 @@ import Meter from './Meter.jsx'
 /** The four counts, in the order somebody scans them: problems first. */
 const STATS = ['overdue', 'active', 'upcoming', 'done']
 
-export default function OverallCard({ overall }) {
+/**
+ * @param {object} props
+ * @param {object} props.overall from `overallProgress`
+ * @param {boolean} [props.compact] one horizontal band instead of a tall card. Used in
+ *   timeline view, where the full card pushed a thirty-row Gantt off the screen — there the
+ *   summary is context, not the subject.
+ */
+export default function OverallCard({ overall, compact = false }) {
   const { t } = useT()
   const percent = toPercent(overall.percent)
   const expected = toPercent(overall.expected)
@@ -42,6 +49,57 @@ export default function OverallCard({ overall }) {
   const pace = paceLabel(overall.pace, overall.overdue)
   // The magnitude, not the signed value: the direction is already in the wording.
   const gap = Math.round(Math.abs(overall.pace) * 100)
+  const paceText =
+    pace === 'ontrack'
+      ? t('overall.pace.ontrack')
+      : pace === 'behind'
+        ? t('overall.pace.behind', { count: overall.overdue })
+        : t('overall.pace.ahead', { percent: gap })
+
+  const meter = (
+    <Meter
+      value={overall.percent}
+      mark={overall.expected}
+      large
+      label={t('overall.title')}
+      valueText={`${percent}% — ${t('overall.expected', { percent: expected })}`}
+    />
+  )
+
+  const stats = (
+    <dl className="overall__stats">
+      {STATS.map((state) => (
+        <div key={state} className={`stat${overall[state] ? '' : ' stat--zero'}`}>
+          <dd className="stat__value tnum">
+            <span className={`dot dot--${state}`} aria-hidden="true" />
+            {overall[state]}
+          </dd>
+          <dt className="stat__label">{t(`state.${state}`)}</dt>
+        </div>
+      ))}
+    </dl>
+  )
+
+  if (compact) {
+    return (
+      <section className="card overall overall--compact" aria-labelledby="overall-title">
+        <div className="overall__lead">
+          <h2 className="card__title" id="overall-title">
+            {t('overall.title')}
+          </h2>
+          <p className="overall__figure">
+            <span className="overall__percent">{percent}</span>
+            <span className="overall__unit">%</span>
+          </p>
+          <p className="overall__pace">{paceText}</p>
+        </div>
+        <div className="overall__band">
+          <div className="overall__meter">{meter}</div>
+          {stats}
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section className="card overall" aria-labelledby="overall-title">
@@ -57,23 +115,9 @@ export default function OverallCard({ overall }) {
         <span className="overall__unit">%</span>
       </p>
 
-      <p className="overall__pace">
-        {pace === 'ontrack'
-          ? t('overall.pace.ontrack')
-          : pace === 'behind'
-            ? t('overall.pace.behind', { count: overall.overdue })
-            : t('overall.pace.ahead', { percent: gap })}
-      </p>
+      <p className="overall__pace">{paceText}</p>
 
-      <div className="overall__meter">
-        <Meter
-          value={overall.percent}
-          mark={overall.expected}
-          large
-          label={t('overall.title')}
-          valueText={`${percent}% — ${t('overall.expected', { percent: expected })}`}
-        />
-      </div>
+      <div className="overall__meter">{meter}</div>
 
       {/* The legend shows the mark rather than describing where it is, and it is
           only worth the line once the two numbers have actually diverged. */}
@@ -84,17 +128,7 @@ export default function OverallCard({ overall }) {
         </p>
       ) : null}
 
-      <dl className="overall__stats">
-        {STATS.map((state) => (
-          <div key={state} className={`stat${overall[state] ? '' : ' stat--zero'}`}>
-            <dd className="stat__value tnum">
-              <span className={`dot dot--${state}`} aria-hidden="true" />
-              {overall[state]}
-            </dd>
-            <dt className="stat__label">{t(`state.${state}`)}</dt>
-          </div>
-        ))}
-      </dl>
+      {stats}
 
       <p className="hint overall__method">{t('overall.method')}</p>
     </section>

@@ -392,7 +392,7 @@
 .meter {
   position: relative;
   height: var(--meter-height);
-  border: 1px solid var(--line);
+  border: 1px solid var(--track-line);
   border-radius: var(--radius-full);
   background-color: var(--track);
   overflow: hidden;

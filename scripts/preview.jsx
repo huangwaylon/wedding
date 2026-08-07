@@ -151,7 +151,7 @@ function TimelineView({ locale }) {
   return (
     <Shell wide>
       <div className="shell__aside stack">
-        <OverallCard overall={overall} />
+        <OverallCard overall={overall} compact />
       </div>
       <div className="shell__main stack">
         <Controls

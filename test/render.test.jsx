@@ -276,9 +276,20 @@ describe('Timeline', () => {
     // A marker off the edge reads as broken, which is why planWindow always contains now.
     const list = rows([task({ start: '2027-01-01T00:00', end: '2027-02-01T23:59' })])
     const html = renderToStaticMarkup(<Timeline tasks={list} nowMs={NOW} timeZone={TOKYO} />)
-    const now = Number(/--now:([\d.]+)/.exec(html)[1])
+    const now = Number(/timeline__now"[^>]*left:([\d.]+)%/.exec(html)[1])
     expect(now).toBeGreaterThanOrEqual(0)
-    expect(now).toBeLessThanOrEqual(1)
+    expect(now).toBeLessThanOrEqual(100)
+  })
+
+  it('draws one gridline per axis tick, from the same list as the labels', () => {
+    // Two lists would drift, and a gridline half a month from its own label is worse than
+    // no gridline at all.
+    const list = rows([task({ start: '2027-01-01T00:00', end: '2027-09-01T23:59' })])
+    const html = renderToStaticMarkup(<Timeline tasks={list} nowMs={NOW} timeZone={TOKYO} />)
+    const ticks = html.match(/timeline__tick"/g) ?? []
+    const lines = html.match(/timeline__gridline"/g) ?? []
+    expect(ticks.length).toBeGreaterThan(1)
+    expect(lines).toHaveLength(ticks.length)
   })
 })
 

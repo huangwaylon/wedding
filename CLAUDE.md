@@ -58,6 +58,12 @@ for a board with eight tasks past their date. Overdue is the only hard evidence 
 there is — a task halfway through its window with no work done is not late, and this app
 never asks anybody to estimate progress.
 
+**`offsetMsAt` caches by zone and HOUR, never by day.** `formatToParts` is the expensive
+call in `time.js` and the whole board re-derives it once a minute as the clock ticks — a
+fifty-task board is ~400 calls a minute for a handful of distinct answers. Hour buckets are
+safe because DST transitions happen on the hour; a day bucket would return the wrong offset
+for every lookup on a transition day.
+
 **Every task counts equally in the roll-up — never weighted by duration.** "36% of our tasks"
 is a sentence somebody can check by counting. A duration-weighted mean silently makes a
 six-month venue hunt worth thirty times the cake tasting and nobody can reconstruct it from
@@ -218,9 +224,12 @@ catalogs (`en.js`, `ja.js`) and the registry (`catalogs.js`).
 The meter and the Gantt are hand-rolled — no charting library. `Meter` is a track, a fill and
 one tick; `Timeline` is CSS grid plus percentages.
 
-- **The meter's hairline is load-bearing.** `--track` is 1.34:1 against the card and cannot
-  reach 3:1 while staying a warm neutral, so the *boundary* identifies the bar. Delete it and
-  an empty meter is invisible — 0% reads as "there is no meter here".
+- **The meter's hairline is load-bearing, and it is `--track-line`, never `--line`.**
+  `--track` is 1.34:1 against the card and cannot reach 3:1 while staying a warm neutral, so
+  the *boundary* identifies the bar. Delete it and an empty meter is invisible — 0% reads as
+  "there is no meter here". This shipped half-broken: the hairline was `--line`, which
+  measures **1.035:1 against `--track`** and therefore drew nothing at all, on both the meter
+  and the timeline bar. `--track-line` is 1.45:1 on the track and 1.95:1 on the surface.
 - **The on-schedule mark is ink with a 2px ring in the surface colour**, which is what keeps
   it legible whether it crosses the fill or the bare track. It must never be given a hue of
   its own; no single colour clears both backgrounds.
@@ -276,9 +285,26 @@ Four files, loaded in order by `src/main.jsx`: `tokens.css` (custom properties),
 - Mobile-first. One column, capped at `--column-max` from `48rem`, two columns at `62rem`; the
   sheet becomes a centred dialog at `48rem` too. **There is no third breakpoint** and
   `test/ui.test.jsx` pins that.
-- **Timeline view opts out of the two-column grid** via `.shell--wide`: a Gantt wants the full
-  width, and a 23rem aside beside it leaves the bars unreadable. Its label gutter narrows
-  below `48rem`, because 15rem of labels on a 390px screen leaves no room for the bars.
+- **Timeline view opts out of the two-column grid** via `.shell--wide`: a Gantt wants the
+  full width, and a 23rem aside beside it leaves the bars unreadable. It also lifts the
+  `--column-max` cap from `48rem` up, because an iPad in portrait is 768px and would
+  otherwise draw a year of bars in 576 of them.
+- **`.shell--wide .shell__aside` must stay `position: static`.** `--wide` is ONE column, so
+  the aside and the main are stacked rows rather than neighbours — and a sticky element in a
+  stack does not sit beside the content, it floats over it. This shipped: scrolling the
+  timeline dragged the summary card down across the rows and drew it on top of them, text
+  over text. `test/ui.test.jsx` pins both the rule and its position in the cascade.
+- **The timeline's label gutter is `clamp()`, not a breakpoint.** A stepped gutter wanted a
+  third media query and there are two. 26vw lands on the 7.5rem floor at 390px, where the
+  bars matter more than the labels, and the 20rem ceiling at 1440px, where the labels are
+  read.
+- **The timeline needs its height cap for the axis to stick.** `position: sticky` resolves
+  against the nearest scrollport; without `max-height` the timeline IS its content's height,
+  nothing scrolls inside it, and the axis never sticks — which leaves row thirty with no axis
+  in sight. The axis also has to be opaque, or rows show through it as they pass behind.
+- **Month gridlines are not decoration.** The axis is at the top and the row somebody cares
+  about is hundreds of pixels below it; without gridlines a bar's date is unreadable. They
+  come from the same `monthTicks` list as the labels, so the two can never drift.
 - **Every layout keeps `--fab-size` of clearance below its content.** Dropping that reservation
   is how the FAB lands on top of the last row's delete button.
 - Keep specificity flat: single class selectors, no IDs, no `!important`.
@@ -312,9 +338,11 @@ When fixing a bug, add the regression test. When changing progress arithmetic, t
 matters most is the misleading case: a board where every task is overdue and nothing is done
 must report 100% *and* say it is behind.
 
-**A passing suite does not mean it looks right.** This app shipped an overall tracker reading
-"On schedule" with eight tasks overdue, and a timeline whose Japanese month labels overlapped
-into a smear. Both suites were green; only a screenshot showed either.
+**A passing suite does not mean it looks right.** Everything in this list was found by
+looking at the thing, with the suite green: an overall tracker reading "On schedule" with
+eight tasks overdue; a timeline whose Japanese month labels overlapped into a smear; a sticky
+aside drawing the summary card on top of the timeline rows; and a meter hairline in `--line`
+that measured 1.035:1 against the track it was outlining.
 
 ```sh
 npx vite-node scripts/preview.jsx     # writes scripts/preview-*.html (gitignored)

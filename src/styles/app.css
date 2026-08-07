@@ -186,6 +186,80 @@
   margin-top: var(--space-4);
 }
 
+/* ---- Overall progress, compact ----------------------------------------
+   Timeline view. The tall card pushed a thirty-row Gantt off the screen, so here the
+   summary becomes one band: the figure and the verdict on the left, the meter and the
+   counts filling the rest. Stacks on a narrow screen, because two columns of this at 390px
+   is worse than one.
+
+   Note `container-type: inline-size` is still on `.overall`, so --fs-display resolves
+   against the CARD here rather than the aside — which is why the figure needs its own
+   size below instead of inheriting the hero step. */
+.overall--compact {
+  display: grid;
+  gap: var(--space-3) var(--space-6);
+  padding: var(--space-4) var(--space-5);
+}
+
+.overall--compact .overall__figure {
+  margin-bottom: 0;
+}
+
+/* Not --fs-display: at this size the number is a stat, not the hero. One hero per view,
+   and in timeline view the chart is it. */
+.overall--compact .overall__percent {
+  font-size: var(--fs-xl);
+}
+
+.overall--compact .overall__unit {
+  font-size: var(--fs-lg);
+}
+
+.overall--compact .overall__pace {
+  margin-bottom: 0;
+}
+
+.overall--compact .overall__meter {
+  margin-bottom: 0;
+}
+
+.overall--compact .overall__stats {
+  padding-top: 0;
+  border-top: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.overall--compact .stat__value {
+  font-size: var(--fs-body);
+}
+
+.overall__lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+}
+
+.overall__band {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  justify-content: center;
+}
+
+@media (min-width: 48rem) {
+  .overall--compact {
+    grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .overall__lead {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+}
+
 /* ---- Controls row ----------------------------------------------------- */
 .controls {
   display: flex;
@@ -412,21 +486,31 @@
 }
 
 /* ---- Timeline ---------------------------------------------------------
-   A Gantt, in CSS grid. Every row shares --timeline-gutter so the bars line up
-   with the axis ticks above them, and the whole thing scrolls horizontally on a
-   phone rather than compressing twelve months into 280px.
+   A Gantt, in CSS grid. Every row shares --timeline-gutter with the axis, which is why
+   the bars line up with the month ticks; .timeline__overlay spans exactly the plot area so
+   the gridlines and the today rule position as plain percentages.
 
-   The gutter is narrower below 48rem: a phone has no room for a 15rem label
-   column, and truncating the titles is better than losing the bars. */
+   The timeline scrolls in BOTH axes inside its own card from 48rem up. That is what lets
+   the axis stick: thirty-eight rows scroll well past it, and an axis you cannot see while
+   reading row thirty is decoration. Below 48rem there is no height cap, so the page carries
+   the vertical scroll — a nested vertical scroll on a phone fights the page. */
 .timeline {
-  --timeline-gutter: 7.5rem;
-  overflow-x: auto;
+  /* Fluid rather than stepped, deliberately: a stepped gutter would need a third
+     breakpoint, and there are two. 26vw lands on ~7.5rem at 390px (the floor, where the
+     bars matter more than the labels) and ~20rem at 1440px (the ceiling, past which the
+     labels are read and the extra room belongs to the chart). */
+  --timeline-gutter: clamp(7.5rem, 26vw, 20rem);
+  overflow: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 @media (min-width: 48rem) {
   .timeline {
-    --timeline-gutter: 15rem;
+    /* The summary strip, the controls row and the FAB clearance above and below come to
+       roughly 22rem; this leaves the card a visible bottom edge rather than running it off
+       the viewport. Floored so a short window still gets a usable chart. */
+    max-height: max(24rem, calc(100dvh - 22rem));
   }
 }
 
@@ -435,94 +519,148 @@
   min-width: 34rem;
 }
 
+/* Sticky at the top of the timeline's own scrollport, and opaque, so rows pass behind it
+   rather than through it. It still scrolls horizontally with the plot, which is what keeps
+   a tick above its own gridline. */
 .timeline__axis {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: grid;
   grid-template-columns: var(--timeline-gutter) minmax(0, 1fr);
-  padding-bottom: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-2) 0;
+  background-color: var(--surface);
   border-bottom: 1px solid var(--line);
+}
+
+/* The axis's own gutter cell carries the left padding, so a tick at fraction 0 still
+   starts where the plot does. */
+.timeline__axis-gutter {
+  padding-left: var(--space-4);
 }
 
 .timeline__ticks {
   position: relative;
-  height: 1.25rem;
+  height: 1.125rem;
 }
 
 .timeline__tick {
   position: absolute;
   top: 0;
   font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
   color: var(--ink-3);
   white-space: nowrap;
   transform: translateX(-50%);
 }
 
-/* Gridlines and the today line share one mechanism: a 1px solid rule, never
-   dashed, one step off the surface. The today line is the exception that gets
-   --ink-3, because it is the reader's own position rather than chrome. */
 .timeline__plot {
   position: relative;
+  padding: var(--space-2) var(--space-4) var(--space-3) 0;
 }
 
-.timeline__now {
+/* Spans exactly the plot area, so a gridline and a bar at the same date land on the same
+   pixel and neither has to reason about the gutter. */
+.timeline__overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--timeline-gutter);
+  right: var(--space-4);
+  pointer-events: none;
+}
+
+/* Hairline, solid, one step off the surface — never dashed. Without these a bar's position
+   is unreadable: the axis is at the top and the row somebody cares about is far below it. */
+.timeline__gridline {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 1px;
-  /* The plot area starts after the gutter, so the fraction applies to what is
-     left. A unitless custom property multiplied by a length is valid calc. */
-  left: calc(var(--timeline-gutter) + var(--now) * (100% - var(--timeline-gutter)));
-  background-color: var(--ink-3);
-  pointer-events: none;
+  background-color: var(--line);
+}
+
+/* The one place this chart raises its voice. In a countdown-driven app "where we are now"
+   is the most important thing on it, and the accent is how it says so. */
+.timeline__now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background-color: var(--accent);
 }
 
 .timeline__now-label {
   position: absolute;
   top: 0;
   left: var(--space-1);
+  padding: 0.0625rem var(--space-2);
+  border-radius: var(--radius-xs);
+  background-color: var(--accent);
+  color: var(--accent-text);
   font-size: var(--fs-caption);
-  color: var(--ink-3);
+  font-weight: 500;
+  line-height: var(--lh-tight);
   white-space: nowrap;
 }
 
 .timeline__row {
+  position: relative;
   display: grid;
   grid-template-columns: var(--timeline-gutter) minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-3);
   min-height: var(--tap-target-sm);
-  padding: var(--space-1) 0;
+  transition: background-color var(--transition-fast);
 }
 
-.timeline__row + .timeline__row {
-  border-top: 1px solid var(--line);
+/* Rows carry no rules between them — thirty-eight hairlines is a grid, not a chart. The
+   hover band is what lets a pointer track a label across seven hundred pixels to its bar
+   instead. Pointer-only: there is no hover on a touch screen, and a sticky highlight after
+   a tap would read as a selection nobody made. */
+@media (hover: hover) and (pointer: fine) {
+  .timeline__row:hover {
+    background-color: var(--sunken);
+  }
 }
 
 .timeline__label {
+  padding: 0 var(--space-3) 0 var(--space-4);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--fs-caption);
-  color: var(--ink-2);
+  font-size: var(--fs-label);
+  line-height: var(--lh-tight);
+  color: var(--ink);
 }
 
 .timeline__row--done .timeline__label {
   color: var(--ink-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-4);
+  text-decoration-thickness: 1px;
+}
+
+.timeline__row--overdue .timeline__label {
+  font-weight: 500;
 }
 
 .timeline__track {
   position: relative;
-  height: 1.25rem;
+  height: 1.5rem;
 }
 
-/* Capped well under the 24px mark spec, and the band's leftover is air. */
+/* Capped well under the 24px mark spec, and the band's leftover is air. The hairline is
+   what makes an unstarted bar read as a planned window rather than as nothing — the same
+   reasoning as the meter's, and for the same measured reason. */
 .timeline__bar {
   position: absolute;
-  top: 0.3125rem;
+  top: 0.4375rem;
   height: 0.625rem;
-  min-width: 3px;
+  min-width: 4px;
   border-radius: var(--radius-full);
   background-color: var(--track);
-  border: 1px solid var(--line);
+  border: 1px solid var(--track-line);
   overflow: hidden;
 }
 
@@ -601,6 +739,19 @@
   background-color: var(--accent);
 }
 
+@media (min-width: 48rem) {
+  .shell {
+    max-width: var(--column-max);
+  }
+
+  /* Timeline view takes the full width from here, not from 62rem. A Gantt squeezed into
+     the 36rem reading column is the one layout where the cap actively hurts — an iPad in
+     portrait is 768px and would otherwise draw a year of bars in 576 of them. */
+  .shell--wide {
+    max-width: var(--shell-max);
+  }
+}
+
 /* ---- Two columns ------------------------------------------------------
    From 62rem the summary moves into an aside and stays put while the list
    scrolls, which is the layout a planner on a large monitor is actually using.
@@ -624,6 +775,14 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
+  }
+
+  /* --wide is ONE column, so the aside and the main are stacked ROWS rather than
+     neighbours — and a sticky element in a stack does not sit beside the content, it floats
+     over it. This shipped once: scrolling the timeline dragged the summary card down across
+     the rows and drew it on top of them. Static is not a tidy-up; it is the fix. */
+  .shell--wide .shell__aside {
+    position: static;
   }
 
   .shell__main {

@@ -78,8 +78,15 @@
      darker than --sunken: 1.34:1 on white. It cannot reach 3:1 and stay a warm
      neutral, which is why every meter also carries a hairline — the BOUNDARY
      identifies the control, not the fill difference. Deleting that hairline is
-     what would make an empty bar disappear. */
+     what would make an empty bar disappear.
+
+     --track-line is that hairline, and it is deliberately NOT --line. This shipped wrong
+     once: --line on --track measures 1.035:1, so the outline it was supposed to draw was
+     invisible and an empty bar had nothing holding it up but the 1.34:1 fill step. Measured
+     here: 1.45:1 against --track, 1.95:1 against --surface — visible against both the bar it
+     outlines and the card that bar sits on. */
   --track: #e7ddd3;
+  --track-line: #c9b7a3;
   --meter-height: 8px;
   --meter-height-lg: 14px;
 
