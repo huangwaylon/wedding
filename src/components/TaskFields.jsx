@@ -7,9 +7,11 @@
  * than something you wrote down. What is left is what a checklist actually needs: what it is,
  * when it is due, and roughly what kind of thing it is.
  *
- * Two surfaces edit a task and they commit differently — `TaskEditor` sends each field as focus
- * leaves it, `TaskFormSheet` buffers a whole draft and submits once — so every field here is
- * pure value + onChange, and `onCommit` is the optional report that blur or Enter happened.
+ * TWO SURFACES EDIT A TASK AND BOTH NOW BUFFER A WHOLE DRAFT: `TaskDetail` for an existing task
+ * and `TaskFormSheet` for a new one. They used to differ — the inline editor committed each field
+ * as focus left it — and on this endpoint that cost one ~3s round trip per field. So every field
+ * here is pure value + onChange, and `onEnter`/`onFocusChange` are optional reports a caller may
+ * ignore entirely.
  *
  * THE DAY IS A NATIVE `type=date` AND THAT IS DELIBERATE. The platform wheel is the fastest
  * date entry on a phone by a wide margin and it is the control people already know; a
@@ -40,39 +42,29 @@ function skinOf(name) {
 /**
  * The handlers every control in this file shares.
  *
- * Blur and Enter are ONE path: Enter blurs the control and lets the blur handler commit. Two
- * separate handlers would both fire on a Return keypress, and the second would be reasoning
- * about a draft the first has already cleared. Blurring also drops the iOS keyboard, which is
- * what somebody pressing Return is asking for. `preventDefault` because this markup can sit
- * inside a `<form>`, where Return would submit it.
+ * `onEnter` IS NOT `onBlur`, and that separation is the whole of what changed here. Blur used to
+ * BE the commit — Enter just blurred the control and let the blur handler write — and that cost
+ * one ~3s round trip per field. Now a caller buffers a draft and ends the session itself, so
+ * Return means "I am done with the whole thing" and blur means nothing at all. `preventDefault`
+ * because this markup can sit inside a `<form>`, where Return would submit it, and `blur()`
+ * because dropping the iOS keyboard is what somebody pressing Return is asking for.
  *
- * The commit runs BEFORE focus is reported gone: the app holds off a service-worker reload
- * while a field has focus, and that guard has to stay up until the write it is guarding has
- * been handed over.
- *
- * `onFocusChange` is reported by every control, not just the ones that raise a keyboard — the
- * fixed FAB does not travel with the keyboard and would otherwise sit over these fields, and a
- * reload must not land between a keystroke and the blur that saves it. A caller that buffers
- * its own draft passes neither prop and gets no handlers at all.
- *
- * @param {object} handlers
- * @param {boolean} [handlers.enter] false where Return means a wheel's own confirmation rather
- *   than "I am done with this field"
+ * `onFocusChange` survives for the ADD-A-SUBTASK field, which is genuinely per-field: it is
+ * outside any edit session, so nothing else is holding off a reload while it has text in it.
+ * The editor's own fields pass neither prop — the session reports focus for all of them at once.
  */
-function fieldEvents({ onCommit, onFocusChange, enter = true }) {
+function fieldEvents({ onEnter, onFocusChange }) {
   const events = {}
-  if (onFocusChange) events.onFocus = () => onFocusChange(true)
-  if (onCommit || onFocusChange) {
-    events.onBlur = () => {
-      onCommit?.()
-      onFocusChange?.(false)
-    }
+  if (onFocusChange) {
+    events.onFocus = () => onFocusChange(true)
+    events.onBlur = () => onFocusChange(false)
   }
-  if (onCommit && enter) {
+  if (onEnter) {
     events.onKeyDown = (event) => {
       if (event.key !== 'Enter') return
       event.preventDefault()
       event.currentTarget.blur()
+      onEnter()
     }
   }
   return events
@@ -148,7 +140,7 @@ function FieldError({ code }) {
   return <span className="field__error">{t(`error.${code}`)}</span>
 }
 
-export function TitleField({ id, skin, value, error, onChange, onCommit, onFocusChange }) {
+export function TitleField({ id, skin, value, error, onChange, onEnter, onFocusChange }) {
   const { t } = useT()
   const classes = skinOf(skin)
   return (
@@ -165,7 +157,7 @@ export function TitleField({ id, skin, value, error, onChange, onCommit, onFocus
         autoComplete="off"
         /* Deliberately not autoFocus: on iOS it raises the keyboard while the sheet is still
            animating in, which lands the panel half off screen. */
-        {...fieldEvents({ onCommit, onFocusChange })}
+        {...fieldEvents({ onEnter, onFocusChange })}
       />
       <FieldError code={error} />
     </div>
@@ -184,10 +176,10 @@ export function TitleField({ id, skin, value, error, onChange, onCommit, onFocus
  * viewport ends up underneath the wheel that is editing it. `nearest` so a field already
  * comfortably visible is not yanked; the same fix `AddSubtask` needed.
  */
-export function DueField({ id, skin, value, error, onChange, onCommit, onFocusChange }) {
+export function DueField({ id, skin, value, error, onChange, onFocusChange }) {
   const { t } = useT()
   const classes = skinOf(skin)
-  const events = fieldEvents({ onCommit, onFocusChange })
+  const events = fieldEvents({ onFocusChange })
   return (
     <div className={classes.field}>
       <label className={classes.label} htmlFor={id}>
@@ -210,7 +202,6 @@ export function DueField({ id, skin, value, error, onChange, onCommit, onFocusCh
   )
 }
 
-/** A picker commits the moment it changes, so `onChange` is the commit. */
 export function CategoryField({ id, skin, value, categories, onChange, onFocusChange }) {
   const { t } = useT()
   const categoryLabel = useCategoryLabel()
@@ -225,7 +216,7 @@ export function CategoryField({ id, skin, value, categories, onChange, onFocusCh
         className="input select"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        {...fieldEvents({ onFocusChange, enter: false })}
+        {...fieldEvents({ onFocusChange })}
       >
         <option value="">{t('form.categoryNone')}</option>
         {/* A category the sheet holds but the configured list does not — somebody renamed it in

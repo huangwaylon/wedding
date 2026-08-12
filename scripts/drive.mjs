@@ -86,6 +86,21 @@ await send('Page.enable')
  */
 await send('Emulation.setFocusEmulationEnabled', { enabled: true })
 await send('Emulation.setDeviceMetricsOverride', { width: 393, height: 900, deviceScaleFactor: 2, mobile: true })
+/**
+ * COUNT THE REQUESTS. "One write per edit session" is the claim this file exists to check, and
+ * counting toasts or watching the row cannot check it — the version before this batched nothing
+ * and looked identical on screen while costing one ~3s round trip per field.
+ */
+await send('Network.enable')
+const posts = []
+ws.addEventListener('message', (event) => {
+  const msg = JSON.parse(event.data)
+  if (msg.method === 'Network.requestWillBeSent' && msg.params.request.method === 'POST') {
+    const body = JSON.parse(msg.params.request.postData ?? '{}')
+    posts.push(`${body.op}:${body.payload?.task?.id ?? body.payload?.id ?? ''}:${body.payload?.task?.title ?? ''}`)
+  }
+})
+
 await send('Page.navigate', { url: URL })
 await wait(3500)
 
@@ -175,47 +190,62 @@ report.deleteIsLast = await evaluate(`
 await shot('02-open')
 
 /**
- * Commit on blur.
+ * THREE FIELDS, ONE WRITE. Blurring between fields must send NOTHING — that is the whole
+ * performance fix, and the only honest way to see it is to count the POSTs.
  *
- * THE TWO STEPS MUST BE IN SEPARATE TICKS. Typing and blurring in one synchronous block
- * means React has not flushed the onChange state update when the blur handler runs, so the
- * editor compares a stale draft, finds no change and writes nothing — and the check then
- * passes for a board that never saves anything. A real finger cannot do that; this driver
- * can, and did.
+ * Each field is driven in its own tick. Typing and blurring in one synchronous block means React
+ * has not flushed the onChange update when the handler runs, so it would read a stale draft; and
+ * `focus()` must come first, because React listens for focusout and that never fires on an
+ * element which never had focus. Both of those silently made this check verify nothing.
  */
-await evaluate(`
-  (() => {
-    const input = document.querySelector('.tcard--open .editor input:not([type=date])')
-    // FOCUS FIRST. React listens for focusout, which never fires on an element that did not
-    // have focus — so \`.blur()\` below was a no-op and this whole check silently verified
-    // nothing at all.
-    input.focus()
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-    setter.call(input, 'Compare the venue quotes CAREFULLY')
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    return document.activeElement === input
-  })()
-`)
-await wait(400)
-report.titleWhileTyping = await evaluate(`document.querySelector('.tcard--open .editor input').value`)
-await evaluate(`document.querySelector('.tcard--open .editor input:not([type=date])').blur()`)
-await wait(300)
-// The optimistic row, before the reply lands. This is the write actually going out.
-report.titleOptimistic = await evaluate(`document.querySelector('.tcard--open .tcard__title')?.textContent`)
-report.toast = await evaluate(`[...document.querySelectorAll('.toast')].map(n=>n.textContent)`)
-await wait(1500)
-/**
- * The reply, accepted. Against a static fixture the reply is the board BEFORE the edit, so the
- * title reverting here is the fixture doing its job rather than a failure — what this proves is
- * that the write went out, the reply was parsed as a board and the whole board was replaced.
- */
-report.titleAfterReply = await evaluate(`document.querySelector('.tcard--open .tcard__title')?.textContent`)
-report.toastAfterReply = await evaluate(`[...document.querySelectorAll('.toast')].map(n=>n.textContent)`)
-await shot('03-blurred')
+const setField = async (selector, value) => {
+  await evaluate(`
+    (() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      el.focus()
+      const proto = el.tagName === 'SELECT' ? HTMLSelectElement : HTMLInputElement
+      Object.getOwnPropertyDescriptor(proto.prototype, 'value').set.call(el, ${JSON.stringify(value)})
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      return document.activeElement === el
+    })()
+  `)
+  await wait(250)
+  await evaluate(`document.querySelector(${JSON.stringify(selector)}).blur()`)
+  await wait(250)
+}
 
-// Tick a subtask. Same caveat as the title: the fixture answers with its own board.
+const postsBeforeEdit = posts.length
+await setField('.tcard--open .editor input:not([type=date])', 'Compare the venue quotes CAREFULLY')
+await setField('.tcard--open .editor input[type=date]', '2026-12-24')
+await setField('.tcard--open .editor select', 'Budget')
+report.draftOnScreen = await evaluate(`({
+  title: document.querySelector('.tcard--open .editor input:not([type=date])').value,
+  due: document.querySelector('.tcard--open .editor input[type=date]').value,
+  category: document.querySelector('.tcard--open .editor select').value,
+})`)
+// Nothing may have gone out yet: the session has not ended.
+report.writesWhileEditing = posts.length - postsBeforeEdit
+// The row still reads its stored values, because nothing has been written.
+report.rowWhileEditing = await evaluate(`document.querySelector('.tcard--open .tcard__title')?.textContent`)
+
+await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
+await wait(400)
+report.writesAfterDone = posts.length - postsBeforeEdit
+report.rowAfterDone = await evaluate(`document.querySelector('.tcard--open .tcard__title')?.textContent`)
+report.modeAfterDone = await evaluate(`document.querySelector('.tcard--open .tcard__edit')?.getAttribute('aria-pressed')`)
+await wait(1800)
+report.rowAfterReply = await evaluate(`document.querySelector('.tcard--open .tcard__title')?.textContent`)
+report.dayAfterReply = await evaluate(`document.querySelector('.tcard--open .tcard__day')?.textContent`)
+report.toast = await evaluate(`[...document.querySelectorAll('.toast')].map(n=>n.textContent)`)
+await shot('03-saved')
+
+// Tick a subtask. One write, and it is the only path still writing on a single gesture — which
+// is right: a tick IS the whole edit.
+const postsBeforeTick = posts.length
 await evaluate(`document.querySelector('.tcard--open .subtask__toggle').click()`)
-await wait(900)
+await wait(1800)
+report.tickWrites = posts.length - postsBeforeTick
 report.tallyAfterTick = await evaluate(`document.querySelector('.tcard--open .tcard__tally')?.textContent`)
 
 // The FAB's create sheet.
@@ -253,6 +283,7 @@ report.docOverflow = await evaluate(`
   })()
 `)
 
+report.allPosts = posts
 console.log(JSON.stringify(report, null, 2))
 console.log('--- console ---')
 console.log(logs.length ? logs.join('\n') : '(clean)')

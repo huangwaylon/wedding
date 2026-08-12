@@ -9,11 +9,19 @@
  * Read as a source check rather than a behavioural one. That is a weaker test than calling
  * the hook, and it is the strongest one available without a DOM: the failure it guards is
  * somebody adding a fifth mutation with its own try/catch.
+ *
+ * WHERE THAT WEAKNESS COST SOMETHING, and why `missingColumnsFor` is a function now: the
+ * out-of-date guard used to be pinned the same way, by matching the source for
+ * `schema.includes(...)`. It matched. It was checking the wrong column, and a whole board's
+ * dates went through it. Anything with a rule in it belongs in a function these assertions can
+ * call — see the second describe block.
  */
 
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { API_ERROR } from '../src/lib/api.js'
+import { TASK_COLUMNS } from '../src/schema.js'
+import { missingColumnsFor } from '../src/state/useBoard.js'
 
 const source = readFileSync('src/state/useBoard.js', 'utf8')
 
@@ -95,46 +103,86 @@ describe('the mutation primitive', () => {
     expect(declarationOf('saveConfig')).not.toMatch(/previous/)
   })
 
-  it('treats an unread schema and an empty one differently', () => {
-    // The whole point of the guard. A deployment older than this bundle sends no `schema` field,
-    // so an EMPTY list is the positive signal that it cannot store a column we write. `null` —
-    // nothing read yet — must not flag, or every cold start would warn about itself.
-    //
-    // Written as `schema.length > 0 && ...` first, which excluded the only case it exists for:
-    // the old script sends nothing, so `length > 0` was false and the write went through and
-    // silently lost `parent_id`.
-    expect(body).toMatch(/useState\(null\)/)
-    expect(body).toMatch(/const outdatedScript = schema !== null && !schema\.includes\(/)
-    expect(body).not.toMatch(/schema\.length > 0/)
-  })
-
   it('declares the outdated-script flag before the mutations that depend on it', () => {
     // A `useCallback` dep array is evaluated during render, so a `const` declared BELOW one is
     // still in its temporal dead zone — a ReferenceError on every render, not a lint nit.
     expect(body.indexOf('const outdatedScript')).toBeLessThan(body.indexOf('const editTask'))
-    expect(body.indexOf('const outdatedScript')).toBeLessThan(body.indexOf('const addSubtask'))
+    expect(body.indexOf('const refuseIfOutdated')).toBeLessThan(body.indexOf('const addTask'))
   })
 
-  it('guards a SUBTASK edit too, not just a new subtask', () => {
-    // `toggleDone` comes through `editTask`, so ticking a checklist item on an out-of-date script
-    // would be written by a script that has never heard of `parent_id` — dropping it and promoting
-    // the item to a task of its own. A top-level edit is unaffected: its `parent_id` is empty.
-    const declaration = declarationOf('editTask')
-    expect(declaration).toMatch(/if \(task\.parentId && outdatedScript\)/)
-    expect(declaration).toMatch(/return Promise\.resolve\(false\)/)
+  it('puts the SAME guard in front of every write that touches a row', () => {
+    // Per-op guards are what let the rename through: `addSubtask` had one, `editTask` had one for
+    // subtasks only, and `addTask` — the path that writes a date on a new task — had none.
+    for (const name of [
+      'addTask',
+      'editTask',
+      'addSubtask',
+      'removeTask',
+      'restoreTask',
+      'compact',
+    ]) {
+      expect(declarationOf(name), `${name} is unguarded`).toMatch(/refuseIfOutdated\(\)/)
+    }
+    // And deliberately NOT on the config, which writes key/value pairs on the other tab: it is
+    // how somebody fixes the wedding date while the script is being redeployed.
+    expect(declarationOf('saveConfig')).not.toMatch(/refuseIfOutdated/)
   })
 
-  it('refuses the write rather than letting the script reshape it', () => {
+  it('refuses rather than letting the script reshape the row', () => {
     // A warning alone would still let somebody make the mess: the write returns {ok:true}, the
-    // row is created, and the column is dropped.
-    const declaration = declarationOf('addSubtask')
-    expect(declaration).toMatch(/if \(outdatedScript\)/)
-    expect(declaration).toMatch(/return Promise\.resolve\(false\)/)
+    // row is written, and the column it has never heard of is simply dropped.
+    expect(declarationOf('refuseIfOutdated')).toMatch(/setError\(API_ERROR\.OUTDATED\)/)
+    expect(declarationOf('refuseIfOutdated')).toMatch(/return Promise\.resolve\(false\)/)
+  })
+})
+
+/**
+ * The out-of-date rule itself, called rather than grepped for.
+ *
+ * This is the test that was missing. The old assertions checked that the source SAID
+ * `schema.includes(...)` — and it did, on the last column alone, which was sound only while the
+ * list could only grow. `due` replaced `end`, a deployment predating that still had every other
+ * column including the last, and so every write was allowed through and lost its date.
+ */
+describe('missingColumnsFor', () => {
+  /** Exactly what an un-redeployed script reports today. */
+  const LEGACY = [
+    'id',
+    'title',
+    'category',
+    'start',
+    'end',
+    'all_day',
+    'done_at',
+    'notes',
+    'owner',
+    'created_at',
+    'updated_at',
+    'deleted_at',
+    'parent_id',
+  ]
+
+  it('catches a RENAMED column, not just an appended one', () => {
+    expect(missingColumnsFor(LEGACY)).toEqual(['due'])
   })
 
-  it('names the required column from the schema rather than as a literal', () => {
-    // So the check cannot drift from the column list it is checking.
-    expect(body).toMatch(/REQUIRED_COLUMN = TASK_COLUMNS\[TASK_COLUMNS\.length - 1\]/)
+  it('is not fooled by the last column being present', () => {
+    // The precise shape of the defect: the guard read the final entry, and the old layout has it.
+    expect(LEGACY).toContain(TASK_COLUMNS[TASK_COLUMNS.length - 1])
+    expect(missingColumnsFor(LEGACY).length).toBeGreaterThan(0)
+  })
+
+  it('passes a deployment that knows every column, extras and order notwithstanding', () => {
+    expect(missingColumnsFor(TASK_COLUMNS)).toEqual([])
+    expect(missingColumnsFor([...TASK_COLUMNS].reverse())).toEqual([])
+    expect(missingColumnsFor([...TASK_COLUMNS, 'something_newer'])).toEqual([])
+  })
+
+  it('treats an unread schema and an empty one differently', () => {
+    // `null` is "nothing read yet" and must not flag, or every cold start would warn about
+    // itself. `[]` is a script that sends no schema at all, so everything is missing.
+    expect(missingColumnsFor(null)).toEqual([])
+    expect(missingColumnsFor([])).toEqual(TASK_COLUMNS)
   })
 
   it('knows the unauthorized code it branches on', () => {

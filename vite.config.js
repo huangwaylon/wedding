@@ -7,6 +7,26 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: process.env.VITE_BASE ?? '/wedding/',
   plugins: [react()],
+  /**
+   * DEV ONLY — `server` is not read by `vite build`, so none of this ships.
+   *
+   * `scripts/stub-endpoint.mjs` serves the real `Code.gs` on 127.0.0.1:5200, and the app's CSP
+   * allows `connect-src 'self'` plus Google and nothing else. Proxying the stub onto this origin
+   * is what lets `scripts/drive.mjs` exercise the true write path — the alternative was widening
+   * a production CSP to reach a test double, which is not a trade worth making.
+   *
+   *   VITE_SCRIPT_URL=/wedding/__endpoint
+   */
+  server: {
+    proxy: {
+      '/wedding/__endpoint': {
+        target: 'http://127.0.0.1:5200',
+        changeOrigin: true,
+        // The read's cache-buster rides in the query string, so it has to survive the rewrite.
+        rewrite: (path) => path.replace('/wedding/__endpoint', '/'),
+      },
+    },
+  },
   test: {
     environment: 'node',
     include: ['test/**/*.test.{js,jsx}'],

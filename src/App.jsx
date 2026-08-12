@@ -73,7 +73,15 @@ const HINTED = new Set([API_ERROR.UNCONFIGURED, API_ERROR.NOT_EMPTY, API_ERROR.M
  * branches fired and the screen carried "This edit link was rejected" stacked on top of
  * "The edit link was refused". The `access.*` pair wins because it names the recovery.
  */
-const SILENCED = new Set([API_ERROR.UNAUTHORIZED])
+const SILENCED = new Set([
+  API_ERROR.UNAUTHORIZED,
+  /**
+   * `outdated` is raised by every refused write, and `board.outdatedScript` already has a
+   * standing notice on screen saying the same thing with the redeploy steps in it. Without this
+   * the two stacked, and the refused write's copy had no instructions.
+   */
+  API_ERROR.OUTDATED,
+])
 
 /** The retry inside a notice. Two of them, identical, so it is one thing. */
 function RetryButton({ onRetry, label }) {
@@ -189,7 +197,13 @@ export default function App() {
   )
 
   const save = useCallback(
-    (task) => report(task.id ? board.editTask(task) : board.addTask(task), t('toast.saved')),
+    (task) => {
+      if (typeof window !== 'undefined') {
+        window.__saves = window.__saves ?? []
+        window.__saves.push(new Error('save').stack)
+      }
+      return report(task.id ? board.editTask(task) : board.addTask(task), t('toast.saved'))
+    },
     [board, report, t],
   )
 

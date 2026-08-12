@@ -1,10 +1,9 @@
 /**
  * Adding a task. CREATE ONLY.
  *
- * An existing task is edited in place, inside its own card (`TaskEditor`), so the one job left
- * for a modal is the case where there is nothing on screen to edit yet. That is also why this
- * one keeps a buffered draft and a Save button while the editor has neither: a task that does
- * not exist cannot be written field by field.
+ * An existing task is edited in place, inside its own row (`TaskDetail`), so the one job left for
+ * a modal is the case where there is nothing on screen to edit yet. Both surfaces buffer a draft
+ * and write once — this one's end is Save, the inline one's is Done.
  *
  * THE DATE IS LEFT BLANK, never defaulted to today. Every task typed in a hurry would
  * otherwise be overdue tomorrow, which is the one way this app can put a false number on

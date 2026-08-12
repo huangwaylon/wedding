@@ -30,13 +30,25 @@ import { findTemplate, materialize } from '../lib/templates.js'
 /** Focus fires constantly; a read on every one would be wasteful. */
 const REFRESH_FLOOR_MS = 30_000
 
-/**
- * The column this bundle needs the script to know about. Named from `TASK_COLUMNS` rather than
- * written as a literal, so it cannot drift from the schema it is checking.
- */
-const REQUIRED_COLUMN = TASK_COLUMNS[TASK_COLUMNS.length - 1]
-
 export const STATUS = { LOADING: 'loading', READY: 'ready', ERROR: 'error' }
+
+/**
+ * Columns the DEPLOYED script has never heard of. Empty means it can store everything this
+ * bundle writes.
+ *
+ * A FUNCTION, AND EXPORTED, because the rule itself is what went wrong and a rule that is not
+ * callable can only be tested by matching the source text — which is exactly how the defect got
+ * through: the assertions checked that the code said `schema.includes(...)`, and it did, on the
+ * wrong column. `test/board.test.js` now runs this against the real previous column list.
+ *
+ * @param {string[]|null} schema what the read reported. `null` is "nothing read yet" and is
+ *   deliberately not out of date, or every cold start would flag itself. `[]` is a deployment
+ *   that sends no schema at all, so everything is missing, which is correct.
+ */
+export function missingColumnsFor(schema) {
+  if (schema === null) return []
+  return TASK_COLUMNS.filter((column) => !schema.includes(column))
+}
 
 export function newId() {
   // Available in every browser this app targets; the fallback exists only so the
@@ -209,63 +221,78 @@ export function useBoard({ editKey, onUnauthorized }) {
   )
 
   /**
-   * True when the deployed Apps Script predates a column this bundle relies on.
+   * COLUMNS THE DEPLOYED SCRIPT HAS NEVER HEARD OF, which is the whole out-of-date signal.
    *
    * A deployment is pinned to a version, so the browser can be running newer code than the
    * script — and the script writes rows by looping its OWN column list, so an older one silently
-   * DROPS a field it has never heard of. That is what happened with subtasks: the write returned
-   * `{ok: true}`, the row was created, and `parent_id` was thrown away, so the subtask arrived as
-   * a stray top-level task with no error anywhere. Refusing the write is the only honest answer;
-   * a warning alone would still let somebody make the mess.
+   * DROPS a field it does not know. It answers `ok: true`, the row is written, and the value is
+   * simply gone.
    *
-   * An older script sends no `schema` at all, so an EMPTY list is the signal. `null` — nothing
-   * read yet — is deliberately not outdated, or every cold start would flag itself.
+   * THIS COMPARES THE WHOLE LIST, and it has to. The version before it checked the LAST column
+   * alone, which was sound while the list only ever grew: a new column is appended, so an older
+   * script is missing exactly that one. Then `end` was replaced by `due` — and a deployment that
+   * predated the rename still had every other column INCLUDING the last one, so the guard passed,
+   * every write was allowed through, and every date on the board was thrown away one edit at a
+   * time. Reads from such a script carry no `due` either, so the whole plan read as undated.
+   * `scripts/stub-endpoint.mjs --legacy` reproduces it.
+   *
+   * The rule lives in `missingColumnsFor` so it can be CALLED rather than grepped for.
    */
-  const outdatedScript = schema !== null && !schema.includes(REQUIRED_COLUMN)
+  const outdatedScript = useMemo(() => missingColumnsFor(schema).length > 0, [schema])
+
+  /**
+   * The one guard, in front of every write that touches a TASK ROW.
+   *
+   * Per-op guards are what let this go wrong: `addSubtask` had one, `editTask` had one for
+   * subtasks only, and `addTask` had none — so the rename walked straight through the two paths
+   * that write a date. Anything writing a row goes through here, and `saveConfig` deliberately
+   * does not: it writes key/value pairs on the other tab, where no column layout is involved,
+   * and it is how somebody fixes the wedding date while the script is being redeployed.
+   *
+   * @returns {Promise<false>|null} null when the write may proceed
+   */
+  const refuseIfOutdated = useCallback(() => {
+    if (!outdatedScript) return null
+    setError(API_ERROR.OUTDATED)
+    return Promise.resolve(false)
+  }, [outdatedScript])
 
   const addTask = useCallback(
     (draft) => {
+      const refused = refuseIfOutdated()
+      if (refused) return refused
       const task = { ...draft, id: draft.id || newId(), pending: true }
       return run(
         (key) => api.createTask(task, key),
         (previous) => [...previous, task],
       )
     },
-    [run],
+    [run, refuseIfOutdated],
   )
 
   const editTask = useCallback(
     (task) => {
-      // A SUBTASK edit is refused on an out-of-date script for the same reason a new one is, and
-      // this is the path that matters most in practice: `toggleDone` comes through here, so ticking
-      // a checklist item would have been written by a script that has never heard of `parent_id`,
-      // dropping it and promoting the item to a task of its own. A top-level edit is unaffected —
-      // its `parent_id` is empty, so losing it changes nothing.
-      if (task.parentId && outdatedScript) {
-        setError(API_ERROR.NOT_FOUND)
-        return Promise.resolve(false)
-      }
+      // EVERY edit, not just a subtask's. `toggleDone` comes through here too, and an old script
+      // rewrites the whole row from the columns IT knows — so ticking a task was enough to lose
+      // its date.
+      const refused = refuseIfOutdated()
+      if (refused) return refused
       return run(
         (key) => api.updateTask(task, key),
         (previous) => previous.map((row) => (row.id === task.id ? { ...task, pending: true } : row)),
       )
     },
-    [run, outdatedScript],
+    [run, refuseIfOutdated],
   )
 
   /**
    * A subtask is a task with a parent and no date. It goes through the same `run` as
    * everything else — a second write path would be the fifth try/catch `run` exists to prevent.
    */
-
   const addSubtask = useCallback(
     (parent, title) => {
-      // Refused rather than silently reshaped. `not_found` is the closest existing code for
-      // "the endpoint cannot do this"; the UI names the real problem from `outdatedScript`.
-      if (outdatedScript) {
-        setError(API_ERROR.NOT_FOUND)
-        return Promise.resolve(false)
-      }
+      const refused = refuseIfOutdated()
+      if (refused) return refused
       const subtask = {
         id: newId(),
         title,
@@ -281,7 +308,7 @@ export function useBoard({ editKey, onUnauthorized }) {
         (previous) => [...previous, subtask],
       )
     },
-    [run, outdatedScript],
+    [run, refuseIfOutdated],
   )
 
   /**
@@ -303,12 +330,23 @@ export function useBoard({ editKey, onUnauthorized }) {
       row.id === id || row.parentId === id ? { ...row, deletedAt, pending: true } : row,
     )
 
+  /**
+   * Refused too, and not for the obvious reason. An old script stamps `updated_at` and
+   * `deleted_at` by ITS OWN indices — which point at different cells entirely if the grid has
+   * already been relaid out — so a delete against a mismatched deployment can write over a
+   * column it was not aiming at. One rule for everything touching the grid.
+   */
   const removeTask = useCallback(
-    (id) => run((key) => api.deleteTask(id, key), stamp(id, new Date().toISOString())),
-    [run],
+    (id) =>
+      refuseIfOutdated() ??
+      run((key) => api.deleteTask(id, key), stamp(id, new Date().toISOString())),
+    [run, refuseIfOutdated],
   )
 
-  const restoreTask = useCallback((id) => run((key) => api.restoreTask(id, key), stamp(id, '')), [run])
+  const restoreTask = useCallback(
+    (id) => refuseIfOutdated() ?? run((key) => api.restoreTask(id, key), stamp(id, '')),
+    [run, refuseIfOutdated],
+  )
 
   /**
    * Seed a starter checklist. Deliberately NOT optimistic: forty rows appearing and then
@@ -321,11 +359,12 @@ export function useBoard({ editKey, onUnauthorized }) {
     async (templateId, { weddingDay, locale }) => {
       const template = findTemplate(templateId)
       if (!template) return 0
+      if (refuseIfOutdated()) return 0
       const drafts = materialize(template, weddingDay, { locale, newId })
       if (!drafts.length) return 0
       return (await run((key) => api.createTasks(drafts, key))) ? drafts.length : 0
     },
-    [run],
+    [run, refuseIfOutdated],
   )
 
   const saveConfig = useCallback(
@@ -333,7 +372,10 @@ export function useBoard({ editKey, onUnauthorized }) {
     [run],
   )
 
-  const compact = useCallback(() => run((key) => api.compact(key)), [run])
+  const compact = useCallback(
+    () => refuseIfOutdated() ?? run((key) => api.compact(key)),
+    [run, refuseIfOutdated],
+  )
 
   /**
    * Tombstoned rows worth offering a Restore for.
@@ -356,7 +398,7 @@ export function useBoard({ editKey, onUnauthorized }) {
     config,
     /** The spreadsheet's OWN zone, only used to warn when it disagrees with config. */
     sheetTimeZone,
-    /** The deployed script is missing a column this bundle writes. See above. */
+    /** The deployed script is missing a column this bundle writes. See `missingColumns`. */
     outdatedScript,
     status,
     error,

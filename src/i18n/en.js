@@ -169,15 +169,18 @@ export default {
   'status.refresh': 'Refresh',
 
   'toast.saved': 'Saved.',
-  'toast.failed': 'Nothing was saved. Check your connection and try again.',
+  'toast.failed': 'Nothing was saved. See the notice at the top, or try again.',
   'toast.deleted': 'Task deleted.',
 
   'api.unconfigured': 'This build has no endpoint address',
   'api.unconfiguredHint':
     'VITE_SCRIPT_URL was empty when the site was built. See SETUP.md.',
-  'api.outdated': 'The spreadsheet’s script is out of date',
+  'api.outdated': 'Saving is paused: the spreadsheet’s script is out of date',
+  /* This used to say "subtasks cannot be saved", which was true of an APPENDED column and
+     dangerously wrong once one was renamed: the old script silently dropped every due date it
+     was handed. Nothing that touches a task is written until it is redeployed. */
   'api.outdatedHint':
-    'Until it is updated, subtasks cannot be saved: the add field is hidden and ticking one is refused. Everything else works as usual. In the sheet: Extensions › Apps Script, paste the current Code.gs, then Deploy › Manage deployments › New version.',
+    'It cannot store every field this version writes, so nothing on the board can be saved until it is updated — a save would drop the values it has never heard of. Dates are still shown from the old column, so nothing is lost. In the sheet: Extensions › Apps Script, paste the current Code.gs, then Deploy › Manage deployments › New version.',
   'api.unauthorized': 'The edit link was refused',
   'api.not_empty': 'That spreadsheet already has other tabs',
   'api.not_emptyHint':

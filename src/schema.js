@@ -23,9 +23,12 @@
  * Sheet column order. Kept as data rather than as an object so the order is
  * unambiguous and the .gs comparison is a plain array equality.
  *
- * `parent_id` stays LAST: `useBoard` reads the final entry as the column a
- * deployment must know about before a subtask may be written, and appending is
- * the only change that cannot shift an existing index.
+ * APPEND, never rename or reorder. Appending is the only change that cannot shift an
+ * existing index — and the only one an older deployment can be caught out by cheaply.
+ * `useBoard` compares this whole list against the `schema` every read carries, which is
+ * what a RENAME taught it to do: `due` replaced `end`, a deployment that predated it still
+ * had every other column including the last one, and the guard that only checked the last
+ * one let the write through and dropped every date on the board.
  */
 export const TASK_COLUMNS = [
   'id',
@@ -61,7 +64,17 @@ export function rowToTask(row) {
     id: cellText(row?.id),
     title: cellText(row?.title),
     category: cellText(row?.category),
-    due: cellText(row?.due),
+    /**
+     * `end` IS THE FALLBACK, AND IT IS READ-ONLY. A deployment that predates this column list
+     * sends no `due` at all, which read every task on the board as undated — the whole plan
+     * looked empty rather than out of date. The old closing end of the window is what "due by"
+     * meant, so this shows the board correctly until the script is redeployed; the `slice` drops
+     * the clock half the same way `normalizeDay` does.
+     *
+     * Nothing WRITES `end`. `useBoard` refuses every task write against such a deployment
+     * (`missingColumns`), because a write there is what silently threw the dates away.
+     */
+    due: cellText(row?.due) || cellText(row?.end).slice(0, 10),
     doneAt: cellText(row?.done_at),
     createdAt: cellText(row?.created_at),
     updatedAt: cellText(row?.updated_at),

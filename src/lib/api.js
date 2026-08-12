@@ -58,6 +58,12 @@ export const API_ERROR = {
   BUSY: 'busy',
   /** The row vanished — someone deleted it in the Sheets UI mid-edit. */
   NOT_FOUND: 'not_found',
+  /**
+   * The DEPLOYED script cannot store a column this bundle writes, so the write is refused
+   * here rather than sent. The only code the server never produces: `useBoard` raises it from
+   * the `schema` every read carries. See `missingColumns` there for what it prevents.
+   */
+  OUTDATED: 'outdated',
   /** Anything else. Assumed transient; see the module header. */
   TRANSIENT: 'transient',
 }
@@ -69,6 +75,8 @@ const TERMINAL = new Set([
   API_ERROR.NOT_EMPTY,
   API_ERROR.MISCONFIGURED,
   API_ERROR.NOT_FOUND,
+  // Retrying cannot help: the fix is a redeployment, and the notice names it.
+  API_ERROR.OUTDATED,
 ])
 
 export function isTerminal(code) {

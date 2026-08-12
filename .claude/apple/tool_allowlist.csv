@@ -6,3 +6,10 @@
 # and the port is pinned so the match cannot widen to an arbitrary vite invocation.
 npx vite --port 5199 --strictPort,contains_match,Dev server for the wedding board
 npx vite preview --port 5199 --strictPort,contains_match,Preview the built bundle
+
+# `scripts/stub-endpoint.mjs` serves the real Code.gs over an in-memory grid, so a write can be
+# verified to have STORED something rather than merely to have left. It binds a local port, which
+# the sandbox refuses with `EPERM: operation not permitted`. Both flags are pinned so the match
+# cannot widen to an arbitrary node script.
+node scripts/stub-endpoint.mjs --port 5200,contains_match,Local endpoint that executes Code.gs
+node scripts/stub-endpoint.mjs --legacy --port 5200,contains_match,The same, as a pre-rename deployment

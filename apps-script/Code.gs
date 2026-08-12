@@ -54,10 +54,11 @@ var TASK_COLUMNS = [
   'done_at',
   'created_at',
   'updated_at',
-  // `parent_id` stays LAST. The client reads the final entry as the column a deployment
-  // must understand before a subtask may be written, and appending is the only change
-  // that cannot shift an existing index. Deliberately not in TEXT_COLUMNS — it is an id,
-  // and an id never starts with =, +, - or @.
+  // APPEND, never rename or reorder: appending is the only change that cannot shift an
+  // existing column's index. The client compares this WHOLE list against its own and refuses
+  // every write when anything is missing — a rename slipped past the version of that check
+  // which only looked at the last entry. `parent_id` is deliberately not in TEXT_COLUMNS: it
+  // is an id, and an id never starts with =, +, - or @.
   'deleted_at',
   'parent_id',
 ]
@@ -457,8 +458,8 @@ function setConfig(book, config) {
   if (!config || typeof config !== 'object') return 'bad_payload'
 
   var sheet = book.getSheetByName(CONFIG_SHEET)
-  var last = sheet.getLastRow()
-  var existing = last > 1 ? sheet.getRange(2, 1, last - 1, 2).getValues() : []
+  var block = sheet.getDataRange().getValues()
+  var existing = block.length > 1 ? block.slice(1) : []
 
   var rowOf = {}
   for (var i = 0; i < existing.length; i++) {
@@ -585,15 +586,16 @@ function readTasks(book, timeZone) {
   return tasks
 }
 
+/**
+ * One service call, not two. `getLastRow` followed by a sized `getValues` asked the grid twice
+ * for what `getDataRange` answers once, on the reply to every single write.
+ */
 function readConfig(book) {
   var sheet = book.getSheetByName(CONFIG_SHEET)
   if (!sheet) return {}
-  var last = sheet.getLastRow()
-  if (last < 2) return {}
-
-  var values = sheet.getRange(2, 1, last - 1, 2).getValues()
+  var values = sheet.getDataRange().getValues()
   var config = {}
-  for (var i = 0; i < values.length; i++) {
+  for (var i = 1; i < values.length; i++) {
     var name = String(values[i][0] == null ? '' : values[i][0]).trim()
     if (name && name !== 'key') config[name] = String(values[i][1] == null ? '' : values[i][1])
   }
@@ -627,6 +629,11 @@ function readCell(value, timeZone) {
  * @returns {string|null} an error code, or null when the structure is ready.
  */
 function ensureStructure(book) {
+  // THE HOT PATH IS THE FIRST TWO LINES. Both tabs exist on every write but the first one ever,
+  // and `getSheets()` is a service call — the unit of cost here — spent to learn something two
+  // lookups already answer. It was being paid on every single save.
+  if (book.getSheetByName(TASKS_SHEET) && book.getSheetByName(CONFIG_SHEET)) return null
+
   var sheets = book.getSheets()
   var names = {}
   for (var i = 0; i < sheets.length; i++) names[sheets[i].getName()] = true
