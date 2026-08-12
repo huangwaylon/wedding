@@ -24,13 +24,36 @@
  * script has no `doOptions`. `fetch` downgrades POST to GET across that 302 and
  * Apps Script serves the computed reply from the echo URL; forcing POST through
  * the hop returns "page not found".
+ *
+ * THAT HOP IS A SECOND ROUND TRIP ON EVERY WRITE AND THERE IS NOTHING HERE THAT CAN
+ * REMOVE IT: the echo URL is minted per request, `redirect: 'manual'` yields an
+ * opaque response whose `Location` a cross-origin caller may not read, and the only
+ * other endpoint (`/dev`) requires a Google session, which the anonymous read path
+ * cannot have. Letting the browser follow it — one connection, already warm — is the
+ * cheapest form it comes in, so the lever that is left is the NUMBER of requests, not
+ * the cost of one. See `createWriteQueue` in `useBoard`.
  */
 
 import { SCRIPT_URL, parseConfig } from '../config.js'
 import { rowToTask, taskToRow } from '../schema.js'
 
 /** Beyond this something is wrong with the network, not with the request. */
-const TIMEOUT_MS = 20_000
+const READ_TIMEOUT_MS = 20_000
+
+/**
+ * A WRITE MUST OUTLAST THE SCRIPT'S OWN LOCK WAIT, which is 25s in `Code.gs`.
+ *
+ * Two phones saving at once means the second request sits on that lock before it does any work,
+ * so a client that gave up at 20s aborted a write the script then went on to COMMIT: the row
+ * rolled back on screen and a failure toast went up for an edit that had landed, and the next read
+ * silently contradicted both. It also made `busy` unreachable — the one code the taxonomy calls
+ * worth retrying could never arrive, because the abort always came first.
+ *
+ * It costs nothing in the ordinary case: a write answers in ~3s, and a queue behind a stalled one
+ * FOLDS rather than piles up (see `createWriteQueue`), so a longer ceiling here is not a longer
+ * wait for anybody.
+ */
+const WRITE_TIMEOUT_MS = 35_000
 
 /**
  * Thrown by everything here. `code` is what the UI branches on, and it never leaves
@@ -105,7 +128,7 @@ function codeFor(serverError) {
   }
 }
 
-async function send(url, init) {
+async function send(url, init, timeout) {
   if (!SCRIPT_URL) throw new ApiError(API_ERROR.UNCONFIGURED)
 
   let response
@@ -115,7 +138,7 @@ async function send(url, init) {
       // A redirect that has to be followed as a GET is the whole reason the
       // request shape above is what it is.
       redirect: 'follow',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeout),
     })
   } catch (error) {
     throw new ApiError(API_ERROR.TRANSIENT, error)
@@ -153,6 +176,13 @@ function decodeBoard(body) {
      * `schema` at all, which is itself the signal — see `missingColumnsFor` in `useBoard`.
      */
     schema: Array.isArray(body.schema) ? body.schema.map(String) : [],
+    /**
+     * The ops the deployed script can DISPATCH, which its columns cannot imply: a script can hold
+     * every column and still answer `bad_op` to a batch. ABSENT rather than empty is what a
+     * deployment older than this bundle sends, and `null` says so — see `supports` in `useBoard`,
+     * where not knowing and not having fall the same way.
+     */
+    ops: Array.isArray(body.ops) ? body.ops.map(String) : null,
   }
 }
 
@@ -170,7 +200,9 @@ function decodeBoard(body) {
  */
 export async function readBoard(now = Date.now()) {
   const separator = SCRIPT_URL.includes('?') ? '&' : '?'
-  return decodeBoard(await send(`${SCRIPT_URL}${separator}t=${now}`, { method: 'GET' }))
+  return decodeBoard(
+    await send(`${SCRIPT_URL}${separator}t=${now}`, { method: 'GET' }, READ_TIMEOUT_MS),
+  )
 }
 
 /**
@@ -182,13 +214,17 @@ export async function readBoard(now = Date.now()) {
  */
 export async function mutate(op, payload, key) {
   if (!key) throw new ApiError(API_ERROR.UNAUTHORIZED)
-  const body = await send(SCRIPT_URL, {
-    method: 'POST',
-    // text/plain keeps this a CORS simple request. Do not "correct" it to
-    // application/json: the preflight that would trigger dies on the 302.
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ key, op, payload }),
-  })
+  const body = await send(
+    SCRIPT_URL,
+    {
+      method: 'POST',
+      // text/plain keeps this a CORS simple request. Do not "correct" it to
+      // application/json: the preflight that would trigger dies on the 302.
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ key, op, payload }),
+    },
+    WRITE_TIMEOUT_MS,
+  )
   return decodeBoard(body)
 }
 
@@ -202,6 +238,18 @@ export function createTasks(tasks, key) {
 
 export function updateTask(task, key) {
   return mutate('update', { task: taskToRow(task) }, key)
+}
+
+/**
+ * Several rows in ONE request, which is what makes a burst of ticks cost one round trip.
+ *
+ * ATOMIC ON RESOLUTION: the script resolves every id before it writes anything, so a batch naming a
+ * row somebody has since deleted by hand answers `not_found` and writes none of them. That is why
+ * the client may roll the whole batch back — a partial success would leave it with no way to know
+ * which half landed. Only send it where `ops` advertises it; an older deployment answers `bad_op`.
+ */
+export function updateTasks(tasks, key) {
+  return mutate('updateMany', { tasks: tasks.map(taskToRow) }, key)
 }
 
 export function deleteTask(id, key) {

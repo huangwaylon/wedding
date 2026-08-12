@@ -36,6 +36,11 @@
  *
  * Never read `e.parameter` for the key. A key in a query string is written into
  * Google's request logs; requiring it in the POST body is what keeps it out.
+ *
+ * A SHEETS SERVICE CALL IS THE UNIT OF COST and every op is shaped around that:
+ * one read of each tab per request, whole-range writes whose cost does not depend
+ * on how many cells changed, and a reply composed from what was read rather than
+ * from a second read. The arithmetic in between is free.
  */
 
 /**
@@ -66,6 +71,29 @@ var TASK_COLUMNS = [
 var TASKS_SHEET = 'tasks'
 var CONFIG_SHEET = 'config'
 
+/**
+ * The ops this deployment can dispatch, reported on every reply beside `schema`.
+ *
+ * A deployment is pinned to a version, so the browser can be running a bundle newer than the
+ * script — and an op the script has never heard of comes back `bad_op`, which is indistinguishable
+ * from a bug. `schema` answers the COLUMN question and cannot answer this one: a script can hold
+ * every column and still not know how to batch. Reporting the list lets the client fold three ticks
+ * into one `updateMany` only where that will land, and send three of them where it will not.
+ *
+ * It must name exactly what `apply` dispatches. A name here that `apply` does not handle is a
+ * promise this script breaks; `test/script.test.js` posts every name in the list.
+ */
+var OPS = [
+  'create',
+  'createMany',
+  'update',
+  'updateMany',
+  'delete',
+  'restore',
+  'setConfig',
+  'compact',
+]
+
 /** Free-text columns, which are the ones a formula could hide in. */
 var TEXT_COLUMNS = { title: 1, category: 1 }
 
@@ -91,18 +119,32 @@ var LOCK_WAIT_MS = 25000
  * It never creates structure. Building tabs is a write, and an anonymous request
  * must not cause one — so a spreadsheet with no `tasks` tab answers
  * `needsSetup: true` and an editor's first write does the building.
+ *
+ * Two tab lookups and one read of each tab, which is the floor for a board.
  */
 function doGet() {
   try {
     var book = openBook()
     if (!book) return json({ ok: false, error: 'misconfigured' })
-    if (!book.getSheetByName(TASKS_SHEET)) {
-      // `schema` MUST be here too. Absence of it is how the client detects a deployment older than
-      // its own bundle, and this deployment knows its columns whether or not the tabs exist yet —
-      // omit it and a brand-new board greets its owner with "your script is out of date".
-      return json({ ok: true, needsSetup: true, tasks: [], config: {}, schema: TASK_COLUMNS })
+    var tasks = book.getSheetByName(TASKS_SHEET)
+    if (!tasks) {
+      // `schema` and `ops` MUST be here too. Absence of either is how the client detects a
+      // deployment older than its own bundle, and this deployment knows both whether or not the
+      // tabs exist yet — omit them and a brand-new board greets its owner with "your script is out
+      // of date".
+      return json({
+        ok: true,
+        needsSetup: true,
+        tasks: [],
+        config: {},
+        schema: TASK_COLUMNS,
+        ops: OPS,
+      })
     }
-    return json(board(book, book.getSpreadsheetTimeZone()))
+    var timeZone = book.getSpreadsheetTimeZone()
+    var config = book.getSheetByName(CONFIG_SHEET)
+    var settings = config ? configFrom(config.getDataRange().getValues(), timeZone) : {}
+    return json(board(readBlock(tasks), settings, timeZone))
   } catch (err) {
     return json({ ok: false, error: 'server' })
   }
@@ -135,18 +177,22 @@ function doPost(e) {
     lock = LockService.getScriptLock()
     if (!lock.tryLock(LOCK_WAIT_MS)) return json({ ok: false, error: 'busy' })
 
-    var structure = ensureStructure(book)
-    if (structure) return json({ ok: false, error: structure })
+    var session = openSession(book)
+    if (session.error) return json({ ok: false, error: session.error })
 
-    // Read once per request and threaded through: `stampDeleted` and `board` both need it, and
-    // asking twice is two service calls for one unchanging fact.
-    var timeZone = book.getSpreadsheetTimeZone()
-    var failure = apply(book, timeZone, String(body.op || ''), body.payload)
+    var failure = apply(session, String(body.op || ''), body.payload)
     if (failure) return json({ ok: false, error: failure })
 
-    // The fresh board rides back on the write's own reply, so a save costs one
-    // round trip rather than two.
-    return json(board(book, timeZone))
+    /**
+     * The fresh board rides back on the write's own reply, so a save costs one round trip rather
+     * than two — and it is composed from the grid this request ALREADY read, with the write folded
+     * in. Reading the sheet again here would be a second full read of it on every save to learn
+     * something the ops can state exactly: each one holds the values it wrote, and `writable` is
+     * the only transformation between a value and its cell.
+     *
+     * Nothing from here on touches the service, so the lock spans exactly the reads and the writes.
+     */
+    return json(board(session.block, configFrom(session.configRows, session.timeZone), session.timeZone))
   } catch (err) {
     return json({ ok: false, error: 'server' })
   } finally {
@@ -184,38 +230,60 @@ function openBook() {
 }
 
 // ---------------------------------------------------------------------------
-// Operations
+// One request's view of the spreadsheet
 // ---------------------------------------------------------------------------
 
-/** @returns {string|null} an error code, or null on success. */
-function apply(book, timeZone, op, payload) {
-  if (op === 'create') return createTasks(book, [payload && payload.task])
-  if (op === 'createMany') return createTasks(book, (payload && payload.tasks) || [])
-  if (op === 'update') return updateTask(book, payload && payload.task)
-  // The zone is only used to normalise a cell somebody hand-edited into a Date; see stampDeleted.
-  if (op === 'delete') return stampDeleted(book, payload && payload.id, nowIso(), timeZone)
-  if (op === 'restore') return stampDeleted(book, payload && payload.id, '', timeZone)
-  if (op === 'setConfig') return setConfig(book, payload && payload.config)
-  if (op === 'compact') return compact(book)
-  return 'bad_op'
+/**
+ * Everything a mutation needs from the spreadsheet, gathered ONCE: both tabs, the zone, the tasks
+ * grid with its header repaired, and the config grid.
+ *
+ * One door rather than one per op, so no op can forget the layout repair and none can pay for a
+ * read another op already made. The ops then work from these arrays and fold what they wrote back
+ * into them — which is what lets the reply carry the whole board without reading it again.
+ *
+ * THE HOT PATH IS THE FIRST TWO LINES. Both tabs exist on every write but the first one ever, and
+ * `getSheets()` is a service call spent to learn something two lookups already answer. Those two
+ * lookups are also the only ones in the request: the sheets are threaded through from here rather
+ * than asked for again by each op and again by the reply.
+ *
+ * @returns {{error: string}|{tasks: Sheet, config: Sheet, block: Array[], configRows: Array[],
+ *   timeZone: string}}
+ */
+function openSession(book) {
+  var tasks = book.getSheetByName(TASKS_SHEET)
+  var config = book.getSheetByName(CONFIG_SHEET)
+  if (!tasks || !config) {
+    var failure = buildStructure(book)
+    if (failure) return { error: failure }
+    tasks = book.getSheetByName(TASKS_SHEET)
+    config = book.getSheetByName(CONFIG_SHEET)
+  }
+
+  return {
+    tasks: tasks,
+    config: config,
+    block: openTasks(tasks),
+    // One service call for the key column and the value column together, and the same array is
+    // both what `setConfig` edits and what the reply reports.
+    configRows: config.getDataRange().getValues(),
+    // Read once and threaded through: `stampDeleted`, `compact` and the reply all need it, and
+    // asking twice is two service calls for one unchanging fact.
+    timeZone: book.getSpreadsheetTimeZone(),
+  }
 }
 
 /**
- * The tasks tab and its whole grid, read ONCE, with the header repaired from what was read.
+ * The tasks grid, read ONCE, with the header repaired from what was read.
  *
- * One door rather than four call sites, so no op can forget the repair and none can pay for a
- * second read to do it.
- *
- * @returns {{sheet: Sheet, block: Array[]}}
+ * @returns {Array[]} the grid as it now stands, header included
  */
-function openTasks(book) {
-  var sheet = book.getSheetByName(TASKS_SHEET)
+function openTasks(sheet) {
   var block = readBlock(sheet)
   // Only ever true when somebody has edited the header row in the Sheets UI. Everything after it
   // works from canonical positions, which is what keeps the ops free of any column-resolving
   // branch of their own.
-  if (!headerMatches(block[0])) block = relayout(sheet, block)
-  return { sheet: sheet, block: block }
+  if (!headerMatches(block[0])) return relayout(sheet, block)
+  return block
 }
 
 /**
@@ -273,7 +341,7 @@ function columnMap(header) {
  *
  * It runs under the doPost lock, from `openTasks`, so no other request can be reading the grid
  * half-moved. `doGet` never reaches it: an anonymous read must not cause a write, which is why
- * `readTasks` resolves its own columns by name instead.
+ * `tasksFrom` resolves its own columns by name instead.
  */
 function relayout(sheet, block) {
   var header = block[0] || []
@@ -325,76 +393,176 @@ function rowOfId(block, id) {
 }
 
 /**
- * One column of a block, written in a single call.
+ * A SPAN of columns beneath the header row, written as ONE range: one format call and one values
+ * call whatever its height.
  *
- * The point of this is that its cost does not depend on how many cells changed: stamping a parent
- * and its four subtasks is two calls of this, where a `setValue` per cell would be ten separate
- * round trips.
+ * The point of this is that its cost does not depend on how many cells changed. Stamping a parent
+ * and its four subtasks is two service calls, where a `setValue` per cell would be ten separate
+ * round trips — and because `updated_at` and `deleted_at` are ADJACENT in `TASK_COLUMNS`, both
+ * columns of that stamp go in the same two.
  *
- * Only the script's OWN bookkeeping columns go through here (`updated_at`, `deleted_at`), which
- * is what makes rewriting untouched cells harmless — they are rewritten with the value the
- * client is already being shown.
+ * Untouched cells inside the span are rewritten with what they already hold. What makes that safe
+ * is the LOCK, not ownership of the columns: the values came from a read taken inside it, so no
+ * other request can have changed them in between.
+ *
+ * It escapes nothing, so a caller writing a column that can hold free text must hand it cells that
+ * are already through `textCell` — `setConfig` does — since `setValues` reads a leading =, +, - or
+ * @ as a formula whatever the number format says. The task columns it is used for hold ids and
+ * timestamps, which cannot start with one.
  */
-function writeColumn(sheet, index, values) {
-  if (!values.length) return
-  var range = sheet.getRange(2, index + 1, values.length, 1)
+function writeSpan(sheet, first, rows) {
+  if (!rows.length || !rows[0].length) return
+  var range = sheet.getRange(2, first + 1, rows.length, rows[0].length)
   // Format before values, always: with the default format `setValues` parses a timestamp string
   // into a Date and the sheet's locale decides what comes back out.
   range.setNumberFormat('@')
-  range.setValues(values)
+  range.setValues(rows)
 }
 
-function createTasks(book, tasks) {
+// ---------------------------------------------------------------------------
+// Operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Each op writes the sheet AND folds what it wrote into `session`, because the reply is composed
+ * from the session rather than from a second read of the grid.
+ *
+ * The names it dispatches are reported to the client as `OPS`; see there.
+ *
+ * @returns {string|null} an error code, or null on success.
+ */
+function apply(session, op, payload) {
+  if (op === 'create') return createTasks(session, [payload && payload.task])
+  if (op === 'createMany') return createTasks(session, (payload && payload.tasks) || [])
+  if (op === 'update') return updateTasks(session, [payload && payload.task])
+  if (op === 'updateMany') return updateTasks(session, (payload && payload.tasks) || [])
+  if (op === 'delete') return stampDeleted(session, payload && payload.id, nowIso())
+  if (op === 'restore') return stampDeleted(session, payload && payload.id, '')
+  if (op === 'setConfig') return setConfig(session, payload && payload.config)
+  if (op === 'compact') return compact(session)
+  return 'bad_op'
+}
+
+function createTasks(session, tasks) {
   if (!tasks || !tasks.length) return 'bad_payload'
 
   var rows = []
+  var cells = []
   for (var i = 0; i < tasks.length; i++) {
     var row = toRow(tasks[i])
     if (!row) return 'bad_payload'
     rows.push(row)
+    cells.push(writable(row))
   }
 
-  var opened = openTasks(book)
   // `readBlock` returns exactly the used rows, so its length IS the last row.
-  var first = opened.block.length + 1
-  var range = opened.sheet.getRange(first, 1, rows.length, TASK_COLUMNS.length)
+  var first = session.block.length + 1
+  var range = session.tasks.getRange(first, 1, cells.length, TASK_COLUMNS.length)
   // Format BEFORE values, and never the other way round: with the default
   // format, `setValues` parses "2026-08-07T10:00" into a Date and the sheet's
   // own locale then decides what comes back out. Plain text ('@') is what keeps
   // a stored string identical on every device forever.
   range.setNumberFormat('@')
-  range.setValues(rows)
-  return null
-}
+  range.setValues(cells)
 
-function updateTask(book, task) {
-  if (!task || typeof task !== 'object') return 'bad_payload'
-  var row = toRow(task)
-  if (!row) return 'bad_payload'
-
-  // Resolved by ID immediately before writing, never from an index the client sent: positions
-  // shift whenever anyone sorts or inserts in the Sheets UI, and writing to a stale one
-  // overwrites somebody else's task. One read serves the lookup, the created_at rescue and the
-  // header check.
-  var opened = openTasks(book)
-  var sheet = opened.sheet
-  var block = opened.block
-  var found = rowOfId(block, task.id)
-  if (!found) return 'not_found'
-
-  // created_at belongs to the row, not to whatever the client is holding.
-  var created = block[found - 1][indexOf('created_at')]
-  if (created) row[indexOf('created_at')] = created
-
-  var range = sheet.getRange(found, 1, 1, TASK_COLUMNS.length)
-  range.setNumberFormat('@')
-  range.setValues([row])
+  // The seed's whole batch is one append and one growth of the block, so the reply describes the
+  // board including every new row with nothing read back.
+  for (var j = 0; j < rows.length; j++) session.block.push(rows[j])
   return null
 }
 
 /**
- * Soft delete, and its inverse. One cell write per row, so rows never change position and
- * nobody else's cached indices move — which is also why a restore is free.
+ * One update or a batch of them, through the same path — `update` is a batch of one, so there is
+ * no second write path to keep in step with this one.
+ *
+ * WHY A BATCH EXISTS: ticking is the app's highest-frequency gesture and a round trip is ~3s, so
+ * three ticks were three of them. Here they are one request, one lock and one read of the grid.
+ *
+ * IT IS ATOMIC ON RESOLUTION. Every id is resolved before ANY cell is written, so a row a partner
+ * deleted mid-batch fails the whole batch with `not_found` and nothing half-applies — the client
+ * rolls back and refreshes. Resolving first is free: the grid is already in hand.
+ */
+function updateTasks(session, tasks) {
+  if (!tasks || !tasks.length) return 'bad_payload'
+
+  var rows = []
+  for (var i = 0; i < tasks.length; i++) {
+    var resolved = resolveRow(session, tasks[i])
+    if (resolved.error) return resolved.error
+    rows.push(resolved)
+  }
+  writeRows(session, rows)
+  return null
+}
+
+/**
+ * One payload task against the grid: the cells to write and the row to write them to.
+ *
+ * BY ID, immediately before writing, never from an index the client sent — positions shift whenever
+ * anyone sorts or inserts in the Sheets UI, and writing to a stale one overwrites somebody else's
+ * task. The one read serves the lookup, the created_at rescue, the header check and the reply.
+ *
+ * @returns {{error: string}|{at: number, row: Array}} `at` is 1-based, as a grid row is
+ */
+function resolveRow(session, task) {
+  if (!task || typeof task !== 'object') return { error: 'bad_payload' }
+  var row = toRow(task)
+  if (!row) return { error: 'bad_payload' }
+
+  var found = rowOfId(session.block, task.id)
+  if (!found) return { error: 'not_found' }
+
+  // created_at belongs to the row, not to whatever the client is holding. Normalised on the way
+  // through, so a cell the Sheets UI coerced to a Date is written back as a string.
+  var created = readCell(session.block[found - 1][indexOf('created_at')], session.timeZone)
+  if (created) row[indexOf('created_at')] = created
+  return { at: found, row: row }
+}
+
+/**
+ * Resolved rows, in as few calls as their positions allow: a RUN of consecutive rows goes as one
+ * rectangle, and rows scattered down the sheet cost a format and a write each.
+ *
+ * The win is the single request and the single lock — the rectangle is what falls out of having
+ * them, and three tasks ticked in the same stretch of the plan are usually adjacent in the sheet
+ * because that is the order they were seeded in.
+ */
+function writeRows(session, rows) {
+  rows.sort(function (left, right) {
+    return left.at - right.at
+  })
+
+  var run = []
+  for (var i = 0; i < rows.length; i++) {
+    var last = run.length ? run[run.length - 1] : null
+    // The same row twice in one batch: the last one wins, exactly as two sequential updates would.
+    if (last && rows[i].at === last.at) run[run.length - 1] = rows[i]
+    else if (last && rows[i].at !== last.at + 1) {
+      flushRows(session, run)
+      run = [rows[i]]
+    } else run.push(rows[i])
+  }
+  flushRows(session, run)
+}
+
+/** One run of consecutive rows, as one format and one write. */
+function flushRows(session, run) {
+  if (!run.length) return
+
+  var cells = []
+  for (var i = 0; i < run.length; i++) cells.push(writable(run[i].row))
+  var range = session.tasks.getRange(run[0].at, 1, cells.length, TASK_COLUMNS.length)
+  // Format before values, always — see `createTasks`.
+  range.setNumberFormat('@')
+  range.setValues(cells)
+
+  // The reply is composed from the block, so what the block holds has to be what the cells hold.
+  for (var j = 0; j < run.length; j++) session.block[run[j].at - 1] = run[j].row
+}
+
+/**
+ * Soft delete, and its inverse. Rows never change position, so nobody else's cached indices move
+ * — which is also why a restore is free.
  *
  * IT CASCADES TO SUBTASKS, and it does so HERE rather than in the client. Deleting a parent
  * from the browser as N separate calls would be N round trips that can half-fail, leaving some
@@ -402,70 +570,89 @@ function updateTask(book, task) {
  *
  * Restore is the exact inverse for the same reason: a parent that came back without its
  * children would look repaired and be missing work.
+ *
+ * ITS COST DOES NOT DEPEND ON THE CASCADE'S SIZE. `updated_at` and `deleted_at` are the two ends
+ * of one span, so a parent with four subtasks costs the same two service calls as a one-row stamp,
+ * where a single-cell `setValue` per row would be ten round trips.
+ *
+ * Untouched cells in the span are rewritten with what they already hold, normalised through
+ * `readCell` — so a cell the Sheets UI had coerced to a Date comes back as the wall-clock string
+ * the client is being shown, rather than as "Fri Aug 07 2026 …". See `writeSpan` for why
+ * rewriting them is safe.
  */
-function stampDeleted(book, id, value, timeZone) {
+function stampDeleted(session, id, value) {
   if (!id) return 'bad_payload'
-  var opened = openTasks(book)
-  var sheet = opened.sheet
-  var block = opened.block
+  var block = session.block
   var target = rowOfId(block, id)
   if (!target) return 'not_found'
 
   var parentIndex = indexOf('parent_id')
   var updatedIndex = indexOf('updated_at')
   var deletedIndex = indexOf('deleted_at')
+  var first = Math.min(updatedIndex, deletedIndex)
+  var last = Math.max(updatedIndex, deletedIndex)
   var stamp = nowIso()
 
-  /**
-   * Two whole-column writes, and their cost does NOT depend on how many rows changed: a parent
-   * with four subtasks costs the same two calls as a one-row stamp, where a single-cell
-   * `setValue` per row would be ten round trips.
-   *
-   * Untouched cells are rewritten with what they already hold, normalised through `readCell` —
-   * so a cell the Sheets UI had coerced to a Date comes back as the wall-clock string the client
-   * is already being shown, rather than as "Fri Aug 07 2026 …". What makes rewriting them safe is
-   * the LOCK, not ownership of the columns: the values come from a read taken inside the same lock,
-   * so no other request can have changed them in between. (`updated_at` is script-only, but
-   * `deleted_at` is not — `toRow` copies it from the client on every create and update.)
-   */
-  var updated = []
-  var deleted = []
+  var rows = []
   for (var i = 1; i < block.length; i++) {
     var mine = i + 1 === target || String(block[i][parentIndex]) === String(id)
-    updated.push([mine ? stamp : readCell(block[i][updatedIndex], timeZone)])
-    deleted.push([mine ? value : readCell(block[i][deletedIndex], timeZone)])
+    var line = []
+    for (var c = first; c <= last; c++) line.push(readCell(block[i][c], session.timeZone))
+    if (mine) {
+      line[updatedIndex - first] = stamp
+      line[deletedIndex - first] = value
+    }
+    // Back into the block, because the reply is composed from it.
+    for (var w = first; w <= last; w++) block[i][w] = line[w - first]
+    rows.push(line)
   }
-  writeColumn(sheet, updatedIndex, updated)
-  writeColumn(sheet, deletedIndex, deleted)
+  writeSpan(session.tasks, first, rows)
   return null
 }
 
-function setConfig(book, config) {
+function setConfig(session, config) {
   if (!config || typeof config !== 'object') return 'bad_payload'
 
-  var sheet = book.getSheetByName(CONFIG_SHEET)
-  var block = sheet.getDataRange().getValues()
-  var existing = block.length > 1 ? block.slice(1) : []
+  var rows = session.configRows
+  var seen = {}
+  var touched = false
+  var values = []
 
-  var rowOf = {}
-  for (var i = 0; i < existing.length; i++) {
-    var name = String(existing[i][0] || '').trim()
-    if (name) rowOf[name] = i + 2
-  }
-
-  for (var name in config) {
-    if (!Object.prototype.hasOwnProperty.call(config, name)) continue
-    var value = clamp(config[name])
-    if (rowOf[name]) {
-      var cell = sheet.getRange(rowOf[name], 2)
-      cell.setNumberFormat('@')
-      cell.setValue(textCell(value))
-    } else {
-      var appended = sheet.getRange(sheet.getLastRow() + 1, 1, 1, 2)
-      appended.setNumberFormat('@')
-      appended.setValues([[clamp(name), textCell(value)]])
-      rowOf[name] = sheet.getLastRow()
+  // Column B in ONE write, not a call per key: Settings saves five or six at a time and each one
+  // was a format and a value of its own. Every other row is rewritten with the value it already
+  // holds — safe for the reason `writeSpan` gives — and normalised, so a cell somebody coerced to
+  // a Date does not come back out as "Fri Apr 18 2027 …".
+  for (var i = 1; i < rows.length; i++) {
+    var name = String(rows[i][0] == null ? '' : rows[i][0]).trim()
+    var mine = name && Object.prototype.hasOwnProperty.call(config, name)
+    if (mine) {
+      seen[name] = true
+      touched = true
     }
+    var text = mine ? storedCell(config[name]) : readCell(rows[i][1], session.timeZone)
+    rows[i][1] = text
+    values.push([textCell(text)])
+  }
+  if (touched) writeSpan(session.config, 1, values)
+
+  // Whatever the tab has never held, appended in one call for the same reason — at `rows.length + 1`,
+  // because the grid came from `getDataRange` and its length IS the last row. The two `getLastRow`
+  // calls this used to spend asked for something already in hand.
+  var appended = []
+  for (var key in config) {
+    if (!Object.prototype.hasOwnProperty.call(config, key)) continue
+    if (seen[key]) continue
+    appended.push([storedCell(key), storedCell(config[key])])
+  }
+  if (appended.length) {
+    var cells = []
+    for (var a = 0; a < appended.length; a++) {
+      cells.push([textCell(appended[a][0]), textCell(appended[a][1])])
+    }
+    var range = session.config.getRange(rows.length + 1, 1, cells.length, 2)
+    range.setNumberFormat('@')
+    range.setValues(cells)
+    for (var b = 0; b < appended.length; b++) rows.push(appended[b])
   }
   return null
 }
@@ -475,12 +662,11 @@ function setConfig(book, config) {
  * shifts row 9 up to row 8, so an ascending pass deletes the wrong rows after
  * the first one.
  */
-function compact(book) {
-  var opened = openTasks(book)
-  var sheet = opened.sheet
-  if (opened.block.length < 2) return null
+function compact(session) {
+  var sheet = session.tasks
+  var block = session.block
+  if (block.length < 2) return null
 
-  var rows = opened.block.slice(1)
   var deletedIndex = indexOf('deleted_at')
   var parentIndex = indexOf('parent_id')
   var idIndex = indexOf('id')
@@ -489,21 +675,36 @@ function compact(book) {
   // row that no longer exists; the read promotes it to top level either way, but the sheet is
   // what a person looks at and this is the only moment the information still exists.
   var dying = {}
-  for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i][deletedIndex] || '').trim()) dying[String(rows[i][idIndex])] = true
-  }
-  for (var j = 0; j < rows.length; j++) {
-    if (String(rows[j][deletedIndex] || '').trim()) continue
-    if (!dying[String(rows[j][parentIndex])]) continue
-    var cell = sheet.getRange(j + 2, parentIndex + 1)
-    cell.setNumberFormat('@')
-    cell.setValue('')
+  for (var i = 1; i < block.length; i++) {
+    // A blank id is a stray row somebody typed, and recording it would make every top-level task
+    // — all of which name no parent — look orphaned.
+    var id = String(block[i][idIndex] || '').trim()
+    if (id && String(block[i][deletedIndex] || '').trim()) dying[id] = true
   }
 
+  // Every orphaned pointer in ONE write of the parent_id column: a cascade orphans as many
+  // children as the parent had, and a cell at a time each one was a format and a value.
+  var orphans = false
+  var pointers = []
+  for (var j = 1; j < block.length; j++) {
+    var live = !String(block[j][deletedIndex] || '').trim()
+    var held = readCell(block[j][parentIndex], session.timeZone)
+    var orphan = live && Boolean(held && dying[held.trim()])
+    if (orphan) orphans = true
+    var pointer = orphan ? '' : held
+    block[j][parentIndex] = pointer
+    pointers.push([pointer])
+  }
+  if (orphans) writeSpan(sheet, parentIndex, pointers)
+
   // DESCENDING: deleting row 5 shifts row 9 up to row 8, so an ascending pass deletes the
-  // wrong rows after the first one.
-  for (var k = rows.length - 1; k >= 0; k--) {
-    if (String(rows[k][deletedIndex] || '').trim()) sheet.deleteRow(k + 2)
+  // wrong rows after the first one. The block loses the same rows, so the reply describes the
+  // compacted board.
+  for (var k = block.length - 1; k >= 1; k--) {
+    if (String(block[k][deletedIndex] || '').trim()) {
+      sheet.deleteRow(k + 1)
+      block.splice(k, 1)
+    }
   }
   return null
 }
@@ -512,11 +713,11 @@ function compact(book) {
 // Reading
 // ---------------------------------------------------------------------------
 
-function board(book, timeZone) {
+function board(block, config, timeZone) {
   return {
     ok: true,
-    tasks: readTasks(book, timeZone),
-    config: readConfig(book),
+    tasks: tasksFrom(block, timeZone),
+    config: config,
     /**
      * The columns THIS deployment understands.
      *
@@ -527,6 +728,8 @@ function board(book, timeZone) {
      * and say why instead of quietly making a mess.
      */
     schema: TASK_COLUMNS,
+    /** The ops it can dispatch, which its columns cannot imply. See `OPS`. */
+    ops: OPS,
     /**
      * The spreadsheet's own zone, reported so the client can warn when it
      * disagrees with the `timezone` config value. Wall-clock times in the sheet
@@ -538,19 +741,18 @@ function board(book, timeZone) {
 }
 
 /**
- * Every task, resolved by column NAME rather than by position.
+ * Every task in a grid, resolved by column NAME rather than by position.
  *
- * BY NAME BECAUSE THIS PATH MAY NOT WRITE. `doGet` is anonymous, so it cannot call `relayout` to
- * put a hand-edited header straight first — and reading such a grid at this script's own indices
+ * BY NAME BECAUSE THE READ PATH MAY NOT WRITE. `doGet` is anonymous, so it cannot call `relayout`
+ * to put a hand-edited header straight first — and reading such a grid at this script's own indices
  * would report whatever now sits in `due`'s position as the due date. Resolving from the header
  * row costs nothing (the grid is already in hand) and means a board reads correctly whether or not
  * an editor has written to it since somebody moved a column.
  *
- * `getDataRange` is one service call for the header and the rows together.
+ * It takes the grid rather than reading one, because on the write path the grid is already in hand
+ * and reading it back would be a second full read on every save.
  */
-function readTasks(book, timeZone) {
-  var sheet = book.getSheetByName(TASKS_SHEET)
-  var block = sheet.getDataRange().getValues()
+function tasksFrom(block, timeZone) {
   if (block.length < 2) return []
 
   var at = columnMap(block[0])
@@ -571,18 +773,14 @@ function readTasks(book, timeZone) {
   return tasks
 }
 
-/**
- * One service call, not two. `getLastRow` followed by a sized `getValues` asks the grid twice for
- * what `getDataRange` answers once, on the reply to every single write.
- */
-function readConfig(book) {
-  var sheet = book.getSheetByName(CONFIG_SHEET)
-  if (!sheet) return {}
-  var values = sheet.getDataRange().getValues()
+/** The config tab's key/value rows as an object. */
+function configFrom(rows, timeZone) {
   var config = {}
-  for (var i = 1; i < values.length; i++) {
-    var name = String(values[i][0] == null ? '' : values[i][0]).trim()
-    if (name && name !== 'key') config[name] = String(values[i][1] == null ? '' : values[i][1])
+  for (var i = 1; i < rows.length; i++) {
+    var name = String(rows[i][0] == null ? '' : rows[i][0]).trim()
+    // Through `readCell` like every task cell: a wedding date somebody retyped in the Sheets UI
+    // can be a real Date, and `String(new Date())` is unparseable by the client.
+    if (name && name !== 'key') config[name] = readCell(rows[i][1], timeZone)
   }
   return config
 }
@@ -611,14 +809,12 @@ function readCell(value, timeZone) {
  * spreadsheet has exactly one default tab, so several tabs with none of ours
  * among them is refused.
  *
+ * Only reached when a tab is missing — `openSession` decides that on two lookups, so no save but
+ * the first one ever spends a `getSheets()` here.
+ *
  * @returns {string|null} an error code, or null when the structure is ready.
  */
-function ensureStructure(book) {
-  // THE HOT PATH IS THE FIRST TWO LINES. Both tabs exist on every write but the first one ever,
-  // and `getSheets()` is a service call — the unit of cost here — spent on every save to learn
-  // something two lookups already answer.
-  if (book.getSheetByName(TASKS_SHEET) && book.getSheetByName(CONFIG_SHEET)) return null
-
+function buildStructure(book) {
   var sheets = book.getSheets()
   var names = {}
   for (var i = 0; i < sheets.length; i++) names[sheets[i].getName()] = true
@@ -626,9 +822,7 @@ function ensureStructure(book) {
   var ours = names[TASKS_SHEET] || names[CONFIG_SHEET]
   if (!ours && sheets.length > 1) return 'not_empty'
 
-  var built = false
   if (!names[TASKS_SHEET]) {
-    built = true
     var tasks = book.insertSheet(TASKS_SHEET)
     var header = tasks.getRange(1, 1, 1, TASK_COLUMNS.length)
     header.setValues([TASK_COLUMNS])
@@ -640,7 +834,6 @@ function ensureStructure(book) {
   }
 
   if (!names[CONFIG_SHEET]) {
-    built = true
     var config = book.insertSheet(CONFIG_SHEET)
     var configHeader = config.getRange(1, 1, 1, 2)
     configHeader.setValues([['key', 'value']])
@@ -649,15 +842,12 @@ function ensureStructure(book) {
     config.getRange(1, 1, config.getMaxRows(), 2).setNumberFormat('@')
   }
 
-  // The default "Sheet1" left behind by a brand-new spreadsheet. Only worth looking for on the
-  // write that CREATED a tab — after that it is either long gone or somebody's real sheet, and
-  // asking every write costs a service call for nothing. Removed only when it is empty and ours
-  // both exist, so it can never take a populated tab with it.
-  if (built) {
-    var leftover = book.getSheetByName('Sheet1')
-    if (leftover && book.getSheets().length > 2 && leftover.getLastRow() === 0) {
-      book.deleteSheet(leftover)
-    }
+  // The default "Sheet1" left behind by a brand-new spreadsheet. Only looked for on the write that
+  // CREATED a tab — which is the only write that reaches this function at all. Removed only when
+  // it is empty and ours both exist, so it can never take a populated tab with it.
+  var leftover = book.getSheetByName('Sheet1')
+  if (leftover && book.getSheets().length > 2 && leftover.getLastRow() === 0) {
+    book.deleteSheet(leftover)
   }
 
   return null
@@ -671,7 +861,13 @@ function indexOf(column) {
   return TASK_COLUMNS.indexOf(column)
 }
 
-/** @returns {Array|null} the cell values for one task, or null if unusable. */
+/**
+ * One task's cells AS THE SHEET WILL READ THEM BACK — which is also what the reply carries, since
+ * the reply is composed from the block these rows are folded into. `writable` is what turns this
+ * into the values to send.
+ *
+ * @returns {Array|null} the cell values for one task, or null if unusable.
+ */
 function toRow(task) {
   if (!task || typeof task !== 'object') return null
   if (!task.id || typeof task.id !== 'string') return null
@@ -679,19 +875,43 @@ function toRow(task) {
 
   var row = []
   for (var i = 0; i < TASK_COLUMNS.length; i++) {
-    var column = TASK_COLUMNS[i]
-    var value = clamp(task[column])
-    row.push(TEXT_COLUMNS[column] ? textCell(value) : value)
+    row.push(storedCell(task[TASK_COLUMNS[i]]))
   }
   if (!row[indexOf('created_at')]) row[indexOf('created_at')] = nowIso()
   row[indexOf('updated_at')] = nowIso()
   return row
 }
 
+/**
+ * The same row, escaped for the write. Sheets consumes the leading apostrophe, so the cell ends up
+ * holding the row `toRow` built — which is why the reply may state that row without reading the
+ * sheet back to see what became of it.
+ */
+function writable(row) {
+  var cells = []
+  for (var i = 0; i < TASK_COLUMNS.length; i++) {
+    cells.push(TEXT_COLUMNS[TASK_COLUMNS[i]] ? textCell(row[i]) : row[i])
+  }
+  return cells
+}
+
 function clamp(value) {
   if (value == null) return ''
   var text = String(value)
   return text.length > MAX_CELL_CHARS ? text.slice(0, MAX_CELL_CHARS) : text
+}
+
+/**
+ * The value the CELL will hold, which is what the reply reports.
+ *
+ * A leading apostrophe is Sheets' own literal-text escape and it is consumed on the way in —
+ * `textCell`'s, and equally a title somebody typed as "'96 vintage". The reply states the stored
+ * value rather than reading the sheet back to see it, so it has to drop the same character the
+ * sheet does or a save would echo an apostrophe that vanishes on the next refresh.
+ */
+function storedCell(value) {
+  var text = clamp(value)
+  return text.charAt(0) === "'" ? text.slice(1) : text
 }
 
 /**

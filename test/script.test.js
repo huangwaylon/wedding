@@ -18,7 +18,14 @@
  *   client. `readCell` is the recovery, and the column stamping has to preserve it.
  *
  * It is NOT a Sheets emulator. Formats are recorded rather than applied, so it cannot catch a
- * missing `setNumberFormat` by its effect — the assertions check the call instead.
+ * missing `setNumberFormat` by its effect — the assertions check the call instead. It does not
+ * consume a leading apostrophe either, which real Sheets does: no fake can strip that character
+ * and still show that the escape was sent, so the tests that care assert the grid and the reply
+ * differ by exactly it.
+ *
+ * IT COUNTS CALLS, and several tests assert an exact number. A Sheets service call is the unit of
+ * cost in Apps Script — a write is ~3s of round trip and the arithmetic between calls is free — so
+ * a second read of something already in hand is the regression this file exists to catch.
  */
 
 import { readFileSync } from 'node:fs'
@@ -119,8 +126,12 @@ function makeFreshBook(existing = ['Sheet1']) {
   const inserted = []
   const book = {
     inserted,
+    lookups: 0,
     getSheets: () => sheets,
-    getSheetByName: (name) => sheets.find((sheet) => sheet.name === name) ?? null,
+    getSheetByName: (name) => {
+      book.lookups += 1
+      return sheets.find((sheet) => sheet.name === name) ?? null
+    },
     getSpreadsheetTimeZone: () => 'Asia/Tokyo',
     insertSheet: (name) => {
       const made = makeSheet(name, [[]])
@@ -141,11 +152,16 @@ function makeBook(rows = []) {
     ['timezone', 'Asia/Tokyo'],
   ])
   const sheets = [tasks, config]
-  return {
+  const book = {
     tasks,
     config,
+    /** Tab lookups. Cheap next to a read, but not free, and threading the sheets keeps them at two. */
+    lookups: 0,
     getSheets: () => sheets,
-    getSheetByName: (name) => sheets.find((sheet) => sheet.name === name) ?? null,
+    getSheetByName: (name) => {
+      book.lookups += 1
+      return sheets.find((sheet) => sheet.name === name) ?? null
+    },
     getSpreadsheetTimeZone: () => 'Asia/Tokyo',
     insertSheet: (name) => {
       const made = makeSheet(name, [[]])
@@ -154,14 +170,27 @@ function makeBook(rows = []) {
     },
     deleteSheet: (sheet) => sheets.splice(sheets.indexOf(sheet), 1),
   }
+  return book
 }
 
 /** The script, with the Apps Script globals it reaches for. */
 function load(book) {
+  /** Lock use, because a mutation must take exactly one and give it back. */
+  const lock = { taken: 0, released: 0 }
   const globals = {
     SpreadsheetApp: { getActive: () => book },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => KEY }) },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
+    LockService: {
+      getScriptLock: () => ({
+        tryLock: () => {
+          lock.taken += 1
+          return true
+        },
+        releaseLock: () => {
+          lock.released += 1
+        },
+      }),
+    },
     ContentService: {
       MimeType: { JSON: 'json' },
       createTextOutput: (text) => ({ setMimeType: () => text }),
@@ -173,7 +202,7 @@ function load(book) {
   }
   const names = Object.keys(globals)
   const factory = new Function(...names, `${SOURCE}\nreturn { doGet, doPost }`)
-  return factory(...names.map((name) => globals[name]))
+  return { ...factory(...names.map((name) => globals[name])), lock }
 }
 
 const post = (script, op, payload) =>
@@ -306,6 +335,162 @@ describe('update', () => {
   })
 })
 
+describe('updateMany', () => {
+  /**
+   * Ticking is the app's most frequent gesture and a round trip is ~3s, so three ticks were three
+   * of them. FAMILY sits at grid rows 2..6, which is what lets a run and a scattered set both be
+   * expressed here.
+   */
+  const batch = (...ids) => ({
+    tasks: ids.map((id) =>
+      task({ id, title: `Done ${id}`, parent_id: id.charAt(0) === 's' ? 'p1' : '' }),
+    ),
+  })
+
+  it('writes every row in the batch and leaves the others alone', () => {
+    expect(post(script, 'updateMany', batch('s1', 's3')).ok).toBe(true)
+    const rows = stored(book)
+    expect(rows[1].title).toBe('Done s1')
+    expect(rows[3].title).toBe('Done s3')
+    expect(rows[2].title).toBe('Visit them')
+    expect(rows[0].title).toBe('Book the venue')
+  })
+
+  it('costs one read and ONE write for a run of consecutive rows', () => {
+    post(script, 'updateMany', batch('s1', 's2', 's3'))
+    expect(book.tasks.reads).toBe(1)
+    expect(book.tasks.writes).toBe(1)
+    expect(book.tasks.formatted).toHaveLength(1)
+  })
+
+  it('costs a write per run when the rows are scattered, still on one read', () => {
+    // Three separate updates are three requests, three locks and three grid reads. This is one of
+    // each whatever the rows' positions.
+    post(script, 'updateMany', batch('p1', 's2', 'p2'))
+    expect(book.tasks.reads).toBe(1)
+    expect(book.tasks.writes).toBe(3)
+    expect(stored(book).map((row) => row.title)).toEqual([
+      'Done p1',
+      'Shortlist three',
+      'Done s2',
+      'Sign the contract',
+      'Done p2',
+    ])
+  })
+
+  it('holds one lock, and gives it back', () => {
+    const one = makeBook(FAMILY)
+    const script = load(one)
+    post(script, 'updateMany', batch('s1', 's2', 's3'))
+    expect(script.lock).toEqual({ taken: 1, released: 1 })
+  })
+
+  it('fails the whole batch on one missing id, writing nothing', () => {
+    // A partner deleting a row mid-batch must not leave half of it applied: the client rolls back
+    // and refreshes. Every id resolves before any cell is written, which the grid in hand makes free.
+    const before = book.tasks.writes
+    const body = post(script, 'updateMany', {
+      tasks: [task({ id: 's1', title: 'Done s1' }), task({ id: 'gone', title: 'Nowhere' })],
+    })
+    expect(body).toEqual({ ok: false, error: 'not_found' })
+    expect(book.tasks.writes).toBe(before)
+    expect(stored(book)[1].title).toBe('Shortlist three')
+  })
+
+  it('fails the whole batch on one unusable row, writing nothing', () => {
+    const before = book.tasks.writes
+    expect(post(script, 'updateMany', { tasks: [task({ id: 's1' }), { id: 's2' }] }).error).toBe(
+      'bad_payload',
+    )
+    expect(book.tasks.writes).toBe(before)
+  })
+
+  it('refuses an empty batch', () => {
+    expect(post(script, 'updateMany', { tasks: [] }).error).toBe('bad_payload')
+    expect(post(script, 'updateMany', {}).error).toBe('bad_payload')
+  })
+
+  it('keeps each row’s own created_at and its parent', () => {
+    book.tasks.grid[2][TASK_COLUMNS.indexOf('created_at')] = '2026-01-01T00:00:00.000Z'
+    book.tasks.grid[3][TASK_COLUMNS.indexOf('created_at')] = '2026-02-02T00:00:00.000Z'
+    post(script, 'updateMany', batch('s1', 's2'))
+    const rows = stored(book)
+    expect(rows[1].created_at).toBe('2026-01-01T00:00:00.000Z')
+    expect(rows[2].created_at).toBe('2026-02-02T00:00:00.000Z')
+    expect(rows.slice(1, 3).every((row) => row.parent_id === 'p1')).toBe(true)
+  })
+
+  it('lets the last of two entries for one row win', () => {
+    post(script, 'updateMany', {
+      tasks: [task({ id: 'p1', title: 'First' }), task({ id: 'p1', title: 'Second' })],
+    })
+    expect(stored(book)[0].title).toBe('Second')
+  })
+
+  it('answers with the board the batch produced', () => {
+    const body = post(script, 'updateMany', batch('s1', 's2', 's3'))
+    expect(body.tasks.map((row) => row.title)).toEqual([
+      'Book the venue',
+      'Done s1',
+      'Done s2',
+      'Done s3',
+      'Order the cake',
+    ])
+    expect(body.tasks[1].updated_at).toMatch(/^\d{4}-\d\d-\d\dT/)
+  })
+
+  it('is the same path as a single update', () => {
+    // `update` is a batch of one, so there is no second write path to keep in step with this one.
+    const single = makeBook(FAMILY)
+    post(load(single), 'update', { task: task({ id: 's2', title: 'Visited', parent_id: 'p1' }) })
+    const many = makeBook(FAMILY)
+    post(load(many), 'updateMany', { tasks: [task({ id: 's2', title: 'Visited', parent_id: 'p1' })] })
+    expect(many.tasks.writes).toBe(single.tasks.writes)
+    expect(stored(many)[2]).toEqual(stored(single)[2])
+  })
+})
+
+describe('the capability signal', () => {
+  /**
+   * A deployment is pinned to a version, so a bundle newer than the script has to be able to tell
+   * that an op it wants would come back `bad_op` BEFORE it sends one. `schema` reports columns and
+   * cannot answer that: a script can hold every column and still not know how to batch.
+   */
+  const PAYLOADS = {
+    create: { task: task({ id: 'c1', title: 'One' }) },
+    createMany: { tasks: [task({ id: 'c2', title: 'Two' })] },
+    update: { task: task({ id: 'p1' }) },
+    updateMany: { tasks: [task({ id: 'p1' })] },
+    delete: { id: 'p1' },
+    restore: { id: 'p1' },
+    setConfig: { config: { timezone: 'Asia/Tokyo' } },
+    compact: {},
+  }
+
+  it('is reported on the anonymous read, on a write, and on an unbuilt board', () => {
+    const read = JSON.parse(script.doGet())
+    const written = post(script, 'update', { task: task({ id: 'p1' }) })
+    const fresh = JSON.parse(load(makeFreshBook()).doGet())
+    expect(read.ops).toContain('updateMany')
+    for (const body of [written, fresh]) expect(body.ops).toEqual(read.ops)
+  })
+
+  it('names every op the script dispatches, and no others', () => {
+    // A name in the list that `apply` does not handle is a promise the script breaks, and one it
+    // handles but does not report is a batch the client will never send.
+    const ops = JSON.parse(script.doGet()).ops
+    expect(ops.slice().sort()).toEqual(Object.keys(PAYLOADS).sort())
+    for (const op of ops) {
+      const fresh = makeBook(FAMILY)
+      expect([op, post(load(fresh), op, PAYLOADS[op]).error]).not.toEqual([op, 'bad_op'])
+    }
+  })
+
+  it('still refuses a name it does not report', () => {
+    expect(post(script, 'updateSome', { tasks: [] }).error).toBe('bad_op')
+  })
+})
+
 describe('delete and restore', () => {
   it('cascades to every subtask and to nothing else', () => {
     expect(post(script, 'delete', { id: 'p1' }).ok).toBe(true)
@@ -329,14 +514,27 @@ describe('delete and restore', () => {
   })
 
   it('costs the same number of writes whatever the cascade’s size', () => {
-    // Two whole-column stamps, however many rows they touch. One cell at a time, a parent with
-    // four subtasks is ten round trips.
+    // ONE range over both columns, however many rows they touch — `updated_at` and `deleted_at`
+    // are the two ends of one span. A cell at a time, a parent with four subtasks is ten round
+    // trips; two whole columns, it is four.
     const one = makeBook(FAMILY)
     post(load(one), 'delete', { id: 'p2' })
     const many = makeBook(FAMILY)
     post(load(many), 'delete', { id: 'p1' })
     expect(many.tasks.writes).toBe(one.tasks.writes)
-    expect(many.tasks.writes).toBeLessThanOrEqual(2)
+    expect(many.tasks.writes).toBe(1)
+  })
+
+  it('stamps both columns as one range and touches nothing either side of them', () => {
+    post(script, 'delete', { id: 'p1' })
+    const span = book.tasks.formatted[book.tasks.formatted.length - 1]
+    expect(span.left).toBe(TASK_COLUMNS.indexOf('updated_at') + 1)
+    expect(span.columns).toBe(2)
+    expect(span.rows).toBe(FAMILY.length)
+    // The span is written whole, so a column that crept into it would be overwritten. Everything
+    // outside it is untouched, including the `parent_id` that keeps a subtask a subtask.
+    expect(stored(book)[0]).toMatchObject({ id: 'p1', title: 'Book the venue', due: '2027-02-01' })
+    expect(stored(book)[1]).toMatchObject({ id: 's1', title: 'Shortlist three', parent_id: 'p1' })
   })
 
   it('leaves an untouched row’s own timestamps as they were', () => {
@@ -391,6 +589,132 @@ describe('create', () => {
     expect(book.tasks.writes - before).toBe(1)
     expect(stored(book)).toHaveLength(7)
   })
+
+  it('costs a template seed of 52 one read and one write', () => {
+    // The seed is the largest single write the app makes, and its cost has to be the batch's, not
+    // the row's.
+    const tasks = []
+    for (let index = 0; index < 52; index += 1) {
+      tasks.push(task({ id: `m${index}`, title: `Seed ${index}` }))
+    }
+    const body = post(script, 'createMany', { tasks })
+    expect(book.tasks.reads).toBe(1)
+    expect(book.tasks.writes).toBe(1)
+    expect(body.tasks).toHaveLength(FAMILY.length + 52)
+  })
+})
+
+describe('the cost of a request', () => {
+  /**
+   * Exact counts, because latency here IS service calls: a write is ~3s of round trip and the
+   * arithmetic between calls is free. Every regression this pins has the same shape — spending a
+   * second call to learn what the first one already said.
+   */
+  it('reads each tab once and never reads back what it just wrote', () => {
+    post(script, 'update', { task: task({ id: 'p1', title: 'Booked' }) })
+    expect(book.tasks.reads).toBe(1)
+    expect(book.config.reads).toBe(1)
+  })
+
+  it('looks each tab up once, however many places need it', () => {
+    // Both exist on every write but the first ever, so the lookups are the cheap way to know it —
+    // but the ops and the reply take the sheets from the session rather than asking again.
+    post(script, 'update', { task: task({ id: 'p1' }) })
+    expect(book.lookups).toBe(2)
+  })
+
+  it('reads once on the anonymous path too', () => {
+    script.doGet()
+    expect(book.tasks.reads).toBe(1)
+    expect(book.config.reads).toBe(1)
+    expect(book.lookups).toBe(2)
+  })
+
+  it('spends one format and one write on every op that touches a row', () => {
+    for (const [op, payload] of [
+      ['create', { task: task({ id: 'new', title: 'Order flowers' }) }],
+      ['update', { task: task({ id: 'p1', title: 'Booked' }) }],
+      ['delete', { id: 'p1' }],
+      ['restore', { id: 'p1' }],
+    ]) {
+      const fresh = makeBook(FAMILY)
+      post(load(fresh), op, payload)
+      expect([op, fresh.tasks.writes, fresh.tasks.formatted.length]).toEqual([op, 1, 1])
+    }
+  })
+})
+
+describe('the reply', () => {
+  /**
+   * IT IS COMPOSED FROM THE READ THE OP ALREADY MADE, with the write folded in — not from a second
+   * read of the grid. That is one full read of the sheet saved on every save, and it is only sound
+   * while what the reply says matches what the cells now hold, which is what these pin.
+   */
+  it('describes the board the write produced', () => {
+    const body = post(script, 'update', { task: task({ id: 's2', title: 'Visited', parent_id: 'p1' }) })
+    expect(body.tasks).toHaveLength(FAMILY.length)
+    expect(body.tasks[2]).toMatchObject({ id: 's2', title: 'Visited', parent_id: 'p1' })
+    expect(body.tasks[2].updated_at).toMatch(/^\d{4}-\d\d-\d\dT/)
+    expect(body.tasks[1].title).toBe('Shortlist three')
+  })
+
+  it('carries an appended row', () => {
+    const body = post(script, 'create', { task: task({ id: 'new', title: 'Order flowers' }) })
+    expect(body.tasks[FAMILY.length]).toMatchObject({ id: 'new', title: 'Order flowers' })
+    expect(body.tasks[FAMILY.length].created_at).toMatch(/^\d{4}/)
+  })
+
+  it('carries a whole cascade, and a restore’s', () => {
+    const deleted = post(script, 'delete', { id: 'p1' })
+    expect(deleted.tasks.slice(0, 4).every((row) => row.deleted_at)).toBe(true)
+    expect(deleted.tasks[4].deleted_at).toBe('')
+    const restored = post(script, 'restore', { id: 'p1' })
+    expect(restored.tasks.every((row) => row.deleted_at === '')).toBe(true)
+  })
+
+  it('carries a compacted board, rows and pointers both', () => {
+    book.tasks.grid[1][TASK_COLUMNS.indexOf('deleted_at')] = '2026-01-01T00:00:00.000Z'
+    const body = post(script, 'compact', {})
+    expect(body.tasks.map((row) => row.id)).toEqual(['s1', 's2', 's3', 'p2'])
+    expect(body.tasks.every((row) => row.parent_id === '')).toBe(true)
+  })
+
+  it('carries the config a setConfig just wrote', () => {
+    const body = post(script, 'setConfig', { config: { timezone: 'Europe/Paris', venue: 'Meguro' } })
+    expect(body.config).toEqual({ timezone: 'Europe/Paris', venue: 'Meguro' })
+  })
+
+  it('reports the value the CELL will hold, not the escape it was sent as', () => {
+    // Sheets consumes the apostrophe, so the cell holds "=SUM(A:A)" and the reply must say so. The
+    // fake keeps it — no fake can strip it and still show the escape was sent — which is why the
+    // grid and the reply differ here by exactly that character and both are right.
+    const body = post(script, 'update', { task: task({ id: 'p1', title: '=SUM(A:A)' }) })
+    expect(stored(book)[0].title).toBe("'=SUM(A:A)")
+    expect(body.tasks[0].title).toBe('=SUM(A:A)')
+  })
+
+  it('drops a leading apostrophe somebody typed, exactly as the sheet does', () => {
+    // "'96 vintage" reaches the cell as "96 vintage" whatever this script does, so a reply echoing
+    // the apostrophe would show a title that changes on the next refresh.
+    const body = post(script, 'update', { task: task({ id: 'p1', title: "'96 vintage" }) })
+    expect(stored(book)[0].title).toBe('96 vintage')
+    expect(body.tasks[0].title).toBe('96 vintage')
+  })
+
+  it('normalises a Date in a row it never touched', () => {
+    // The board is composed from the grid that was read, so every cell still goes through
+    // `readCell` — a row somebody hand-edited into a Date is unparseable by the client otherwise.
+    book.tasks.grid[5][TASK_COLUMNS.indexOf('due')] = new Date('2027-03-03T00:00:00Z')
+    const body = post(script, 'update', { task: task({ id: 'p1' }) })
+    expect(body.tasks[4].due).toBe('2027-03-03T00:00')
+  })
+
+  it('does not carry a row the write refused', () => {
+    expect(post(script, 'update', { task: task({ id: 'nope' }) })).toEqual({
+      ok: false,
+      error: 'not_found',
+    })
+  })
 })
 
 describe('compact', () => {
@@ -414,6 +738,23 @@ describe('compact', () => {
     for (const id of ['s1', 's3']) post(script, 'delete', { id })
     post(script, 'compact', {})
     expect(stored(book).map((row) => row.id)).toEqual(['p1', 's2', 'p2'])
+  })
+
+  it('clears every orphaned pointer in one write', () => {
+    // A compaction orphans as many children as the tombstoned parent had, and a cell at a time each
+    // one was a format and a value of its own.
+    book.tasks.grid[1][TASK_COLUMNS.indexOf('deleted_at')] = '2026-01-01T00:00:00.000Z'
+    post(script, 'compact', {})
+    expect(book.tasks.writes).toBe(1)
+  })
+
+  it('writes nothing at all when it orphans nobody', () => {
+    // The usual case: the delete cascaded, so every child of the dying parent is dying with it.
+    post(script, 'delete', { id: 'p1' })
+    const before = book.tasks.writes
+    post(script, 'compact', {})
+    expect(book.tasks.writes).toBe(before)
+    expect(stored(book).map((row) => row.id)).toEqual(['p2'])
   })
 })
 
@@ -525,6 +866,15 @@ describe('every reply', () => {
 })
 
 describe('config', () => {
+  const SETTINGS = [
+    ['key', 'value'],
+    ['partner1_name', 'Aoi'],
+    ['partner2_name', 'Ren'],
+    ['wedding_date', '2027-04-18'],
+    ['venue', 'Meguro'],
+    ['timezone', 'Asia/Tokyo'],
+  ]
+
   it('updates an existing key in place and appends a new one', () => {
     post(script, 'setConfig', { config: { timezone: 'Europe/Paris', venue: 'Meguro' } })
     expect(book.config.grid).toEqual([
@@ -537,5 +887,60 @@ describe('config', () => {
   it('escapes a value that would become a formula', () => {
     post(script, 'setConfig', { config: { venue: '-Meguro' } })
     expect(book.config.grid[2][1]).toBe("'-Meguro")
+  })
+
+  it('writes the value column ONCE however many keys the save carries', () => {
+    // Settings is the one sheet that waits for its reply, so a format and a value per key made a
+    // five-field save five round trips inside one save.
+    book.config.grid = SETTINGS.map((row) => row.slice())
+    post(script, 'setConfig', {
+      config: {
+        partner1_name: 'A',
+        partner2_name: 'B',
+        wedding_date: '2027-04-19',
+        venue: 'V',
+        timezone: 'Europe/Paris',
+      },
+    })
+    expect(book.config.writes).toBe(1)
+    expect(book.config.grid.map((row) => row[1])).toEqual([
+      'value',
+      'A',
+      'B',
+      '2027-04-19',
+      'V',
+      'Europe/Paris',
+    ])
+  })
+
+  it('leaves a key it was not sent exactly as it was', () => {
+    // The column is written whole, so every untouched row is rewritten — with the value it already
+    // holds, or a save of one field would quietly restate the others.
+    book.config.grid = SETTINGS.map((row) => row.slice())
+    const body = post(script, 'setConfig', { config: { venue: 'Meguro' } })
+    expect(book.config.grid[1][1]).toBe('Aoi')
+    expect(body.config.partner1_name).toBe('Aoi')
+  })
+
+  it('normalises a config cell the Sheets UI coerced to a Date', () => {
+    // Written back raw it would land as "Sun Apr 18 2027 …", which the client cannot read.
+    book.config.grid = [
+      ['key', 'value'],
+      ['timezone', 'Asia/Tokyo'],
+      ['wedding_date', new Date('2027-04-18T00:00:00Z')],
+    ]
+    const body = post(script, 'setConfig', { config: { timezone: 'Europe/Paris' } })
+    expect(book.config.grid[2][1]).toBe('2027-04-18T00:00')
+    expect(body.config.wedding_date).toBe('2027-04-18T00:00')
+  })
+
+  it('appends several new keys in one call, without asking for the last row', () => {
+    const before = book.config.writes
+    post(script, 'setConfig', { config: { venue: 'Meguro', accent: 'rose' } })
+    expect(book.config.writes - before).toBe(1)
+    expect(book.config.grid.slice(2)).toEqual([
+      ['venue', 'Meguro'],
+      ['accent', 'rose'],
+    ])
   })
 })

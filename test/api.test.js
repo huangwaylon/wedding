@@ -5,8 +5,9 @@
  * shows up in a build or on screen.
  */
 
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { API_ERROR, isTerminal, readBoard, mutate } from '../src/lib/api.js'
+import { API_ERROR, isTerminal, readBoard, mutate, updateTasks } from '../src/lib/api.js'
 import { SCRIPT_URL } from '../src/config.js'
 
 function reply(body, { asText } = {}) {
@@ -93,6 +94,49 @@ describe('readBoard', () => {
   })
 })
 
+describe('the advertised ops', () => {
+  it('decodes the list a reply reports', () => {
+    vi.stubGlobal('fetch', reply({ ...BOARD, ops: ['update', 'updateMany'] }))
+    return readBoard(1).then((board) => expect(board.ops).toEqual(['update', 'updateMany']))
+  })
+
+  it('reads an ABSENT list as null, not as an empty one', () => {
+    // A deployment older than this bundle reports no `ops` at all, and `null` is what carries that
+    // through to `supports` — which answers false either way, so the fold is never attempted.
+    // Empty and absent must still be distinguishable here: collapsing them in the decoder is how a
+    // reply's silence starts looking like a considered answer.
+    vi.stubGlobal('fetch', reply(BOARD))
+    return readBoard(1).then((board) => expect(board.ops).toBeNull())
+  })
+
+  it('sends a batch as updateMany, with every row in the payload', async () => {
+    // `updateMany` rewrites each row from its payload, so `parent_id` has to ride along on every
+    // one of them — omitted, it blanks the cell and promotes a subtask to a task.
+    const fetcher = reply(BOARD)
+    vi.stubGlobal('fetch', fetcher)
+    await updateTasks(
+      [
+        { id: 'a', title: 'Tick one', parentId: 'p' },
+        { id: 'b', title: 'Tick two', parentId: 'p' },
+      ],
+      'thekey',
+    )
+    const body = JSON.parse(fetcher.mock.calls[0][1].body)
+    expect(body.op).toBe('updateMany')
+    expect(body.payload.tasks.map((row) => row.id)).toEqual(['a', 'b'])
+    expect(body.payload.tasks.every((row) => row.parent_id === 'p')).toBe(true)
+  })
+
+  it('refuses a batch with no key rather than sending a keyless write', async () => {
+    const fetcher = reply(BOARD)
+    vi.stubGlobal('fetch', fetcher)
+    await expect(updateTasks([{ id: 'a', title: 'x' }], null)).rejects.toMatchObject({
+      code: API_ERROR.UNAUTHORIZED,
+    })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+})
+
 describe('classification', () => {
   it('treats a rejected key as terminal', async () => {
     vi.stubGlobal('fetch', reply({ ok: false, error: 'unauthorized' }))
@@ -160,6 +204,14 @@ describe('classification', () => {
     // Retrying is exactly the right response to a held lock.
     expect(isTerminal(API_ERROR.BUSY)).toBe(false)
   })
+
+  it('names the ONLY two codes a retry may ever be spent on', () => {
+    // The whole vocabulary partitioned, rather than a spot check: nothing retries today, and the
+    // day something does, a `create` replayed after a timeout is a duplicate row. `busy` is the
+    // one code that says for certain nothing was written — the lock was never taken.
+    const retryable = Object.values(API_ERROR).filter((code) => !isTerminal(code))
+    expect(retryable.sort()).toEqual([API_ERROR.BUSY, API_ERROR.TRANSIENT].sort())
+  })
 })
 
 describe('mutate', () => {
@@ -204,5 +256,49 @@ describe('mutate', () => {
     vi.stubGlobal('fetch', reply(BOARD))
     const board = await mutate('create', {}, 'k')
     expect(board.tasks).toHaveLength(1)
+  })
+
+  it('sends exactly ONE header, because a second one may force a preflight', async () => {
+    // The preflight would be answered with the 302 that /exec returns and die, and the script has
+    // no `doOptions` to answer it with. Only a safelisted Content-Type keeps this a simple request.
+    const fetcher = reply(BOARD)
+    vi.stubGlobal('fetch', fetcher)
+    await mutate('create', {}, 'k')
+    expect(Object.keys(fetcher.mock.calls[0][1].headers)).toEqual(['Content-Type'])
+  })
+})
+
+/**
+ * THE TWO DEADLINES, and why they are not one.
+ *
+ * A write is the only request that can be made to WAIT by another device: `Code.gs` holds a script
+ * lock for up to `LOCK_WAIT_MS` before it does any work at all. A client deadline shorter than that
+ * aborts a write the script then goes on to commit — the row rolls back on screen, a failure toast
+ * goes up for an edit that landed, and the next read contradicts both. It also makes `busy`
+ * unreachable, so the one code worth retrying can never arrive.
+ *
+ * The lock wait is read out of the script rather than typed here, because the two numbers are one
+ * constraint: raising it there and not here reintroduces the whole failure.
+ */
+describe('deadlines', () => {
+  const LOCK_WAIT_MS = Number(
+    /var LOCK_WAIT_MS = (\d+)/.exec(readFileSync('apps-script/Code.gs', 'utf8'))?.[1],
+  )
+
+  it('reads the script’s own lock wait', () => {
+    expect(LOCK_WAIT_MS).toBeGreaterThan(0)
+  })
+
+  it('gives a write longer than the script can spend waiting for its lock', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    vi.stubGlobal('fetch', reply(BOARD))
+    await readBoard(1)
+    await mutate('update', {}, 'k')
+    const [[readMs], [writeMs]] = timeout.mock.calls
+    expect(writeMs).toBeGreaterThan(LOCK_WAIT_MS)
+    // And a read is not made to wait on anything — `doGet` never takes the lock — so it keeps the
+    // shorter deadline: a hung read blocks nothing but a refresh.
+    expect(readMs).toBeLessThan(writeMs)
+    timeout.mockRestore()
   })
 })

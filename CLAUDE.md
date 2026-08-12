@@ -140,18 +140,30 @@ query string reaches Google's logs.
   cache-buster in its query string; the edit key never can, and rides in the POST body.
 - **The POST is `text/plain`, and its method is never forced through the 302 that `/exec` returns.**
   `api.js` explains why, and why there is no `doOptions`.
-- **A Sheets service call is the unit of cost; arithmetic between them is free.** Each op takes ONE
-  read of the grid through `openTasks`, which folds in the layout repair; the reply reads it again,
-  deliberately, because that read-back is what the client is shown. `stampDeleted` writes two whole
-  columns so a cascade costs what one row does, and the LOCK is what makes rewriting untouched cells
-  safe — the values came from a read taken inside it. **Ask by NAME, not by counting rows**:
-  `ensureStructure` returns on two `getSheetByName` lookups rather than a `getSheets()` per write, and
-  `readConfig`/`setConfig` use `getDataRange`. An update is four calls on the tasks grid;
+- **A Sheets service call is the unit of cost; arithmetic between them is free.** Each request takes ONE
+  read of each tab — the grid through `openTasks`, which folds in the layout repair — and **the reply is
+  composed from that read with the write folded into it, never from a second one**, so the whole board it
+  carries costs nothing; `test/script.test.js` pins that it says what a fresh read would.
+  `stampDeleted` writes `updated_at` and `deleted_at` as ONE span, so a cascade costs what one row does,
+  and the LOCK is what makes rewriting untouched cells safe — the values came from a read taken inside
+  it. **Ask by NAME, not by counting rows**: `openSession` settles both tabs on two `getSheetByName`
+  lookups rather than a `getSheets()` per write, and `configFrom`/`setConfig` use `getDataRange`. An
+  update is three calls on the tasks grid — read, format, write — and seven in all; an `updateMany` is
+  those same three per RUN of consecutive rows, whatever the batch's size.
   `scripts/stub-endpoint.mjs` prints the count.
 - **Every read reports `schema: TASK_COLUMNS`, and the client compares the WHOLE list** —
   `missingColumnsFor` in `useBoard`, which every write that touches a row goes through. Comparing only
   the last entry is unsound: a rename leaves a stale deployment holding it. `null` means "nothing read
   yet" and never flags; `[]` is a script that sends no schema at all.
+- **Every reply also reports `ops`, and `supports` FALLS THE OPPOSITE WAY TO `missingColumnsFor`.**
+  `schema` names columns; `ops` names what `apply` can dispatch, which is the only way a client newer
+  than a pinned deployment can tell that an op would come back `bad_op`. So an unknown schema must NOT
+  refuse a write — `missingColumnsFor(null)` is `[]`, or a cold start locks itself out before its first
+  read — while an unknown op must NOT be sent: `supports(null, op)` and `supports([], op)` are both
+  false, because not-knowing and not-having both mean "use the shape every deployment understands".
+  `OPS` must name exactly what `apply` dispatches; `test/script.test.js` posts every name in the list
+  and fails if one answers `bad_op`, and `test/board.test.js` parses `OPS` out of `Code.gs` so a rename
+  there fails in CI rather than on somebody's phone.
 
 ### Client state
 
@@ -159,15 +171,32 @@ query string reaches Google's logs.
   `test/board.test.js`. **Writes serialise on a chain and only the LAST write in flight may replace
   the board**: every reply carries the whole board as of that write, so an earlier one describes a
   sheet without the later edits and accepting it wipes them off screen. `refresh` is skipped while a
-  write is pending — the same clobber from the other direction.
+  write is pending or overlaps one — the same clobber from the other direction.
 - **The task sheets close before the write lands, and a failure has a toast of its own.** A round trip
-  is ~3s and those mutations are optimistic, so waiting buys nothing — but with the panel gone a
-  rolled-back row is invisible unless said out loud. Settings WAITS: `saveConfig` has no optimistic
-  half, so closing early would show a stale zone and countdown for three seconds.
+  is a couple of seconds and those mutations are optimistic, so waiting buys nothing — but with the panel
+  gone a rolled-back row is invisible unless said out loud. Settings WAITS: `saveConfig` has no optimistic
+  half, so closing early would show a stale zone and countdown for that whole time.
 - **ONE WRITE PER EDIT SESSION, and the whole task goes in it.** `TaskDetail` buffers a draft while
-  Edit is on and writes once, on Done or on the row closing; per-field commits cost a ~3s round trip
-  *each*. `update` rewrites the row from its payload, so a partial one blanks a cell — `parent_id`
-  above all — and nothing is sent when the ROW it would write is unchanged.
+  Edit is on and writes once, on Done or on the row closing; per-field commits cost a round trip *each*.
+  `update` rewrites the row from its payload, so a partial one blanks a cell — `parent_id` above all —
+  and nothing is sent when the ROW it would write is unchanged.
+- **AN UNDISPATCHED WRITE IS FOLDED INTO THE ONE BEHIND IT, AND A DISPATCHED ONE NEVER IS.** The queue
+  holds plans as DATA so they can be inspected; `foldWrite` merges only the TAIL, so a fold can never
+  reorder anything already sent. It never crosses an op boundary — `update`+`delete` is refused, which is
+  the resurrection defect arriving by another route — and cross-row folding is gated on `supports`.
+  **Only the newest caller of a folded job is handed a board**; the others get `null` and cannot accept,
+  which is what preserves last-write-wins. On failure the callers settle newest-first so the OLDEST
+  rollback lands last, that being the only snapshot predating the whole batch. A batch is atomic on
+  resolution: one row deleted by hand mid-burst fails all of it, and the screen returns to exactly the
+  pre-batch board rather than to a half-applied one nothing can describe.
+- **`api.js`'s write timeout must exceed `Code.gs`'s `LOCK_WAIT_MS`.** Below it, a contended write is
+  abandoned by the client and then committed by the script: the row rolls back, a failure toast goes up
+  for an edit that landed, and `busy` — the one code that proves nothing was written — is unreachable.
+  `test/api.test.js` reads the constant out of `Code.gs` so the two cannot drift.
+- **`refresh` must re-check for an overlapping write AFTER its await, not only before.** A read takes
+  seconds, so a tick landing inside one is a write whose board the read predates; accepting it un-ticks
+  the row until the write's own reply puts it back. `pending` cannot see a write that both started and
+  finished inside the window, which is what the `issued` counter is for.
 - **`done` MUST DISARM THE UNMOUNT FLUSH, AND SO MUST THE DELETE.** Saving a new date re-sorts the
   plan, so the row moves to another month `<section>` and React deletes the subtree rather than moving
   it — running a cleanup whose closure still holds the pre-save task and the whole draft, which sends

@@ -1,7 +1,7 @@
 /**
  * The board: tasks, config, and every mutation.
  *
- * Three things here are load-bearing.
+ * Four things here are load-bearing.
  *
  * IT PAINTS FROM THE SNAPSHOT BEFORE IT ASKS THE NETWORK ANYTHING. A read is a
  * round trip to an Apps Script web app — well over a second even warm — so a
@@ -12,6 +12,12 @@
  * also how one device picks up the other's changes without a second request. A
  * failure rolls back to the snapshot of state taken before the edit — not to a
  * hand-computed inverse, which is where this kind of code usually goes wrong.
+ *
+ * A WRITE COSTS ONE ROUND TRIP AND NOTHING HERE CAN MAKE THAT TRIP CHEAPER. Measured:
+ * the request is ~280 bytes, a 52-row reply is ~1KB gzipped, and parsing it takes
+ * 0.015ms — so the whole ~3s is Google's, and the only lever left is how MANY trips a
+ * burst of edits costs. `createWriteQueue` is that lever: adjacent writes are folded
+ * into one request while the previous one is still in flight.
  *
  * REFRESH ON FOCUS IS THROTTLED. Two people and any number of planners share one
  * sheet with no push channel, so the board re-reads when the app comes forward.
@@ -49,11 +55,212 @@ export function missingColumnsFor(schema) {
   return TASK_COLUMNS.filter((column) => !schema.includes(column))
 }
 
+/**
+ * Whether the DEPLOYED script can dispatch an op. Its columns cannot answer this — a script can
+ * hold every column and still have no idea how to batch — so every reply reports `ops` too.
+ *
+ * IT FALLS THE OPPOSITE WAY TO `missingColumnsFor`, AND THAT IS THE POINT. An unknown SCHEMA must
+ * not refuse a write, or every cold start refuses itself before the first read lands; an unknown
+ * OP must not be SENT, or that same first write goes out as something the script answers `bad_op`
+ * to. So `null` is `[]` is false: not knowing and not having are one answer here, because both mean
+ * "use the shape every deployment understands". Being wrong in the other direction is the whole
+ * defect — a fold that fails, or a capability nobody ever uses.
+ *
+ * @param {string[]|null} ops what the last reply advertised. `null` is a deployment that reports
+ *   none, and also the state before anything has been read.
+ */
+export function supports(ops, op) {
+  return Array.isArray(ops) && ops.includes(op)
+}
+
 export function newId() {
   // Available in every browser this app targets; the fallback exists only so the
   // module can be imported under vitest's `node` environment without a DOM.
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
   return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
+}
+
+/**
+ * A pending write, as DATA rather than as a closure, which is the whole reason folding is
+ * possible: a `() => api.updateTask(task, key)` in a queue is opaque, and two of them cannot be
+ * recognised as the same row written twice.
+ *
+ * `create` always carries a LIST, so one row and forty are the same plan and a fold does not
+ * change its shape. It still goes out as `create` when there is one of them — `createMany` exists
+ * to make a fold possible, not to pad the ordinary case.
+ */
+const REQUESTS = {
+  create: (plan) => (key) =>
+    plan.tasks.length === 1
+      ? api.createTask(plan.tasks[0], key)
+      : api.createTasks(plan.tasks, key),
+  update: (plan) => (key) => api.updateTask(plan.task, key),
+  updateMany: (plan) => (key) => api.updateTasks(plan.tasks, key),
+  delete: (plan) => (key) => api.deleteTask(plan.id, key),
+  restore: (plan) => (key) => api.restoreTask(plan.id, key),
+  setConfig: (plan) => (key) => api.writeConfig(plan.config, key),
+  compact: () => (key) => api.compact(key),
+}
+
+/**
+ * Two ADJACENT writes as one request, or null when they must stay two.
+ *
+ * ADJACENCY IS THE ENTIRE SAFETY ARGUMENT. Only the write at the TAIL of the queue is ever offered
+ * here, and a write that has been dispatched has already left the queue — so a fold can never move
+ * an operation past another one touching the same row, and it can never touch a request already in
+ * flight. Everything it does merge is either the same row written twice, where the later payload
+ * IS the outcome of both because `update` rewrites the whole row from it, or rows batched into one
+ * op that writes them in list order.
+ *
+ * WHAT IT DELIBERATELY REFUSES: anything across ops. `update` then `delete` on one row is the
+ * resurrection defect `TaskDetail`'s unmount flush already cost once — folding it would either
+ * write an empty `deleted_at` over the tombstone or drop an edit somebody watched land. `delete`
+ * then `restore` must stay two writes for the same reason.
+ *
+ * @param {object} queued the tail of the queue, undispatched
+ * @param {object} incoming
+ * @param {(op: string) => boolean} [can] whether the DEPLOYED script can dispatch an op. A batch is
+ *   only ever built where it will land: `supports` answers false until a reply says otherwise, so a
+ *   pinned deployment gets one request per edit rather than a `bad_op` for all of them.
+ * @returns {object|null} the plan that replaces `queued`, or null to leave it alone
+ */
+export function foldWrite(queued, incoming, can = () => false) {
+  if (!queued || !incoming) return null
+
+  // The same row written twice: a tick undone, or a tick on a row whose edit has not gone yet.
+  // First, and needing no capability — the later payload IS both writes, so this stays an `update`.
+  if (queued.op === 'update' && incoming.op === 'update' && queued.task.id === incoming.task.id) {
+    return incoming
+  }
+
+  /**
+   * DIFFERENT ROWS, WHICH IS THE FOLD THIS APP MOST WANTS. Ticking three subtasks in a row is the
+   * highest-frequency gesture there is and each one was its own ~3s round trip.
+   *
+   * The batch is all-or-nothing on the script's side — it resolves every id before writing any of
+   * them — so one row somebody has deleted by hand fails the whole batch rather than half of it.
+   * That is the trade, and it is the right way round: every caller rolls back to what it captured
+   * and the oldest snapshot lands last, so the screen returns to exactly the pre-batch board. A
+   * partial success would leave nothing able to say which half had landed.
+   */
+  if (queued.op === 'update' && incoming.op === 'update') {
+    if (!can('updateMany')) return null
+    return { op: 'updateMany', tasks: [queued.task, incoming.task] }
+  }
+
+  if (queued.op === 'updateMany' && incoming.op === 'update') {
+    if (!can('updateMany')) return null
+    const tasks = queued.tasks.slice()
+    const at = tasks.findIndex((task) => task.id === incoming.task.id)
+    // LAST WRITER WINS PER ROW, in place. A row edited twice inside one batch must appear once —
+    // sending both payloads would make the outcome depend on which the script wrote second.
+    if (at < 0) tasks.push(incoming.task)
+    else tasks[at] = incoming.task
+    return { op: 'updateMany', tasks }
+  }
+
+  if (queued.op === 'create' && incoming.op === 'create') {
+    return { op: 'create', tasks: [...queued.tasks, ...incoming.tasks] }
+  }
+
+  /**
+   * A row created and then edited before its create was sent — ticking a subtask typed a second
+   * ago. Created with the final values, which is what two sequential writes would have left.
+   */
+  if (queued.op === 'create' && incoming.op === 'update') {
+    const at = queued.tasks.findIndex((task) => task.id === incoming.task.id)
+    if (at < 0) return null
+    const tasks = queued.tasks.slice()
+    tasks[at] = incoming.task
+    return { op: 'create', tasks }
+  }
+
+  return null
+}
+
+/**
+ * One request at a time, adjacent writes folded, and every caller told what happened.
+ *
+ * A PLAIN OBJECT RATHER THAN A PROMISE CHAIN IN A REF, because the two rules it holds are the ones
+ * a source check cannot verify: that a request is never dispatched while another is out, and that a
+ * reply which is no longer the latest may not reach the board. Both are invisible on screen — an
+ * out-of-order reply looks like a row briefly un-ticking itself — so both have to be callable.
+ * `test/board.test.js` drives this directly.
+ *
+ * ONLY THE NEWEST CALLER OF A JOB IS HANDED THE BOARD. Every other caller's payload was subsumed
+ * by the fold, so accepting on its behalf is the same clobber as accepting a stale reply. Callers
+ * are settled newest first for the mirror reason: on a failure each one restores the tasks it
+ * captured, and the OLDEST snapshot is the only one that predates the whole batch, so it has to
+ * land last.
+ *
+ * @param {(plan: object) => Promise<object>} send
+ * @param {(op: string) => boolean} [can] passed straight to `foldWrite`, and read at PUSH time
+ *   rather than captured: the queue is built once, and what the deployment can dispatch is not
+ *   known until a reply says so.
+ */
+export function createWriteQueue(send, can) {
+  /** Undispatched jobs. `shift` before dispatch is what makes an in-flight job unfoldable. */
+  const jobs = []
+  let waiting = 0
+  let issued = 0
+  let running = false
+
+  async function pump() {
+    if (running) return
+    running = true
+    try {
+      while (jobs.length) {
+        const job = jobs.shift()
+        let board = null
+        let failure = null
+        try {
+          board = await send(job.plan)
+        } catch (error) {
+          failure = error
+        }
+        // Every caller of this job stops waiting BEFORE any of them is settled, so the one holding
+        // the board sees a truthful `pending` and does not race its own siblings to accept.
+        waiting -= job.settle.length
+        for (let i = job.settle.length - 1; i >= 0; i -= 1) {
+          if (failure) job.settle[i].reject(failure)
+          else job.settle[i].resolve(i === job.settle.length - 1 ? board : null)
+        }
+      }
+    } finally {
+      running = false
+    }
+  }
+
+  return {
+    /** Callers still waiting. Non-zero means a write is queued or in flight. */
+    get pending() {
+      return waiting
+    },
+    /** Every write ever queued. A read that saw this change overlapped one — see `refresh`. */
+    get issued() {
+      return issued
+    },
+    /**
+     * @returns {Promise<object|null>} the fresh board for the caller entitled to it, null for one
+     *   whose write was folded into another's, and a rejection carrying the failure for everybody
+     *   when the request fails.
+     */
+    push(plan) {
+      return new Promise((resolve, reject) => {
+        waiting += 1
+        issued += 1
+        const tail = jobs[jobs.length - 1]
+        const folded = tail ? foldWrite(tail.plan, plan, can) : null
+        if (folded) {
+          tail.plan = folded
+          tail.settle.push({ resolve, reject })
+        } else {
+          jobs.push({ plan, settle: [{ resolve, reject }] })
+        }
+        pump()
+      })
+    },
+  }
 }
 
 /**
@@ -83,24 +290,32 @@ export function useBoard({ editKey, onUnauthorized }) {
 
   const lastRead = useRef(0)
   const reading = useRef(false)
-  /**
-   * Writes, and the two refs that keep them from fighting each other.
-   *
-   * `chain` serialises them: each call waits for the previous one, so the order they were made
-   * in is the order the script's lock sees and the order the replies come back in. Fired
-   * concurrently they would contend on that lock anyway — the queue costs nothing and buys
-   * ordering.
-   *
-   * `writes` counts what is still outstanding, and it is what decides whether a reply may
-   * replace the board. See `run`.
-   */
-  const chain = useRef(Promise.resolve())
-  const writes = useRef(0)
   // Read inside callbacks that must not be re-created when the key changes.
   const keyRef = useRef(editKey)
   keyRef.current = editKey
   const unauthorizedRef = useRef(onUnauthorized)
   unauthorizedRef.current = onUnauthorized
+  /**
+   * The ops the last reply advertised. A REF RATHER THAN STATE because nothing renders from it —
+   * it decides the SHAPE of the next request, and only the queue asks. `null` until a reply lands,
+   * which `supports` reads as "send the shape every deployment understands".
+   */
+  const opsRef = useRef(null)
+  /**
+   * Every write, in order, with adjacent ones folded into a single request.
+   *
+   * The key and the capability are both read at DISPATCH and PUSH rather than when the queue is
+   * built, so a key that arrives while something is waiting is the one that goes out, and a fold is
+   * only built once a reply has said the script can dispatch it. Built lazily and once: a queue
+   * rebuilt on a render would drop whatever was still in it.
+   */
+  const queue = useRef(null)
+  if (!queue.current) {
+    queue.current = createWriteQueue(
+      (plan) => REQUESTS[plan.op](plan)(keyRef.current),
+      (op) => supports(opsRef.current, op),
+    )
+  }
 
   const config = useMemo(() => mergeConfig(sheetConfig), [sheetConfig])
 
@@ -109,6 +324,8 @@ export function useBoard({ editKey, onUnauthorized }) {
     setSheetConfig(board.config)
     setSheetTimeZone(board.sheetTimeZone)
     setSchema(board.schema)
+    // Not state: it shapes the NEXT request rather than anything on screen. See `opsRef`.
+    opsRef.current = board.ops
     setStatus(STATUS.READY)
     setError(null)
     setStale(false)
@@ -124,13 +341,21 @@ export function useBoard({ editKey, onUnauthorized }) {
     // write reached the sheet, so accepting it would wipe the optimistic edit off the screen —
     // the same clobber `run` guards against, arriving from the other direction. The write's own
     // reply carries a fresh board anyway, so nothing is lost by skipping.
-    if (writes.current > 0) return
+    if (queue.current.pending > 0) return
     const at = Date.now()
     if (!force && at - lastRead.current < REFRESH_FLOOR_MS) return
     reading.current = true
     lastRead.current = at
+    // AND THE CHECK HAS TO BE MADE AGAIN AFTER THE AWAIT. A read takes seconds, so a tick landing
+    // during one is a write this board predates — accepted, it un-ticks the row on screen until the
+    // write's own reply puts it back, which reads as the app losing the tap and then finding it.
+    // `issued` catches a write that both started AND finished inside the window, which `pending`
+    // cannot see. The throttle slot is spent either way; the write's reply is the fresher board.
+    const before = queue.current.issued
     try {
-      accept(await api.readBoard())
+      const board = await api.readBoard()
+      if (queue.current.pending > 0 || queue.current.issued !== before) return
+      accept(board)
     } catch (failure) {
       const code = failure?.code ?? API_ERROR.TRANSIENT
       setError(code)
@@ -162,8 +387,8 @@ export function useBoard({ editKey, onUnauthorized }) {
   /**
    * Every mutation goes through here, and there is exactly one of these on purpose.
    *
-   * Bump `saving`, call, accept the fresh board, classify the failure, flag a rejected key,
-   * decrement `saving`: written out once per mutation, one copy will eventually forget the
+   * Bump `saving`, queue the write, accept the fresh board, classify the failure, flag a rejected
+   * key, decrement `saving`: written out once per mutation, one copy will eventually forget the
    * `unauthorized` callback and a rotated key will leave the app still showing edit controls.
    * One copy cannot drift from itself.
    *
@@ -177,15 +402,16 @@ export function useBoard({ editKey, onUnauthorized }) {
    * burst of edits survivable. Every reply carries the WHOLE board as it stood when that write
    * committed, so an earlier one's reply describes a sheet that does not yet contain the later
    * edits — and accepting it wipes them off the screen, so three subtasks ticked in a row read
-   * 3 of 3, then 2 of 3, then 3 again. Dropping the intermediate boards is safe because `chain`
-   * guarantees the last reply is the one composed after every earlier write had been applied.
+   * 3 of 3, then 2 of 3, then 3 again. The queue is what makes dropping the intermediate boards
+   * safe: it dispatches one request at a time, so the last reply is the one composed after every
+   * earlier write had been applied, and it hands a board only to the caller still entitled to one.
    *
-   * @param {(key: string) => Promise<object>} call
+   * @param {object} plan the write, as data — see `REQUESTS` and `foldWrite`
    * @param {(tasks: object[]) => object[]} [optimistic]
    * @returns {Promise<boolean>} whether it landed
    */
   const run = useCallback(
-    async (call, optimistic) => {
+    async (plan, optimistic) => {
       let rollback = null
       if (optimistic) {
         setTasks((previous) => {
@@ -193,15 +419,10 @@ export function useBoard({ editKey, onUnauthorized }) {
           return optimistic(previous)
         })
       }
-      writes.current += 1
       setSaving((count) => count + 1)
-      // Queued behind whatever is already going, and the chain swallows failures so one
-      // rejected write cannot break the queue for everything after it.
-      const mine = chain.current.then(() => call(keyRef.current))
-      chain.current = mine.catch(() => {})
       try {
-        const board = await mine
-        if (writes.current === 1) accept(board)
+        const board = await queue.current.push(plan)
+        if (board && queue.current.pending === 0) accept(board)
         return true
       } catch (failure) {
         if (rollback) setTasks(rollback)
@@ -210,7 +431,6 @@ export function useBoard({ editKey, onUnauthorized }) {
         if (code === API_ERROR.UNAUTHORIZED) unauthorizedRef.current?.()
         return false
       } finally {
-        writes.current -= 1
         setSaving((count) => count - 1)
       }
     },
@@ -258,7 +478,7 @@ export function useBoard({ editKey, onUnauthorized }) {
       if (refused) return refused
       const task = { ...draft, id: draft.id || newId(), pending: true }
       return run(
-        (key) => api.createTask(task, key),
+        { op: 'create', tasks: [task] },
         (previous) => [...previous, task],
       )
     },
@@ -273,7 +493,7 @@ export function useBoard({ editKey, onUnauthorized }) {
       const refused = refuseIfOutdated()
       if (refused) return refused
       return run(
-        (key) => api.updateTask(task, key),
+        { op: 'update', task },
         (previous) => previous.map((row) => (row.id === task.id ? { ...task, pending: true } : row)),
       )
     },
@@ -284,6 +504,10 @@ export function useBoard({ editKey, onUnauthorized }) {
    * A subtask is a task with a parent and no date. It goes through the same `run` as
    * everything else — a second write path would be another hand-written try/catch, which is
    * exactly what `run` exists to prevent.
+   *
+   * ENTERING FIVE IN A ROW IS THE DESIGNED-FOR GESTURE, and each one is a ~3s round trip, so the
+   * second onwards are typed while the first is still out. The queue folds them into one
+   * `createMany`, which is why five costs two requests rather than five.
    */
   const addSubtask = useCallback(
     (parent, title) => {
@@ -300,7 +524,7 @@ export function useBoard({ editKey, onUnauthorized }) {
         pending: true,
       }
       return run(
-        (key) => api.createTask(subtask, key),
+        { op: 'create', tasks: [subtask] },
         (previous) => [...previous, subtask],
       )
     },
@@ -334,13 +558,12 @@ export function useBoard({ editKey, onUnauthorized }) {
    */
   const removeTask = useCallback(
     (id) =>
-      refuseIfOutdated() ??
-      run((key) => api.deleteTask(id, key), stamp(id, new Date().toISOString())),
+      refuseIfOutdated() ?? run({ op: 'delete', id }, stamp(id, new Date().toISOString())),
     [run, refuseIfOutdated],
   )
 
   const restoreTask = useCallback(
-    (id) => refuseIfOutdated() ?? run((key) => api.restoreTask(id, key), stamp(id, '')),
+    (id) => refuseIfOutdated() ?? run({ op: 'restore', id }, stamp(id, '')),
     [run, refuseIfOutdated],
   )
 
@@ -358,18 +581,25 @@ export function useBoard({ editKey, onUnauthorized }) {
       if (refuseIfOutdated()) return 0
       const drafts = materialize(template, weddingDay, { locale, newId })
       if (!drafts.length) return 0
-      return (await run((key) => api.createTasks(drafts, key))) ? drafts.length : 0
+      return (await run({ op: 'create', tasks: drafts })) ? drafts.length : 0
     },
     [run, refuseIfOutdated],
   )
 
+  /**
+   * NOT OPTIMISTIC, AND THE ONE MUTATION THE SHEET STILL WAITS FOR. Giving it an optimistic half
+   * is cheap and would be wrong: the settings sheet is where somebody changes the zone and the
+   * wedding date, and drawing a new countdown that then reverts is a worse three seconds than a
+   * spinner on the button. It writes key/value pairs on the other tab, so nothing is queued behind
+   * a task write for long either.
+   */
   const saveConfig = useCallback(
-    (partial) => run((key) => api.writeConfig(serializeConfig(partial), key)),
+    (partial) => run({ op: 'setConfig', config: serializeConfig(partial) }),
     [run],
   )
 
   const compact = useCallback(
-    () => refuseIfOutdated() ?? run((key) => api.compact(key)),
+    () => refuseIfOutdated() ?? run({ op: 'compact' }),
     [run, refuseIfOutdated],
   )
 
