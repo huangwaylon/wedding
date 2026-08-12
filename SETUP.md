@@ -195,12 +195,12 @@ changes **nothing** on the live board. Every time `apps-script/Code.gs` changes 
 
 The URL does not change, so nobody's link breaks.
 
-The app notices when you have not done this. Every read carries the deployed script's column
-list, and a script older than the bundle sends none — that absence is the signal. A board on
-the older script shows *"The spreadsheet's script is out of date"*, offers no add-subtask
-field, and refuses to add or tick a subtask: the old script rewrites a row from the columns
-it knows, so it would answer `ok: true`, save the row, and drop the `parent_id` that makes
-it a subtask. Everything else keeps working normally.
+The app notices when you have not done this, and it stops rather than guessing. Every read carries
+the deployed script's column list; if anything the app writes is missing from it, the board shows
+*"Saving is paused: the spreadsheet's script is out of date"* and refuses every save — including
+ticking something off. That is deliberate: an older script rewrites a row from the columns IT knows,
+so it answers `ok: true`, saves the row, and silently drops the fields it has never heard of.
+Reading still works, so nobody is locked out and nothing is lost while you redeploy.
 
 ## Rotating the edit key
 

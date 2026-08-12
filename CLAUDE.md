@@ -126,14 +126,21 @@ the key; a query string reaches Google's logs.
 - **The POST is `text/plain`, and its method is never forced through the 302 that `/exec` returns**;
   `api.js` explains why, and why there is no `doOptions`.
 - **A Sheets service call is the unit of cost; arithmetic between them is free.** Each op takes ONE
-  read of the grid through `openTasks`, which folds in the header self-heal; the reply then reads it
+  read of the grid through `openTasks`, which folds in the layout repair; the reply then reads it
   again, deliberately, since that read-back is what the client is shown. `stampDeleted` writes two
   whole columns so a cascade costs what one row does, and the LOCK is what makes rewriting untouched
-  cells safe — the values came from a read taken inside it.
-- **Every read reports `schema: TASK_COLUMNS`, and ABSENCE is the out-of-date signal.** An older
-  script sends none, so `[]` means "cannot store the newest column" and `null` means "nothing read
-  yet". `addSubtask` and a SUBTASK `editTask` then refuse outright and the add field is withheld,
-  rather than let the old script answer `ok` and drop the column. A top-level write is unaffected.
+  cells safe — the values came from a read taken inside it. **Ask by NAME, not by counting rows**:
+  `ensureStructure` returns on two `getSheetByName` lookups rather than spending a `getSheets()` on
+  every write, and `readConfig`/`setConfig` use `getDataRange` instead of `getLastRow` plus a sized
+  read. An update is four calls on the tasks grid; `scripts/stub-endpoint.mjs` prints the count.
+- **Every read reports `schema: TASK_COLUMNS`, and the client compares the WHOLE list** —
+  `missingColumnsFor` in `useBoard`, which every write that touches a row goes through. `null`
+  means "nothing read yet" and never flags; `[]` is a script that sends no schema at all.
+  **Checking only the LAST column is the bug that shipped**: it is sound while the list only
+  grows, and `due` replacing `end` left an un-redeployed script holding every other column
+  including the last, so every write was allowed and dropped its date. `rowToTask` falls back to
+  `end` so such a board still READS — without it the whole plan looked undated — and nothing
+  writes `end`. `scripts/stub-endpoint.mjs --legacy` reproduces the whole failure.
 
 ### Client state
 
@@ -146,15 +153,21 @@ the key; a query string reaches Google's logs.
   is ~3s and those mutations are optimistic, so waiting buys nothing — but with the panel gone, a
   rolled-back row is invisible unless said out loud. Settings still waits: `saveConfig` has no
   optimistic half, so closing early would show a stale zone and countdown for three seconds.
-- **Editing commits per FIELD, on blur, and every commit sends the WHOLE task.** `update` rewrites
-  the row from its payload, so a partial one blanks a cell — `parent_id` above all. Nothing is sent
-  when the value did not change, compared as the ROW each would write, so a trailing space
-  `taskToRow` trims costs no round trip.
-- **A focused field is the only evidence that unsaved text exists**, which is why `TaskEditor` and
-  the add-a-subtask field both report focus up to `App` as `typing`: it holds off a service-worker
-  reload (there is no open sheet to infer it from any more) and moves the fixed FAB out from over
-  the field. **Which rows are open is session state, never `localStorage`** — relaunching into
-  twelve expanded rows is a board nobody can read.
+- **ONE WRITE PER EDIT SESSION, and the whole task goes in it.** `TaskDetail` buffers a draft while
+  Edit is on and writes once, on Done or on the row closing; per-field commits on blur cost a ~3s
+  round trip *each*. `update` rewrites the row from its payload, so a partial one blanks a cell —
+  `parent_id` above all — and nothing is sent when the ROW each would write is unchanged.
+- **`done` MUST DISARM THE UNMOUNT FLUSH.** A new date re-sorts the plan, so the row moves to
+  another month `<section>` and React deletes the subtree rather than moving it — running a cleanup
+  whose closure still held the pre-save task and the whole draft, which sent the identical write
+  twice. `scripts/drive.mjs` counts the POSTs.
+- **An open edit SESSION is the evidence that unsaved text exists**, and it reports up to `App` as
+  `typing` for the whole of itself — a per-field focus report drops that guard on every blur
+  between two fields, which is exactly when the buffer is full and nothing has been sent. It holds
+  off a service-worker reload and moves the fixed FAB out of the way. The add-a-subtask field
+  still reports per-field, because it is outside any session.
+- **Which rows are open is session state, never `localStorage`** — relaunching into twelve expanded
+  rows is a board nobody can read.
 - **ONE SCREEN, ONE SCROLLER, NO TAB BAR.** The photograph is the header. A two-tab bar cost 56px
   plus its safe-area inset of permanent chrome to hold one card and a photograph, and it forced the
   standing notices onto both tabs — the out-of-date-script warning is the reason a control is

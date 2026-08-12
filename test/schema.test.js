@@ -41,9 +41,10 @@ describe('the Code.gs column contract', () => {
     expect(source).toMatch(/\/\^\[=\+\\-@\]\/\.test/)
   })
 
-  it('keeps parent_id last, which is what the outdated-script guard reads', () => {
-    // `useBoard` takes the FINAL entry as the column a deployment must understand before a
-    // subtask can be stored. Moving it would silently point that guard at something else.
+  it('keeps parent_id last, because appending is the only safe change', () => {
+    // Appending cannot shift an existing column's index, so it is the only edit an older
+    // deployment survives. The guard in `useBoard` no longer reads the last entry ALONE —
+    // see `missingColumnsFor` in test/board.test.js for what that cost.
     expect(TASK_COLUMNS[TASK_COLUMNS.length - 1]).toBe('parent_id')
   })
 
@@ -78,6 +79,20 @@ describe('rowToTask', () => {
       deletedAt: '',
       parentId: '',
     })
+  })
+
+  it('falls back to `end` so a pre-rename deployment still READS', () => {
+    // A script that predates this column list sends no `due` at all, and without this every task
+    // on the board read as undated — the whole plan looked empty rather than out of date. The old
+    // closing end of the window is what "due by" meant, and its clock half is sliced off.
+    expect(rowToTask({ id: 'a', title: 'x', end: '2027-02-01T23:59' }).due).toBe('2027-02-01')
+    expect(rowToTask({ id: 'a', title: 'x', end: '2027-02-01' }).due).toBe('2027-02-01')
+  })
+
+  it('prefers `due` whenever the deployment sends one', () => {
+    // Both present is what a relaid-out sheet looks like from a script mid-redeploy.
+    const task = rowToTask({ id: 'a', title: 'x', due: '2027-03-09', end: '2027-02-01T23:59' })
+    expect(task.due).toBe('2027-03-09')
   })
 
   it('never yields the string "undefined" for a missing cell', () => {
