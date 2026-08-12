@@ -48,26 +48,34 @@ var TASK_COLUMNS = [
   'id',
   'title',
   'category',
-  'start',
-  'end',
-  'all_day',
+  // The day it is due, 'YYYY-MM-DD'. No time, no start, no all-day flag: a task is a
+  // title, a day and a tick.
+  'due',
   'done_at',
-  'notes',
-  'owner',
   'created_at',
   'updated_at',
+  // `parent_id` stays LAST. The client reads the final entry as the column a deployment
+  // must understand before a subtask may be written, and appending is the only change
+  // that cannot shift an existing index. Deliberately not in TEXT_COLUMNS — it is an id,
+  // and an id never starts with =, +, - or @.
   'deleted_at',
-  // Appended LAST and it must stay last: appending is the only change that cannot shift an
-  // existing column's index. Deliberately not in TEXT_COLUMNS — it is an id, and an id never
-  // starts with =, +, - or @.
   'parent_id',
 ]
+
+/**
+ * The layout this script REPLACED, in its own order, for the one-time relayout in
+ * `relayout()`. A board built before dates lost their clock times has these thirteen
+ * columns, and its rows are read by NAME rather than by position so nothing lands in the
+ * wrong cell. `end` is the old due date — a wall-clock string whose time half the client
+ * slices off — and `start`, `all_day`, `notes` and `owner` have no successor.
+ */
+var LEGACY_DUE_COLUMN = 'end'
 
 var TASKS_SHEET = 'tasks'
 var CONFIG_SHEET = 'config'
 
 /** Free-text columns, which are the ones a formula could hide in. */
-var TEXT_COLUMNS = { title: 1, category: 1, notes: 1, owner: 1 }
+var TEXT_COLUMNS = { title: 1, category: 1 }
 
 /**
  * A template seed posts ~40 tasks at once, so this cannot be as tight as a
@@ -201,18 +209,20 @@ function apply(book, timeZone, op, payload) {
 }
 
 /**
- * The tasks tab and its whole grid, read ONCE, with the header repaired from what was read.
+ * The tasks tab and its whole grid, read ONCE, with the layout repaired from what was read.
  *
- * One door rather than four call sites, so no op can forget the heal and none can pay for a
- * second read to do it. `healHeader` used to run inside `ensureStructure` with a read of its own,
- * on every single write, to check a row this already has in hand.
+ * One door rather than four call sites, so no op can forget the repair and none can pay for a
+ * second read to do it.
  *
  * @returns {{sheet: Sheet, block: Array[]}}
  */
 function openTasks(book) {
   var sheet = book.getSheetByName(TASKS_SHEET)
   var block = readBlock(sheet)
-  healHeader(sheet, block[0])
+  // Only ever true on the first write to a sheet built by an older version of this script,
+  // or one whose header row somebody edited. Everything after it works from canonical
+  // positions, which is what keeps the ops themselves free of any legacy branch.
+  if (!headerMatches(block[0])) block = relayout(sheet, block)
   return { sheet: sheet, block: block }
 }
 
@@ -224,15 +234,96 @@ function openTasks(book) {
  * call is the unit of cost in Apps Script — the arithmetic in between is free — so the ops share
  * one read and work from the array. The lock is held, so nothing can move underneath it.
  *
- * The header is row 0 of the result, which is also what lets `healHeader` check itself without a
- * read of its own.
+ * `getDataRange` rather than `getLastRow` plus a fixed width: it is ONE service call instead of
+ * two, and it reports the columns that are actually there — which is what lets the header check
+ * above see a wider legacy layout rather than reading the first nine cells of it and concluding
+ * the row is simply wrong.
+ *
+ * The header is row 0 of the result, which is also what lets `headerMatches` check itself
+ * without a read of its own.
  *
  * @returns {Array[]} at least one row (the header)
  */
 function readBlock(sheet) {
-  var last = sheet.getLastRow()
-  var rows = Math.max(1, last)
-  return sheet.getRange(1, 1, rows, TASK_COLUMNS.length).getValues()
+  var block = sheet.getDataRange().getValues()
+  return block.length ? block : [[]]
+}
+
+/** Whether a header row is already this script's layout. */
+function headerMatches(header) {
+  if (!header) return false
+  for (var i = 0; i < TASK_COLUMNS.length; i++) {
+    if (String(header[i]) !== TASK_COLUMNS[i]) return false
+  }
+  return true
+}
+
+/** column name -> index, from the header row a sheet actually has. */
+function columnMap(header) {
+  var at = {}
+  for (var i = 0; i < (header || []).length; i++) {
+    var name = String(header[i] == null ? '' : header[i]).trim()
+    if (name && at[name] === undefined) at[name] = i
+  }
+  return at
+}
+
+/**
+ * Move an existing tab onto the current layout, once, and return the grid as it now stands.
+ *
+ * THIS IS NOT A DATA MIGRATION IN THE USUAL SENSE — it moves cells, not meanings. Reads and
+ * writes address columns by index, so a board whose header says `start, end, all_day, done_at,
+ * notes, owner` in positions 3–8 would have its due dates read as categories the moment this
+ * script's own list changed. Renaming the header alone (which is all the previous version of
+ * this function did, because the list had only ever GROWN) would leave every row's values one to
+ * four columns off. So the values are re-read by NAME and rewritten in the new order.
+ *
+ * `end` is where a legacy row's due date lives: it was the closing end of a window, which is
+ * what "due by" meant, and its clock time is sliced off by the client. Anything with no
+ * successor — `start`, `all_day`, `notes`, `owner` — is dropped, and the columns past the new
+ * width are cleared so the tab a person opens has no unlabelled leftovers in it.
+ *
+ * It runs under the doPost lock, from `openTasks`, so no other request can be reading the grid
+ * half-moved. `doGet` never reaches it: an anonymous read must not cause a write, which is why
+ * `readTasks` resolves its own columns by name instead.
+ */
+function relayout(sheet, block) {
+  var header = block[0] || []
+  var at = columnMap(header)
+  var width = Math.max(header.length, TASK_COLUMNS.length)
+
+  var rows = [TASK_COLUMNS.slice()]
+  for (var r = 1; r < block.length; r++) {
+    var row = []
+    for (var c = 0; c < TASK_COLUMNS.length; c++) {
+      row.push(readLegacyCell(block[r], at, TASK_COLUMNS[c]))
+    }
+    rows.push(row)
+  }
+
+  var range = sheet.getRange(1, 1, rows.length, TASK_COLUMNS.length)
+  range.setNumberFormat('@')
+  range.setValues(rows)
+  sheet.getRange(1, 1, 1, TASK_COLUMNS.length).setFontWeight('bold')
+
+  // Whatever the old layout had past the new width. Cleared rather than left in place: an
+  // orphaned `owner` column under a blank header is exactly the kind of thing somebody deletes
+  // by hand, taking a real column with it if the count ever shifts again.
+  if (width > TASK_COLUMNS.length) {
+    sheet
+      .getRange(1, TASK_COLUMNS.length + 1, Math.max(rows.length, 1), width - TASK_COLUMNS.length)
+      .clearContent()
+  }
+  return rows
+}
+
+/** One cell of a legacy row, by column NAME, with the one alias that has a predecessor. */
+function readLegacyCell(row, at, column) {
+  var index = at[column]
+  if (index === undefined && column === 'due') index = at[LEGACY_DUE_COLUMN]
+  if (index === undefined) return ''
+  var value = row[index]
+  return value == null ? '' : String(value)
 }
 
 /** id -> 1-based row number within a block from `readBlock`, or 0. */
@@ -459,19 +550,33 @@ function board(book, timeZone) {
   }
 }
 
+/**
+ * Every task, resolved by column NAME rather than by position.
+ *
+ * BY NAME BECAUSE THIS PATH MAY NOT WRITE. `doGet` is anonymous, so it cannot call
+ * `relayout` to put a legacy tab straight first — and reading a legacy grid at this script's
+ * own indices would report `start` as the due date and `notes` as `created_at`. Resolving from
+ * the header row costs nothing (the grid is already in hand) and means a board reads correctly
+ * whether or not an editor has written to it since the layout changed.
+ *
+ * `getDataRange` is one service call for the header and the rows together.
+ */
 function readTasks(book, timeZone) {
   var sheet = book.getSheetByName(TASKS_SHEET)
-  var last = sheet.getLastRow()
-  if (last < 2) return []
+  var block = sheet.getDataRange().getValues()
+  if (block.length < 2) return []
 
-  var values = sheet.getRange(2, 1, last - 1, TASK_COLUMNS.length).getValues()
+  var at = columnMap(block[0])
   var tasks = []
-  for (var i = 0; i < values.length; i++) {
+  for (var i = 1; i < block.length; i++) {
     var task = {}
     var empty = true
     for (var c = 0; c < TASK_COLUMNS.length; c++) {
-      var text = readCell(values[i][c], timeZone)
-      task[TASK_COLUMNS[c]] = text
+      var column = TASK_COLUMNS[c]
+      var index = at[column]
+      if (index === undefined && column === 'due') index = at[LEGACY_DUE_COLUMN]
+      var text = index === undefined ? '' : readCell(block[i][index], timeZone)
+      task[column] = text
       if (text) empty = false
     }
     // A blank row is somebody's stray Enter in the Sheets UI, not a task.
@@ -564,29 +669,6 @@ function ensureStructure(book) {
   }
 
   return null
-}
-
-/**
- * Bring an existing tab's header row up to date when the column list grows.
- *
- * This is not migration code and it moves no data: reads and writes already address columns by
- * index, so a board created before a column existed keeps working with a blank cell. What it
- * fixes is the SHEET a person looks at — otherwise the new column has data under an empty
- * header, which is exactly the kind of thing somebody deletes by hand. Idempotent, and it
- * writes only when the row actually differs.
- */
-function healHeader(sheet, header) {
-  if (!sheet || !header) return
-  var width = TASK_COLUMNS.length
-  for (var i = 0; i < width; i++) {
-    if (String(header[i]) !== TASK_COLUMNS[i]) {
-      var range = sheet.getRange(1, 1, 1, width)
-      range.setNumberFormat('@')
-      range.setValues([TASK_COLUMNS])
-      range.setFontWeight('bold')
-      return
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------

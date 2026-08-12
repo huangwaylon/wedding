@@ -29,28 +29,21 @@ export function PlusIcon(props) {
   )
 }
 
-/**
- * A checklist: three rules, each with its own tick. The plan tab's glyph.
- *
- * Ticks rather than bullets, because the tab leads to a board of things to finish — and
- * they read at 22px, where three dots and three rules blur into a paragraph.
- */
-export function ListIcon(props) {
-  return (
-    <svg {...base} {...props}>
-      <path d="m3 6.5 1.75 1.75L8 5" />
-      <path d="m3 13 1.75 1.75L8 11.5" />
-      <path d="m3 19.5 1.75 1.75L8 18" />
-      <path d="M11.5 7h9.5M11.5 13.5h9.5M11.5 20h9.5" />
-    </svg>
-  )
-}
-
 export function GearIcon(props) {
   return (
     <svg {...base} {...props}>
       <circle cx="12" cy="12" r="3.25" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6 1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+    </svg>
+  )
+}
+
+/** The edit toggle. A pencil, which is the one glyph nobody has to be taught. */
+export function PencilIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M4 20h4l10.5-10.5a2.12 2.12 0 0 0-3-3L5 17v3Z" />
+      <path d="M13.5 6.5l4 4" />
     </svg>
   )
 }

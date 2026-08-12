@@ -25,12 +25,14 @@ import { ACCENTS, setAccent, useAccent } from '../lib/theme.js'
 import { isValidTimeZone } from '../lib/time.js'
 import { parsePastedLink } from '../lib/access.js'
 import BottomSheet from './BottomSheet.jsx'
+import { DeletedList } from './Deleted.jsx'
 
 export default function SettingsSheet({
   config,
   canEdit,
   sheetTimeZone,
-  deletedCount,
+  deletedTasks,
+  onRestore,
   onSaveConfig,
   onCompact,
   onEnableEditing,
@@ -44,7 +46,6 @@ export default function SettingsSheet({
     partner1Name: config.partner1Name,
     partner2Name: config.partner2Name,
     weddingDate: config.weddingDate,
-    weddingTime: config.weddingTime,
     venue: config.venue,
     timezone: config.timezone,
     categories: config.categories.join(', '),
@@ -141,33 +142,19 @@ export default function SettingsSheet({
 
           <section className="section">
             <h3 className="section__title">{t('settings.wedding')}</h3>
-            {/* `.field` supplies the 16px; `.field__row` on its own has none, so this pair
-                butted straight into the Venue label below it. */}
-            <div className="field field__row">
-              <div>
-                <label className="label" htmlFor="wdate">
-                  {t('settings.weddingDate')}
-                </label>
-                <input
-                  id="wdate"
-                  type="date"
-                  className="input"
-                  value={draft.weddingDate}
-                  onChange={(event) => set({ weddingDate: event.target.value })}
-                />
-              </div>
-              <div>
-                <label className="label" htmlFor="wtime">
-                  {t('settings.weddingTime')}
-                </label>
-                <input
-                  id="wtime"
-                  type="time"
-                  className="input"
-                  value={draft.weddingTime}
-                  onChange={(event) => set({ weddingTime: event.target.value })}
-                />
-              </div>
+            {/* One date, alone on its row. It used to share the row with a ceremony time,
+                which nothing on the board ever read. */}
+            <div className="field">
+              <label className="label" htmlFor="wdate">
+                {t('settings.weddingDate')}
+              </label>
+              <input
+                id="wdate"
+                type="date"
+                className="input"
+                value={draft.weddingDate}
+                onChange={(event) => set({ weddingDate: event.target.value })}
+              />
             </div>
             <div className="field">
               <label className="label" htmlFor="venue">
@@ -314,10 +301,17 @@ export default function SettingsSheet({
         )}
       </section>
 
-      {canEdit && deletedCount > 0 ? (
+      {/* RECOVERY LIVES HERE, not on the board. A "Deleted (3)" card under the wedding
+          photograph is the wrong tone for the first thing on screen, and the restore list and
+          the purge button are two halves of one job — putting them together is also what makes
+          it obvious that Purge is what empties the list above it. */}
+      {canEdit && deletedTasks.length > 0 ? (
         <section className="section">
           <h3 className="section__title">{t('settings.maintenance')}</h3>
-          <p className="section__hint">{t('settings.compactHint', { count: deletedCount })}</p>
+          <DeletedList tasks={deletedTasks} onRestore={onRestore} />
+          <p className="section__hint">
+            {t('settings.compactHint', { count: deletedTasks.length })}
+          </p>
           <button type="button" className="btn btn--secondary btn--block" onClick={onCompact}>
             {t('settings.compact')}
           </button>

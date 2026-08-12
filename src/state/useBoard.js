@@ -254,7 +254,7 @@ export function useBoard({ editKey, onUnauthorized }) {
   )
 
   /**
-   * A subtask is a task with a parent and no window. It goes through the same `run` as
+   * A subtask is a task with a parent and no date. It goes through the same `run` as
    * everything else — a second write path would be the fifth try/catch `run` exists to prevent.
    */
 
@@ -271,12 +271,8 @@ export function useBoard({ editKey, onUnauthorized }) {
         title,
         parentId: parent.id,
         category: '',
-        start: '',
-        end: '',
-        allDay: false,
+        due: '',
         doneAt: '',
-        notes: '',
-        owner: '',
         deletedAt: '',
         pending: true,
       }

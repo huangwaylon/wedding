@@ -9,3 +9,8 @@ scripts/preview-hero.jpg
 # The camera original behind public/hero.jpg. Only the derived crop is ever served, and
 # a 6MB source in git would be downloaded by every clone forever to serve ~290KB.
 IMG_0509.JPG
+
+# The local board fixture and env override used by scripts/drive.mjs. Both are per-machine,
+# and the fixture must never reach `dist/` — the service worker precaches whatever is there.
+.env.local
+public/__dev-board.json

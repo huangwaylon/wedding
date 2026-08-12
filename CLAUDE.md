@@ -22,6 +22,14 @@ their spreadsheet.
   name a column, and new columns are **appended** so no existing index shifts.
 - **`taskToRow` must always send `parent_id`**: `update` rewrites the whole row from the payload, so
   omitting it blanks the cell and silently promotes a subtask to a task.
+- **A TASK IS A TITLE, A DAY AND A TICK.** No start, no clock time, no all-day flag, no owner, no
+  memo. Adding any of them back is not a feature, it is the elapsed-window progress model coming
+  back with it — see **Progress**.
+- **Columns are resolved by NAME on the read and by POSITION on the write.** `readTasks` builds its
+  index from row 1, which is what lets `doGet` — anonymous, and forbidden from writing — read a
+  board still on the previous thirteen-column layout. `relayout()` moves such a board once, on the
+  first write, under the lock: values by name, old `end` → `due`, columns past the new width
+  cleared. Removing either half breaks a live board silently, in opposite directions.
 - **Cells are formatted as text BEFORE values are written**, or `setValues` parses a timestamp into
   a Date and the sheet's locale decides what comes back. `textCell` also escapes a leading `=`, `+`,
   `-` or `@`, which `setValue` treats as a formula whatever the format says. Everything crossing the
@@ -31,22 +39,42 @@ their spreadsheet.
 
 ### Time
 
-- **`start` and `end` are WALL-CLOCK strings resolved against the board's `timezone`** — never
-  instants, never the device's zone: "the ceremony is at 14:00" must read 14:00 to a planner abroad.
-  Every conversion goes through `src/lib/time.js`, which never writes `new Date('2027-04-18')` (UTC
-  midnight, so the 17th west of Greenwich), samples a DST offset twice and round-trips the answer, and
-  ends an all-day window at 23:59 so a task due Friday is overdue on Saturday morning.
+- **`due` is a CALENDAR DAY resolved against the board's `timezone`** — never an instant, never the
+  device's zone: a task due on the 18th must stop being due on the 19th *at the venue*. Everything
+  goes through `src/lib/time.js`, which never writes `new Date('2027-04-18')` (UTC midnight, so the
+  17th west of Greenwich) and builds every Date from explicit parts.
+- **THE ZONE IS USED FOR EXACTLY ONE THING: what today's date is** (`todayIn`). Everything downstream
+  compares two day strings, so there is no offset sampling, no DST gap solving and no instant cache
+  left in the file. Reintroducing any of that means something has started asking a question about a
+  moment rather than a date, which the model no longer has an answer for.
+- **Overdue is `due < today` on DAY STRINGS.** Never `now >= instantOf(due)`: that is the defect the
+  old model needed a 23:59 sentinel to paper over, and it makes every task overdue at 00:01 on the
+  morning it is due. `test/progress.test.js` pins both sides of the boundary.
+- **`normalizeDay` slices a clock time off, and that is load-bearing rather than lenient.** A board
+  written before dates lost their times holds `2027-04-18T23:59` in every row, and `readCell` hands
+  back exactly that shape for a cell the Sheets UI coerced to a Date. `draftFrom` normalises on the
+  way IN too, or `type=date` renders the value as blank and the first commit clears a date still
+  visible on the row.
 
 ### Progress
 
-- **`percent` and `timePercent` are different claims and must not be merged.** `percent` is what to
-  draw (done → 100, else the tally, else elapsed); `timePercent` is always the clock and rolled up
-  it is the on-schedule reference. An expired unfinished window has `percent` of 1 while emphatically
-  incomplete — hence the counts beside it.
-- **`paceLabel` takes the overdue count AND the signed pace, overdue first**: without subtasks `pace`
-  cannot go negative, since an expired window counts 1 in both sums and cancels.
-- **Every TOP-LEVEL task counts equally in the roll-up**, never by duration or subtask count —
-  decomposing one task more finely must not change what the rest of the board is worth.
+- **AN UNFINISHED TASK IS 0%, WHATEVER THE DATE SAYS.** `percent` is done → 1, else the subtask
+  tally, else 0. This is a deliberate correction: the old model drew elapsed time, so a window that
+  had merely run out read 100%, and a badge, a mark and an overdue count existed on every screen to
+  stop the headline lying. Anything that makes a percentage advance without somebody ticking
+  something brings all of that back.
+- **`percent` and `duePassed` are different claims over the same denominator and must not be
+  merged.** `percent` is work done and is countable; `expected` (the mean of `duePassed`) is the
+  share of dates that have passed. The gap between them is drawn as a fill against a mark.
+- **THERE IS NO PACE VERDICT, and reintroducing one is a regression.** Two tasks late plus two
+  future tasks finished early sum to a pace of exactly zero, so any single figure subtracting the
+  two reports "on schedule" with two things late. The graphic declines to claim it and `overdue`
+  states the fact on its own. `test/progress.test.js` has that case, and asserts `overallProgress`
+  exposes no `pace` at all.
+- **Every TOP-LEVEL task counts equally in the roll-up**, never by subtask count — decomposing one
+  task more finely must not change what the rest of the board is worth.
+- **`SOON_DAYS` is part of the meaning of a state**, not a component's constant: it is what "due
+  soon" is, and it is the boundary past which a row prints no urgency at all.
 
 ### Subtasks
 
@@ -63,18 +91,24 @@ their spreadsheet.
   retitled but not scheduled from the UI; fixing that means teaching the schema layer the
   difference, not widening the component's guard.** It is reachable only by hand-editing
   `parent_id` in the spreadsheet.
-- **Precedence is `done_at` > tally > clock, and nothing is blended** — "3 of 5 = 60%" is checkable
-  by counting; `0.5 × elapsed + 0.5 × tally` is not. No live subtasks falls back to the clock.
+- **Precedence is `done_at` > tally > nothing, and nothing is blended** — "3 of 5 = 60%" is
+  checkable by counting; `0.5 × elapsed + 0.5 × tally` is not. No live subtasks reads 0%.
 - **All subtasks done does NOT make a parent done**, or a task would sit in the done count with an
   empty cell in the sheet and no answer to "when was it finished". Nothing prompts for the tick
   either: a 5/5 parent reads 100% and stays open until a person closes it.
-- **A subtask is a title and a tick, no dates** — `validateTask` returns early for anything with a
-  `parentId`, because two date wheels per item would make entering five unusable on a phone and then
-  no parent's progress would advance. No meter, no badge, and the whole row is the toggle. **The inline
-  editor therefore renders no date fields and no all-day switch for a subtask, and never writes its
-  `start`/`end` cells** — the early return means dates offered there would be saved unvalidated, and
-  it did save an end before a start. **Deleting a parent cascades in the Apps Script**, one lock and
-  one reply; `restore` is its exact inverse.
+- **A subtask is a title and a tick, no date** — `validateTask` returns early for anything with a
+  `parentId`, because a date wheel per item would make entering five unusable on a phone and then no
+  parent's progress would advance. No meter, no urgency label, and the whole row is the toggle.
+  **The inline editor therefore renders no date field for a subtask and never writes its `due`
+  cell** — the early return means a date offered there would be saved unvalidated, and it did once
+  save an end before a start. **Deleting a parent cascades in the Apps Script**, one lock and one
+  reply; `restore` is its exact inverse.
+- **A TASK'S OWN DUE DATE IS OPTIONAL, and `MISSING_DUE` must not come back.** Forcing a date forces
+  a wrong one — during entry the date is exactly what is not known — and an invented date lands
+  straight in the overdue count and in the on-schedule mark. `STATE.NODATE` is reachable, sorts last
+  into its own group, and contributes to neither numerator. For the same reason the create sheet
+  leaves the date BLANK rather than defaulting to today, which would make everything typed in a
+  hurry overdue tomorrow.
 
 ### The endpoint
 
@@ -119,9 +153,23 @@ the key; a query string reaches Google's logs.
 - **A focused field is the only evidence that unsaved text exists**, which is why `TaskEditor` and
   the add-a-subtask field both report focus up to `App` as `typing`: it holds off a service-worker
   reload (there is no open sheet to infer it from any more) and moves the fixed FAB out from over
-  the field. **Which tab is on screen and which cards are open are session state, never
-  `localStorage`** — relaunching into twelve expanded cards is a board nobody can read — and the
-  two tabs share one document scroller, so a switch resets it deliberately.
+  the field. **Which rows are open is session state, never `localStorage`** — relaunching into
+  twelve expanded rows is a board nobody can read.
+- **ONE SCREEN, ONE SCROLLER, NO TAB BAR.** The photograph is the header. A two-tab bar cost 56px
+  plus its safe-area inset of permanent chrome to hold one card and a photograph, and it forced the
+  standing notices onto both tabs — the out-of-date-script warning is the reason a control is
+  missing from a row on the *other* one.
+- **`withProgress` is memoised on TODAY, not on `now`.** The board is day-granular, so nothing it
+  computes can change between midnights; keying it on the clock reallocated every task object sixty
+  times an hour. The clock still ticks, for the hero's countdown.
+- **AN OPEN ROW STARTS READ-ONLY, and `TaskDetail` owns that mode.** Tapping a row is the
+  hundred-times-a-week gesture; the editor commits on blur, so live fields behind that tap put a
+  caret in a title one stray blur away from renaming a task. The Edit toggle also gates every
+  DESTRUCTIVE control — the task's delete and the per-item trash icons — while ticking and adding a
+  subtask stay on the read path. **The mode lives in `TaskDetail` precisely because that component
+  unmounts when the row closes**, which is what resets it with no effect to synchronise; `editing`
+  is a prop for the same reason `expanded` is, so a static render and the harness can see the
+  fields at all.
 - **A rejected key is FLAGGED, not deleted**, or the device drops to view-only in silence. And
   **`canEdit` decides what renders; it is not the security boundary** — the endpoint refuses every
   keyless write, so never add a client check as enforcement or drop the server one.
@@ -140,7 +188,8 @@ the key; a query string reaches Google's logs.
 - **One helper, one home.** `readStored`/`writeStored` are the only `localStorage` touches;
   `schema.js` owns column names, `templates.js` owns `CATEGORIES`, `time.js` is the only file that
   resolves a zone, `run()` the only mutation wrapper, `DoneToggle` the only done control, `Notice` the
-  only title/body/action block, and `TaskFields` the only task field markup — the inline editor and
+  only title/body/action block, `DueLabel` the only place a date's nearness is worded, and
+  `TaskFields` the only task field markup — the inline editor and
   the create sheet render the same controls through it, differing by a `skin` prop and by when they
   commit. **Export only what something outside the file uses.**
 - **No new npm dependencies** without a clear reason — one is also a CSP decision, and
@@ -173,15 +222,15 @@ column. Use the tokens: `var(--transition-fast|base)` collapse to ~0ms under
 — flex plus percentages, no library. Every rule carries its constraint as a comment and
 `test/ui.test.jsx` pins the load-bearing ones: state colour is one table and never the only channel,
 the meter's hairline is `--track-line`, its mark is ink with a surface ring, a row is a `<button>` so
-its children are spans. What reaches beyond CSS:
+its children are spans, and `input[type=date]` has its platform appearance off. What reaches beyond
+CSS:
 
 - **Japanese is a first-class language here.** `letter-spacing: 0`, no `text-transform`, and no
   `line-height` below 1.5 wherever text can be Japanese — which is everywhere but the hero
-  percentage, including the couple's names and a `4月` date chip. A month abbreviation is uppercased
-  in `formatWallChip` with `toLocaleUpperCase`, never in CSS, because `text-transform` is a no-op on
-  kana and would apply to the Latin half alone. **The chip's day does NOT go through `Intl`**: `{ day:
-  'numeric' }` in `ja` returns `18日`, which wraps inside a 36px chip. Nothing below 13px; weights
-  `400|500|600`.
+  percentage, including the couple's names. A month abbreviation is uppercased in `formatDayChip`
+  with `toLocaleUpperCase`, never in CSS, because `text-transform` is a no-op on kana and would apply
+  to the Latin half alone. **A row's day does NOT go through `Intl`**: `{ day: 'numeric' }` in `ja`
+  returns `18日`, which wraps inside the 2rem column. Nothing below 13px; weights `400|500|600`.
 - **Never a form control below 16px** (mobile Safari zooms on focus and will not zoom back), and
   **`--tap-target` (44px), not `--tap-target-sm`, for anything a thumb aims at.**
   **`role="progressbar"`, never `role="meter"`**: ARIA reserves `meter` for a gauge rather than a
@@ -195,19 +244,28 @@ its children are spans. What reaches beyond CSS:
 - **The card accordion is NOT animated.** `height` and `max-height` are layout properties, a mount
   is not a transition, and `max-height` slips past the "never transition width/height" test while
   being exactly the thrash that test forbids. The chevron carries the motion.
-- **The spine is `--track-line`, not `--line`.** Same defect as the meter's hairline: `--line`
-  measures 1.2:1 against the card it is drawn on, so the spine was invisible at 390px and the nodes
-  read as unrelated dots. It is drawn per card and stitched across the group's gap rather than once
-  per group, because one line spanning the group runs behind the month heading.
-- **The tab bar is fixed and must stay reachable-around**: `.views` reserves the bar plus the FAB
-  below its content, once, and the bar is opaque when `backdrop-filter` is unsupported or the list
-  reads straight through it. The selected tab is never colour alone — it also carries a rule on the
-  bar's top edge and `aria-current`.
-- **A subtask is never drawn on a time axis**: no dates means no position and no extent. It is a row
-  in its parent's checklist, and what reaches the parent is a `3/5` tally, never coloured — `5/5` in
+- **`.input[type="date"]` MUST turn the platform appearance off, both spellings, prefixed first.**
+  With it on, Safari sizes the control from its own shadow tree and that intrinsic width is a FLOOR
+  — `width: 100%` is a ceiling it ignores, so the control drew past the right edge of a 252px row on
+  a 320pt phone. Nothing clips it either: `.tcard` has to stay `overflow: visible` or the focus ring
+  is cut. The two shadow selectors beside it put back the metrics that turning it off removes, and
+  narrowing the type is not an option — 16px is the no-zoom floor and is *why* the control is wide.
+- **The month heading is `position: sticky` with an OPAQUE background**, and that background is
+  load-bearing rather than decoration: rows scroll under it. It replaced a vertical spine through a
+  node on every row, which cost 24px of the left edge to imply what the heading now states — and it
+  is what lets a row print a bare day number instead of restating the month forty times. It sticks
+  inside `.plan__group`, which is a flex column, so the next month's heading pushes it out.
+- **The FAB is the only fixed chrome**, and `.views` reserves `--fab-size` below its content, once,
+  so it can never cover the last row. There is no tab bar to compose around any more.
+- **A subtask is never drawn in the sequence of dates**: no date means no position. It is a row in
+  its parent's checklist, and what reaches the parent is a `3/5` tally, never coloured — `5/5` in
   `--good` would claim a `done_at` the sheet does not have. **Colour follows STATE, not category**, or
   one mark carries two palettes, and **no `-webkit-overflow-scrolling: touch` anywhere**: a no-op
-  since iOS 13 that broke `position: sticky` inside the same scroller.
+  since iOS 13 that broke `position: sticky` inside the same scroller — which the month heading now
+  depends on.
+- **THERE IS ONE COLOURED MARK PER ROW and the day column is not it.** The hue lives on the dot
+  beside `DueLabel`'s words; a day column a third of whose entries are red stops being a column, and
+  a state colour on type is the thing the whole state table exists to avoid.
 
 ## Testing
 
@@ -225,6 +283,11 @@ answers `ok: true` while writing the wrong cell.
 - **A passing suite does not mean it looks right.** Screenshot through `scripts/harness.html`'s
   iframes rather than a resized window — an iframe gets an honest viewport, while headless Chrome
   reports a different width and every breakpoint reads wrong; that file documents its own options.
+- **`scripts/drive.mjs` covers what no static render can**, over CDP: the accordion, the read/edit
+  toggle, commit-on-blur, and whether the date control stays inside its row. Its header records the
+  two ways it silently verified NOTHING — headless Chrome fires no focus event unless
+  `Emulation.setFocusEmulationEnabled` is on, and a leftover Chrome on the debugging port makes a
+  second run report the first one's board.
 
 ## Gotchas
 

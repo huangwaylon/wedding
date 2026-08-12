@@ -151,16 +151,39 @@ Open the app as an editor and set, in **Settings**:
 - both names,
 - the **wedding date** — every starter-checklist offset counts back from it, so a checklist
   cannot be seeded without it,
-- the **time zone**, if the wedding is not in `Asia/Tokyo`. Every time on the board is read
-  in this zone, so `14:00` means 14:00 at the venue for everyone looking, wherever they are.
+- the **time zone**, if the wedding is not in `Asia/Tokyo`. Today's date is resolved in this
+  zone, so a task due on the 18th stops being due on the 19th at the venue rather than at
+  midnight wherever the person looking happens to be.
 
 Then pick a starter checklist, or start adding tasks. Both checklists are ordinary tasks once
 seeded, so rename, re-date and delete them freely.
 
-To break a task into a checklist, open it with the pencil and use **Subtasks** at the bottom of
-the form — that is the only way to add the *first* one. After that the task grows a `3 of 5
-subtasks` row in the list you can add to and tick from directly, and its percentage becomes how
-many are ticked rather than how much of its window has passed.
+A task is a title, a **due date** and a tick. The date is optional — leave it off when you do not
+know it yet and the task waits in a **No date** group at the foot of the list, rather than being
+given a date you would then have to remember was invented.
+
+Tapping a task opens it: you get its date in full and its checklist, and nothing is editable until
+you press **Edit**. That is deliberate — opening a task is how you read it and tick things off, and
+there is no Save button once you are editing, so a field that went live on the tap that opened the
+row would be one stray tap from a renamed task.
+
+To break a task into a checklist, open it and use the **Add a subtask** field — no need to press
+Edit for that, or to tick an item. The task then shows a `3/5` tally, and its share of the headline
+percentage becomes how many items are ticked rather than all-or-nothing.
+
+## Moving a board built before the columns changed
+
+Nothing to do, and nothing to back up first: it happens by itself and it happens once.
+
+The `tasks` tab used to carry thirteen columns — `start`, `end`, `all_day`, `notes` and `owner`
+among them. Reads now resolve columns by the NAME in row 1 rather than by position, so an
+untouched board reads correctly for everybody straight away, including planners (an anonymous
+read must never cause a write). The first time either of you saves anything, the script rewrites
+the grid into the new nine-column order under its own lock, carrying each value across by name,
+taking the old `end` as the new `due`, and clearing the leftover columns.
+
+If you would rather see it happen before trusting it: open the sheet, tick anything, and watch
+row 1.
 
 ## Updating the script after a code change
 

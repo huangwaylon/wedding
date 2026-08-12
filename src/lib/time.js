@@ -1,31 +1,30 @@
 /**
- * Wall-clock time, and the one place a zone is resolved.
+ * Calendar days, and the one place a zone is resolved.
  *
- * A task's `start` and `end` are WALL-CLOCK strings — "2027-04-18T14:00", no
- * offset, no Z. They mean that reading of a clock at the wedding, and they are
- * resolved against the board's configured `timezone` (an IANA name like
- * `Asia/Tokyo`). This is deliberate and it is the whole reason this module
- * exists: "the ceremony is at 14:00" has to say 14:00 to a planner working from
- * another country, which a UTC instant rendered in the device's own zone would
- * not. The device's zone is never consulted for a task time.
+ * A task's `due` is a WALL-CLOCK DAY — "2027-04-18", no time, no offset, no Z. It
+ * means that date on a calendar at the wedding, and the only question ever asked of
+ * it is "has it passed, and by how many days" — answered against the board's
+ * configured `timezone` (an IANA name like `Asia/Tokyo`). This is deliberate and it
+ * is the whole reason this module exists: "due on the 18th" has to say the 18th to a
+ * planner working from another country, which a UTC instant rendered in the device's
+ * own zone would not. The device's zone is never consulted for a task's date.
  *
- * Two rules that a "simplification" would break:
+ * Three rules that a "simplification" would break:
  *
- *   Never `new Date('2027-04-18')`. That parses as UTC midnight and renders as
- *   the 17th anywhere west of Greenwich. Every Date here is built from explicit
- *   parts.
+ *   Never `new Date('2027-04-18')`. That parses as UTC midnight and renders as the
+ *   17th anywhere west of Greenwich. Every Date here is built from explicit parts.
  *
- *   To FORMAT a wall-clock string, build the instant as if the parts were UTC and
- *   format with `timeZone: 'UTC'`. Formatting it in the board's zone would apply
- *   the offset a second time.
+ *   To FORMAT a day, build the instant as if the parts were UTC and format with
+ *   `timeZone: 'UTC'`. Formatting it in the board's zone would apply an offset to a
+ *   value that has none.
  *
- * Progress needs real instants, though — "how far through this window are we
- * right now" is a question about the actual moment — so `wallToInstant` does the
- * conversion properly, DST included.
+ *   The zone is needed for exactly ONE thing: deciding what today's date is. Two
+ *   day strings are then compared as arithmetic on their parts, with no instants and
+ *   no DST anywhere near it — which is why this file no longer samples an offset,
+ *   solves for a wall time inside a spring-forward gap, or caches either.
  */
 
-/** The stored shape. Minutes precision: a wedding schedule has no use for seconds. */
-const WALL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/
+/** The stored shape. */
 const DAY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 
 /** Used when the sheet has no `timezone` value and by every default. */
@@ -33,90 +32,18 @@ export const FALLBACK_TIME_ZONE = 'Asia/Tokyo'
 
 const MS_PER_DAY = 86_400_000
 
-const offsetFormatters = new Map()
+const dayFormatters = new Map()
 const displayFormatters = new Map()
 
 /**
  * Zone-name validity, memoised.
  *
- * THIS is the expensive call in this module, not `formatToParts`. `resolveTimeZone` is on
- * the path of `wallToInstant`, `offsetMsAt` and `instantToWall`, which works out to four
- * `new Intl.DateTimeFormat` constructions per `wallToInstant` and ~416 per tick on a
- * fifty-task board. Measured, that constructor is ~17µs and accounted for 96% of the whole
- * per-tick cost — 7.58ms of 7.9ms. Memoising it took the tick to 0.29ms.
- *
- * A plain `Map` rather than a bounded cache: the keys are zone names out of the board
- * config, which is a set of one in practice and could never be attacker-controlled.
+ * `new Intl.DateTimeFormat` is the expensive call in this module — measured at ~17µs —
+ * and `resolveTimeZone` sits on the path of every date question the app asks. A plain
+ * `Map` rather than a bounded cache: the keys are zone names out of the board config,
+ * which is a set of one in practice and could never be attacker-controlled.
  */
 const zoneValidity = new Map()
-
-/**
- * Wall clock -> instant, memoised by reading and zone.
- *
- * `taskProgress` resolves each task's start and end on every tick, but both are pure
- * functions of `(wall, zone)` — the answer cannot change between ticks. This is what takes
- * the per-tick work down to arithmetic on a board of any size.
- */
-const instantCache = new Map()
-
-/** Bounded so a long-lived tab cannot grow these without limit. */
-const CACHE_MAX = 4096
-const MS_PER_HOUR = 3_600_000
-
-/**
- * Zone offsets, cached by zone and hour.
- *
- * Keyed by the HOUR the instant falls in, not the day: DST transitions happen on the hour,
- * so an hour bucket can never straddle one, while a day bucket would return the wrong
- * offset for every lookup on a transition day.
- */
-const offsetCache = new Map()
-
-/** Clear rather than evict: every cache here is a pure function of its key, so dropping
- *  all of it costs one recompute and keeps the hot path free of bookkeeping. */
-function remember(cache, key, value) {
-  if (cache.size >= CACHE_MAX) cache.clear()
-  cache.set(key, value)
-  return value
-}
-
-/**
- * `hour12: false` rather than `hourCycle: 'h23'` for reach, which means some
- * engines report midnight as hour 24 — normalised at both call sites.
- */
-function offsetFormatter(timeZone) {
-  let format = offsetFormatters.get(timeZone)
-  if (!format) {
-    format = new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      hour12: false,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-    offsetFormatters.set(timeZone, format)
-  }
-  return format
-}
-
-function partsIn(instantMs, timeZone) {
-  const found = {}
-  for (const part of offsetFormatter(timeZone).formatToParts(new Date(instantMs))) {
-    found[part.type] = part.value
-  }
-  const hour = Number(found.hour) === 24 ? 0 : Number(found.hour)
-  return {
-    year: Number(found.year),
-    month: Number(found.month),
-    day: Number(found.day),
-    hour,
-    minute: Number(found.minute),
-    second: Number(found.second),
-  }
-}
 
 export function isValidTimeZone(name) {
   if (!name || typeof name !== 'string') return false
@@ -129,11 +56,26 @@ export function isValidTimeZone(name) {
   } catch {
     valid = false
   }
-  return remember(zoneValidity, name, valid)
+  zoneValidity.set(name, valid)
+  return valid
 }
 
 export function resolveTimeZone(name) {
   return isValidTimeZone(name) ? name : FALLBACK_TIME_ZONE
+}
+
+function dayFormatter(timeZone) {
+  let format = dayFormatters.get(timeZone)
+  if (!format) {
+    format = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    dayFormatters.set(timeZone, format)
+  }
+  return format
 }
 
 function daysInMonth(year, month) {
@@ -141,177 +83,94 @@ function daysInMonth(year, month) {
 }
 
 /**
- * Parse and CALENDAR-VALIDATE. "2027-02-31" matches the pattern and is not a
- * date, and a task whose start is nonsense must read as an error rather than
- * silently landing in March.
+ * Parse and CALENDAR-VALIDATE. "2027-02-31" matches the pattern and is not a date,
+ * and a task whose date is nonsense must read as an error rather than silently
+ * landing in March.
  *
- * @returns {{year:number,month:number,day:number,hour:number,minute:number}|null}
+ * @returns {{year:number,month:number,day:number}|null}
  */
-export function parseWall(wall) {
-  const match = WALL_PATTERN.exec(String(wall ?? ''))
+export function parseDay(day) {
+  const match = DAY_PATTERN.exec(String(day ?? ''))
   if (!match) return null
-  const [, y, mo, d, h, mi] = match
-  const year = Number(y)
-  const month = Number(mo)
-  const day = Number(d)
-  const hour = Number(h)
-  const minute = Number(mi)
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const date = Number(match[3])
   if (month < 1 || month > 12) return null
-  if (day < 1 || day > daysInMonth(year, month)) return null
-  if (hour > 23 || minute > 59) return null
-  return { year, month, day, hour, minute }
+  if (date < 1 || date > daysInMonth(year, month)) return null
+  return { year, month, day: date }
 }
 
-export function isValidWall(wall) {
-  return parseWall(wall) !== null
+export function isValidDay(day) {
+  return parseDay(day) !== null
 }
 
 /**
  * Accept what a person or an older row might hold and return the stored shape.
- * A bare "2027-04-18" is a legitimate thing to find in a hand-edited cell; it
- * means midnight that day.
+ *
+ * The `slice(0, 10)` is not cosmetic: a cell somebody hand-edited in the Sheets UI
+ * comes back through `readCell` as "2027-04-18T00:00", and a board written before
+ * dates lost their clock times holds exactly that in every row. Both mean that day.
  */
-export function normalizeWall(text) {
-  const raw = String(text ?? '').trim()
-  if (!raw) return ''
-  if (DAY_PATTERN.test(raw)) return `${raw}T00:00`
-  // Tolerate seconds and a space separator, both of which the Sheets UI produces.
-  const relaxed = raw.replace(' ', 'T').slice(0, 16)
-  return isValidWall(relaxed) ? relaxed : ''
+export function normalizeDay(text) {
+  const raw = String(text ?? '')
+    .trim()
+    .replace(' ', 'T')
+    .slice(0, 10)
+  return isValidDay(raw) ? raw : ''
 }
 
 function pad(number) {
   return String(number).padStart(2, '0')
 }
 
-function formatParts({ year, month, day, hour, minute }) {
-  return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}`
-}
-
-/** The wall-clock day, without its time. */
-export function wallDay(wall) {
-  return String(wall ?? '').slice(0, 10)
-}
-
-export function startOfDay(wall) {
-  return `${wallDay(wall)}T00:00`
-}
-
 /**
- * 23:59, not the next midnight. An all-day task's window has to END inside the
- * day it names, or a task "due Friday" reads as still running on Saturday
- * morning and the UI calls it 99% rather than overdue.
+ * Calendar-day arithmetic on a day string. Zone-free on purpose: adding a day to a
+ * date means the next date on the calendar, which is what a template offset ("90
+ * days before the wedding") means, and it stays true across a DST boundary where
+ * adding 86,400,000ms to an instant would not.
  */
-export function endOfDay(wall) {
-  return `${wallDay(wall)}T23:59`
-}
-
-/**
- * Calendar-day arithmetic on a wall-clock string. Zone-free on purpose: adding a
- * day to a wall clock means the same clock reading tomorrow, which is what a
- * template offset ("90 days before the wedding") means, and it stays true across
- * a DST boundary where adding 86,400,000ms would not.
- */
-export function addDays(wall, days) {
-  const parts = parseWall(normalizeWall(wall))
+export function addDays(day, days) {
+  const parts = parseDay(normalizeDay(day))
   if (!parts) return ''
-  const shifted = new Date(
-    Date.UTC(parts.year, parts.month - 1, parts.day + days, parts.hour, parts.minute),
-  )
-  return formatParts({
-    year: shifted.getUTCFullYear(),
-    month: shifted.getUTCMonth() + 1,
-    day: shifted.getUTCDate(),
-    hour: shifted.getUTCHours(),
-    minute: shifted.getUTCMinutes(),
-  })
+  const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days))
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
 }
 
 /**
- * Wall clock -> the actual instant, in the board's zone.
+ * Whole calendar days from `from` to `to`, signed. Both are day strings, so this is
+ * plain arithmetic on their parts — no instants, no offsets, and no 24-hour blocks
+ * that a DST transition could make 23 or 25.
  *
- * Two offset lookups, not one. The offset has to be sampled at the instant being
- * computed, but that instant is what we are solving for, so: guess with the
- * offset at the naive reading, then re-solve with the offset at the guess. The
- * pair only differ within a DST transition, and one correction settles it.
- *
- * The round-trip check is the non-obvious half. A wall time inside a spring-forward
- * gap does not exist, and for those the second pass lands BEFORE the gap — 02:30 on a
- * US spring-forward day comes back as 01:30, an hour earlier than anybody typed. So
- * the result is verified by converting it back: if it does not reproduce the requested
- * reading, the first pass is used instead, which lands just after the jump. Forward is
- * the right direction for a deadline.
- *
- * An ambiguous fall-back time — one that happens twice — resolves to the first of its
- * two readings, which the round-trip accepts. `Asia/Tokyo`, the default, has no DST at
- * all, so none of this fires there.
- *
- * @returns {number} epoch ms, or NaN when the wall string is unusable
+ * @returns {number|null} null when either day is unusable
  */
-export function wallToInstant(wall, timeZone) {
-  const normalized = normalizeWall(wall)
-  const parts = parseWall(normalized)
-  if (!parts) return NaN
-  const zone = resolveTimeZone(timeZone)
-
-  const key = `${normalized}|${zone}`
-  const hit = instantCache.get(key)
-  if (hit !== undefined) return hit
-
-  const naive = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute)
-  const firstPass = naive - offsetMsAt(naive, zone)
-  const secondPass = naive - offsetMsAt(firstPass, zone)
-  // The round-trip check, and therefore the DST-gap correction, still runs on every miss:
-  // caching the ANSWER does not skip deriving it. The key carries the zone, so a board that
-  // changes zone can never read another zone's result.
-  const resolved = instantToWall(secondPass, zone) === normalized ? secondPass : firstPass
-  return remember(instantCache, key, resolved)
-}
-
-/** How far the zone is ahead of UTC at a given instant, in ms. */
-export function offsetMsAt(instantMs, timeZone) {
-  const zone = resolveTimeZone(timeZone)
-  const key = `${zone}|${Math.floor(instantMs / MS_PER_HOUR)}`
-  const hit = offsetCache.get(key)
-  if (hit !== undefined) return hit
-
-  const parts = partsIn(instantMs, zone)
-  const asUtc = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    parts.second,
+export function daysBetween(from, to) {
+  const a = parseDay(normalizeDay(from))
+  const b = parseDay(normalizeDay(to))
+  if (!a || !b) return null
+  return Math.round(
+    (Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day)) / MS_PER_DAY,
   )
-  // Round to the second: the formatter drops sub-second detail, and a raw difference
-  // would otherwise carry the instant's own milliseconds.
-  const offset = asUtc - Math.floor(instantMs / 1000) * 1000
-  return remember(offsetCache, key, offset)
-}
-
-/** The instant -> the wall clock a person in that zone is reading. */
-export function instantToWall(instantMs, timeZone) {
-  if (!Number.isFinite(instantMs)) return ''
-  return formatParts(partsIn(instantMs, resolveTimeZone(timeZone)))
-}
-
-export function nowWall(timeZone, nowMs = Date.now()) {
-  return instantToWall(nowMs, timeZone)
 }
 
 /**
- * Whole days from now until a wall-clock moment, counted in CALENDAR days in the
- * board's zone rather than in 24-hour blocks. "3 days until the wedding" has to
- * flip at midnight, not at whatever o'clock the countdown started.
+ * Today's date, as a day string, in the board's zone.
+ *
+ * THE ONLY PLACE THE ZONE IS USED. Everything downstream compares day strings, so
+ * this single call is what makes "overdue" mean overdue at the venue rather than
+ * wherever the phone happens to be. `en-CA` yields YYYY-MM-DD directly, which is
+ * the stored shape.
  */
-export function daysUntil(wall, timeZone, nowMs = Date.now()) {
-  const target = parseWall(normalizeWall(wall))
-  if (!target) return null
-  const today = partsIn(nowMs, resolveTimeZone(timeZone))
-  const targetDay = Date.UTC(target.year, target.month - 1, target.day)
-  const todayDay = Date.UTC(today.year, today.month - 1, today.day)
-  return Math.round((targetDay - todayDay) / MS_PER_DAY)
+export function todayIn(timeZone, nowMs = Date.now()) {
+  return dayFormatter(resolveTimeZone(timeZone)).format(new Date(nowMs))
+}
+
+/**
+ * Whole days from now until a day, counted in CALENDAR days in the board's zone
+ * rather than in 24-hour blocks. "3 days to go" has to flip at midnight, not at
+ * whatever o'clock the countdown started.
+ */
+export function daysUntil(day, timeZone, nowMs = Date.now()) {
+  return daysBetween(todayIn(timeZone, nowMs), day)
 }
 
 // ---------------------------------------------------------------------------
@@ -319,14 +178,14 @@ export function daysUntil(wall, timeZone, nowMs = Date.now()) {
 // ---------------------------------------------------------------------------
 
 /**
- * A Date whose UTC fields hold the wall-clock parts, for formatting with
- * `timeZone: 'UTC'`. See the module header: this is how a wall clock is rendered
- * without the offset being applied twice.
+ * A Date whose UTC fields hold the day's parts, for formatting with
+ * `timeZone: 'UTC'`. See the module header: this is how a zoneless day is rendered
+ * without an offset being applied to it.
  */
-function asUtcDate(wall) {
-  const parts = parseWall(normalizeWall(wall))
+function asUtcDate(day) {
+  const parts = parseDay(normalizeDay(day))
   if (!parts) return null
-  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute))
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
 }
 
 function displayFormatter(locale, options) {
@@ -340,26 +199,44 @@ function displayFormatter(locale, options) {
 }
 
 /**
- * @param {string} wall
+ * 'Apr 18' / '4月18日'.
+ *
+ * @param {string} day
  * @param {object} [opts]
  * @param {string} [opts.locale] undefined means the runtime locale
- * @param {boolean} [opts.time] include the clock time
  * @param {boolean} [opts.year] include the year
  */
-export function formatWall(wall, { locale, time = false, year = false } = {}) {
-  const date = asUtcDate(wall)
+export function formatDay(day, { locale, year = false } = {}) {
+  const date = asUtcDate(day)
   if (!date) return ''
   return displayFormatter(locale, {
     month: 'short',
     day: 'numeric',
     ...(year ? { year: 'numeric' } : {}),
-    ...(time ? { hour: '2-digit', minute: '2-digit', hour12: false } : {}),
+  }).format(date)
+}
+
+/**
+ * 'Sat, 18 April 2027' / '2027年4月18日(土)' — the date spelled out, for an open row.
+ *
+ * The WEEKDAY is the reason this exists rather than reusing `formatDay`. A collapsed row prints a
+ * bare day number under a month heading, which is what it should print; "is that a Saturday" is a
+ * real question about a wedding task and the answer is nowhere else on screen.
+ */
+export function formatDayLong(day, { locale } = {}) {
+  const date = asUtcDate(day)
+  if (!date) return ''
+  return displayFormatter(locale, {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
   }).format(date)
 }
 
 /** 'April 2027' / '2027年4月' — the list's group headings. */
-export function formatWallMonth(wall, { locale } = {}) {
-  const date = asUtcDate(wall)
+export function formatDayMonth(day, { locale } = {}) {
+  const date = asUtcDate(day)
   if (!date) return ''
   return displayFormatter(locale, { year: 'numeric', month: 'long' }).format(date)
 }
@@ -377,59 +254,19 @@ export function formatWallMonth(wall, { locale } = {}) {
  *
  * THE DAY IS NOT FORMATTED THROUGH Intl, and that is the one deliberate exception to
  * routing numbers through it: `{ day: 'numeric' }` in `ja` returns '18日', which at
- * --fs-xl wraps onto a second line inside a 36px chip and prints the day as two rows
- * with '4月' under it. A day of the month is 1–31 — there is no grouping separator for
- * Intl to add, and the suffix is redundant with the month directly beneath.
+ * --fs-xl wraps inside the chip and prints the day as two rows with '4月' under it. A
+ * day of the month is 1–31 — there is no grouping separator for Intl to add, and the
+ * suffix is redundant with the month directly beneath.
  *
- * @returns {{day:string, month:string}|null} null when the wall string is unusable, so a
- *   task with no dates renders no chip rather than a plausible-looking wrong one.
+ * @returns {{day:string, month:string}|null} null when the day string is unusable, so a
+ *   task with no date renders no chip rather than a plausible-looking wrong one.
  */
-export function formatWallChip(wall, { locale } = {}) {
-  const date = asUtcDate(wall)
+export function formatDayChip(day, { locale } = {}) {
+  const date = asUtcDate(day)
   if (!date) return null
   const month = displayFormatter(locale, { month: 'short' }).format(date)
   return {
     day: String(date.getUTCDate()),
     month: locale ? month.toLocaleUpperCase(locale) : month.toLocaleUpperCase(),
   }
-}
-
-/** '14:00'. Always 24-hour: a schedule read at a glance has no room for am/pm. */
-function formatWallTime(wall, { locale } = {}) {
-  const date = asUtcDate(wall)
-  if (!date) return ''
-  return displayFormatter(locale, { hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
-}
-
-/**
- * The window as one string. Collapses whatever the two ends share, because a row
- * on a 320px phone cannot afford "Apr 18, 2027 – Apr 18, 2027".
- *
- * @param {object} [opts]
- * @param {boolean} [opts.allDay] omit clock times
- * @param {string} [opts.locale]
- * @param {string} [opts.nowWall] the current wall clock, so the year is shown
- *   only when the window is not in the current one
- * @param {string} [opts.dash] the separator, from the catalog
- */
-export function formatWallRange(start, end, { allDay, locale, nowWall: reference, dash = '–' } = {}) {
-  const from = normalizeWall(start)
-  const to = normalizeWall(end)
-  if (!from && !to) return ''
-  if (!to) return formatWall(from, { locale, time: !allDay })
-  if (!from) return formatWall(to, { locale, time: !allDay })
-
-  const thisYear = reference ? reference.slice(0, 4) : ''
-  const showYear = from.slice(0, 4) !== thisYear || to.slice(0, 4) !== thisYear
-  const sameDay = wallDay(from) === wallDay(to)
-
-  if (sameDay) {
-    const day = formatWall(from, { locale, year: showYear })
-    if (allDay) return day
-    return `${day} ${formatWallTime(from, { locale })}${dash}${formatWallTime(to, { locale })}`
-  }
-
-  const left = formatWall(from, { locale, time: !allDay, year: showYear })
-  const right = formatWall(to, { locale, time: !allDay, year: showYear })
-  return `${left} ${dash} ${right}`
 }

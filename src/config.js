@@ -64,13 +64,15 @@ export function writeStored(key, value) {
 export const DEFAULT_CONFIG = {
   partner1Name: '',
   partner2Name: '',
-  /** '' until somebody sets it. The countdown and the templates both need it. */
+  /** 'YYYY-MM-DD', or '' until somebody sets it. The countdown and the templates both
+   *  need it. No time: nothing on the board is timed, so a ceremony hour would be a
+   *  field somebody fills in and never sees again. */
   weddingDate: '',
-  weddingTime: '',
   venue: '',
   /**
-   * The zone every wall-clock time in the sheet is read in. Not the device's:
-   * "the ceremony is at 14:00" must say 14:00 to a planner in another country.
+   * The zone today's date is resolved in, which is what decides whether a due date
+   * has passed. Not the device's: a task due on the 18th must stop being due on the
+   * 19th at the venue, not at midnight wherever a planner happens to be.
    */
   timezone: 'Asia/Tokyo',
   /** One home for this list: `lib/templates.js`, which is what seeds it. */
@@ -88,7 +90,6 @@ export const CONFIG_FIELDS = [
   { key: 'partner1_name', field: 'partner1Name', kind: 'text' },
   { key: 'partner2_name', field: 'partner2Name', kind: 'text' },
   { key: 'wedding_date', field: 'weddingDate', kind: 'text' },
-  { key: 'wedding_time', field: 'weddingTime', kind: 'text' },
   { key: 'venue', field: 'venue', kind: 'text' },
   { key: 'timezone', field: 'timezone', kind: 'text' },
   { key: 'categories', field: 'categories', kind: 'list' },
@@ -147,10 +148,7 @@ export function mergeConfig(partial) {
   }
 }
 
-/** The wedding as a wall-clock string, or '' — the countdown's only input. */
-export function weddingWall(config) {
-  const date = String(config?.weddingDate ?? '').trim()
-  if (!date) return ''
-  const time = String(config?.weddingTime ?? '').trim()
-  return `${date}T${/^\d{2}:\d{2}$/.test(time) ? time : '00:00'}`
+/** The wedding day, or '' — the countdown's and the templates' only input. */
+export function weddingDay(config) {
+  return String(config?.weddingDate ?? '').trim()
 }

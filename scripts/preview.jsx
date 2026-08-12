@@ -5,7 +5,7 @@
  *
  *   npx vite-node scripts/preview.jsx     # writes scripts/preview-*.html (gitignored)
  *
- * Then load those in <iframe>s at 390 / 430 / 768 / 1440 and screenshot: open
+ * Then load those in <iframe>s at 320 / 393 / 430 / 768 / 1440 and screenshot: open
  * `scripts/harness.html`, which documents its own query string.
  *
  * USE IFRAMES, NOT A RESIZED WINDOW. An iframe gets its own viewport, so container and
@@ -13,8 +13,8 @@
  * you asked for and every breakpoint reads wrong.
  *
  * A STATIC RENDER RUNS NO EFFECT, so what these files show is every default as it is on
- * first paint — which is the point, and also the limit: the tab switch, an accordion
- * opening, a commit on blur and the keyboard's effect on a sheet were each verified by
+ * first paint — which is the point, and also the limit: an accordion opening, a commit on
+ * blur, the native date wheel and the keyboard's effect on a sheet were each verified by
  * driving the built app in a real browser instead.
  */
 
@@ -22,35 +22,31 @@ import { copyFileSync, writeFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { mergeConfig } from '../src/config.js'
 import { overallProgress, withProgress } from '../src/lib/progress.js'
-import { wallToInstant } from '../src/lib/time.js'
 import { ACCENTS } from '../src/lib/theme.js'
 import { setLocale } from '../src/i18n/index.js'
 import { findTemplate, materialize } from '../src/lib/templates.js'
-import { DeletedList } from '../src/components/Deleted.jsx'
 import EmptyBoard from '../src/components/EmptyBoard.jsx'
 import FilterChips, { FILTER_ALL } from '../src/components/FilterChips.jsx'
 import Hero from '../src/components/Hero.jsx'
 import OverallCard from '../src/components/OverallCard.jsx'
-import TabBar, { TABS } from '../src/components/TabBar.jsx'
-import Timeline from '../src/components/Timeline.jsx'
+import Plan from '../src/components/Plan.jsx'
 import { PlusIcon } from '../src/components/icons.jsx'
 
 const TOKYO = 'Asia/Tokyo'
 const WEDDING_DAY = '2027-04-18'
 
 /**
- * A fixed "now", so a screenshot is comparable to yesterday's. Roughly seven months out:
- * far enough in that some tasks are done, some overdue and some not started, which is the
- * only state worth looking at.
+ * A fixed "today", so a screenshot is comparable to yesterday's. Roughly seven months out:
+ * far enough in that some tasks are done, some overdue, some due this fortnight and some
+ * months away — which is the only state worth looking at.
  */
-const NOW_WALL = '2026-10-02T11:20'
-const NOW = wallToInstant(NOW_WALL, TOKYO)
+const TODAY = '2026-10-02'
+const NOW = Date.UTC(2026, 9, 2, 2, 20)
 
 const CONFIG = mergeConfig({
   partner1Name: 'Aoi',
   partner2Name: 'Ren',
   weddingDate: WEDDING_DAY,
-  weddingTime: '14:00',
   // A long venue name on purpose: this is the string that broke the countdown onto a second
   // line at 393px, and a short fixture never showed it.
   venue: 'The 迎賓館 偕楽園 別邸',
@@ -71,7 +67,7 @@ let counter = 0
 /**
  * The real twelve-month template, with a plausible spread of progress applied: the early
  * items done, several left to run out, one deliberately dateless. Hand-written fixtures
- * would not exercise the month grouping or the spine.
+ * would not exercise the month grouping.
  *
  * Seeded in the preview's own locale, because that is what seeding actually does — a
  * template's titles become content at the moment they are written (see templates.js), so
@@ -89,18 +85,11 @@ function board(locale) {
     // The first nine are finished; #10 onwards are left to go overdue, which is what puts an
     // honest gap between the headline figure and the on-schedule mark.
     if (index < 9) return { ...task, doneAt: '2026-06-01T00:00:00.000Z' }
-    if (index === 12) {
-      return {
-        ...task,
-        owner: locale === 'ja' ? 'れん' : 'Ren',
-        notes: locale === 'ja' ? '見積もりは月末まで有効。' : 'Quote expires end of the month.',
-      }
-    }
+    // One dateless task, so the trailing "No date" group is on screen.
     if (index === 14) {
       return {
         ...task,
-        start: '',
-        end: '',
+        due: '',
         title: locale === 'ja' ? '生演奏にするか決める' : 'Decide about a live band',
       }
     }
@@ -109,9 +98,9 @@ function board(locale) {
 }
 
 /**
- * Subtasks for one in-progress parent, so the tally, the tally-driven meter and the
- * checklist inside an open card are all on screen. One parent only: that is the realistic
- * case, and it is what shows that a board without subtasks costs no height.
+ * Subtasks for one parent, so the tally and the checklist inside an open row are both on
+ * screen. One parent only: that is the realistic case, and it is what shows that a board
+ * without subtasks costs no height.
  */
 function withSubtasks(tasks, locale) {
   const parent = tasks[11]
@@ -131,12 +120,8 @@ function withSubtasks(tasks, locale) {
       id: `${parent.id}-s${index}`,
       title,
       category: '',
-      start: '',
-      end: '',
-      allDay: false,
+      due: '',
       doneAt: index < 3 ? '2026-08-01T00:00:00.000Z' : '',
-      notes: '',
-      owner: '',
       createdAt: `2026-07-0${index + 1}T00:00:00.000Z`,
       updatedAt: '',
       deletedAt: '',
@@ -147,19 +132,14 @@ function withSubtasks(tasks, locale) {
 
 /** Built per locale, for the reason in `board`. */
 function surfaces(locale) {
-  const tasks = withProgress(withSubtasks(board(locale), locale), NOW, TOKYO)
+  const tasks = withProgress(withSubtasks(board(locale), locale), TODAY)
   return { tasks, overall: overallProgress(tasks) }
-}
-
-const DELETED = {
-  en: [{ id: 'x', title: 'Second-choice venue enquiry', deletedAt: '2026-09-01T00:00:00.000Z' }],
-  ja: [{ id: 'x', title: '第二候補の会場に問い合わせ', deletedAt: '2026-09-01T00:00:00.000Z' }],
 }
 
 const noop = () => {}
 
-/** The tab bar is fixed, so it belongs to the shell rather than to either tab. */
-function Shell({ children, tab, fab = false }) {
+/** One scroll: the photograph is the header and there is no fixed bar but the FAB. */
+function Shell({ children, fab = false }) {
   return (
     <div className="app">
       <div className="views">{children}</div>
@@ -168,53 +148,111 @@ function Shell({ children, tab, fab = false }) {
           <PlusIcon style={{ width: '1.5em', height: '1.5em' }} />
         </span>
       ) : null}
-      <TabBar tab={tab} onTab={noop} />
     </div>
   )
 }
 
 /**
+ * The whole board, top to bottom, with the one row that has a checklist opened — so the
+ * editor's three fields, the checklist and the add row are all in the screenshot. `open`
+ * comes from `App`'s `expanded` set, which no effect populates, so passing it here is the
+ * only way to see it.
+ *
  * `canEdit` reaches the HERO, not just the body. It was hardcoded true here once, so no
  * fixture could render the View only badge — and that badge sharing the hero's last line
  * with a long venue name is exactly what broke the countdown onto two lines on the live
  * site. A harness that cannot show a case cannot protect the fix for it either.
  */
-function HomeView({ locale, canEdit = true }) {
-  const { overall } = surfaces(locale)
+function BoardView({ locale, canEdit = true, open = true, editing = false }) {
+  const { tasks, overall } = surfaces(locale)
+  const opened = open ? tasks.find((task) => task.progress.tally) : null
   return (
-    <Shell tab={TABS.HOME}>
+    <Shell fab={canEdit}>
       <Hero config={CONFIG} nowMs={NOW} canEdit={canEdit} onOpenSettings={noop} photo={PHOTO} />
       <div className="view stack">
-        <OverallCard overall={overall} />
-        {canEdit ? <DeletedList tasks={DELETED[locale]} onRestore={noop} /> : null}
+        <OverallCard overall={overall} onShowOverdue={noop} />
+        <div className="stack">
+          <FilterChips
+            counts={overall}
+            total={overall.total}
+            filter={FILTER_ALL}
+            onFilter={noop}
+          />
+          <Plan
+            tasks={tasks}
+            canEdit={canEdit}
+            categories={CONFIG.categories}
+            expanded={new Set(opened ? [opened.id] : [])}
+            onExpand={noop}
+            onToggle={noop}
+            onSave={noop}
+            onDelete={noop}
+            canAddSubtask
+            onAddSubtask={noop}
+            onFieldFocus={noop}
+            editing={editing}
+          />
+        </div>
       </div>
     </Shell>
   )
 }
 
 /**
- * The plan, with the one card that has a checklist opened — so the editor's fields, the
- * checklist and the add row are all in the screenshot. `open` comes from `App`'s `expanded`
- * set, which no effect populates, so passing it here is the only way to see it.
+ * The rows, on their own, with nothing above them.
+ *
+ * The board fixtures put the photograph and the tracker first, which is right for judging the
+ * whole screen and useless for judging a row — everything worth looking at is a scroll away,
+ * and `harness.html`'s `to=` selector does not survive a headless screenshot. This page is one
+ * of each state, in order, with the checklist row already open.
  */
-function PlanView({ locale, canEdit = true }) {
-  const { tasks, overall } = surfaces(locale)
-  const opened = tasks.find((task) => task.progress.tally)
+function RowsView({ locale, canEdit = true, editing = false }) {
+  const fixtures = [
+    { id: 'r1', due: '2026-08-20', title: 'Mail the save-the-dates', category: 'Stationery' },
+    { id: 'r2', due: '2026-10-01', title: 'Book the photographer and videographer', category: 'Photo' },
+    { id: 'r3', due: TODAY, title: 'Compare the two venue quotes', category: 'Venue' },
+    { id: 'r4', due: '2026-10-03', title: 'Send the deposit', category: 'Budget' },
+    { id: 'r5', due: '2026-10-09', title: 'Choose the invitation paper', category: 'Stationery' },
+    { id: 'r6', due: '2027-02-01', title: 'Order signage, vow books and favours', category: 'Gifts' },
+    { id: 'r7', due: '2026-09-01', title: 'Agree the budget and who is contributing', category: 'Budget', doneAt: '2026-08-01T00:00:00.000Z' },
+    { id: 'r8', due: '', title: 'Decide about a live band', category: 'Music' },
+  ]
+  const subs = ['Shortlist three venues', 'Visit the shortlist', 'Compare quotes in writing'].map(
+    (title, index) => ({
+      id: `r3-s${index}`,
+      title,
+      category: '',
+      due: '',
+      doneAt: index < 1 ? '2026-08-01T00:00:00.000Z' : '',
+      createdAt: `2026-07-0${index + 1}T00:00:00.000Z`,
+      updatedAt: '',
+      deletedAt: '',
+      parentId: 'r3',
+    }),
+  )
+  const tasks = withProgress(
+    [
+      ...fixtures.map((row) => ({
+        category: '',
+        doneAt: '',
+        createdAt: '',
+        updatedAt: '',
+        deletedAt: '',
+        parentId: '',
+        ...row,
+      })),
+      ...subs,
+    ],
+    TODAY,
+  )
   return (
-    <Shell tab={TABS.TIMELINE} fab={canEdit}>
-      <div className="view view--plan stack">
-        <FilterChips
-          counts={overall}
-          total={overall.total}
-          filter={FILTER_ALL}
-          onFilter={noop}
-        />
-        <Timeline
+    <Shell fab={canEdit}>
+      <div className="view stack">
+        <Plan
           tasks={tasks}
-          nowWall={NOW_WALL}
           canEdit={canEdit}
           categories={CONFIG.categories}
-          expanded={new Set(opened ? [opened.id] : [])}
+          expanded={new Set(['r3'])}
           onExpand={noop}
           onToggle={noop}
           onSave={noop}
@@ -222,6 +260,7 @@ function PlanView({ locale, canEdit = true }) {
           canAddSubtask
           onAddSubtask={noop}
           onFieldFocus={noop}
+          editing={editing}
         />
       </div>
     </Shell>
@@ -230,8 +269,9 @@ function PlanView({ locale, canEdit = true }) {
 
 function EmptyView() {
   return (
-    <Shell tab={TABS.TIMELINE} fab>
-      <div className="view view--plan stack">
+    <Shell fab>
+      <Hero config={CONFIG} nowMs={NOW} canEdit onOpenSettings={noop} photo={PHOTO} />
+      <div className="view stack">
         <EmptyBoard
           canEdit
           weddingDay={WEDDING_DAY}
@@ -269,20 +309,25 @@ function emit(name, element, { locale = 'en', accent = 'rose' } = {}) {
   console.log(path)
 }
 
-emit('en-home', <HomeView locale="en" />)
-emit('en-home-viewer', <HomeView locale="en" canEdit={false} />)
-emit('en', <PlanView locale="en" />)
-emit('en-viewer', <PlanView locale="en" canEdit={false} />)
+emit('en', <BoardView locale="en" />)
+emit('en-closed', <BoardView locale="en" open={false} />)
+emit('en-viewer', <BoardView locale="en" canEdit={false} />)
+// Both modes of an open row: reading it, and editing it. A static render fires no click, so
+// `editing` is the only way either one reaches a screenshot.
+emit('en-rows', <RowsView locale="en" />)
+emit('en-rows-editing', <RowsView locale="en" editing />)
+emit('en-rows-viewer', <RowsView locale="en" canEdit={false} />)
+emit('ja-rows', <RowsView locale="ja" />, { locale: 'ja' })
+emit('ja-rows-editing', <RowsView locale="ja" editing />, { locale: 'ja' })
 emit('en-empty', <EmptyView />)
-emit('ja-home', <HomeView locale="ja" />, { locale: 'ja' })
-emit('ja', <PlanView locale="ja" />, { locale: 'ja' })
+emit('ja', <BoardView locale="ja" />, { locale: 'ja' })
+emit('ja-closed', <BoardView locale="ja" open={false} />, { locale: 'ja' })
 
 // One file per accent, so a preset that breaks a contrast pair is visible rather than
-// merely measured. Home, because that is where the accent is loudest: the tab bar's
-// selected rule and the summary meter's fill.
+// merely measured.
 for (const accent of ACCENTS) {
   if (accent === 'rose') continue
-  emit(`en-${accent}`, <HomeView locale="en" />, { accent })
+  emit(`en-${accent}`, <BoardView locale="en" open={false} />, { accent })
 }
 
 setLocale('en')

@@ -4,6 +4,9 @@
  * Deletes are soft, confirmed, and reversible. Recovery is this list rather than a
  * toast action: a toast that has timed out is a delete nobody can undo, which is why
  * no toast in this app carries a button.
+ *
+ * The list lives inside Settings › Maintenance, beside the purge that empties it, rather
+ * than on the board — so it is a plain disclosure here and not a card of its own.
  */
 
 import { useT } from '../i18n/index.js'
@@ -43,7 +46,7 @@ export function DeletedList({ tasks, onRestore }) {
   if (!tasks.length) return null
 
   return (
-    <details className="card disclosure">
+    <details className="disclosure">
       <summary className="disclosure__summary">
         <ChevronRightIcon className="disclosure__chevron" />
         {t('deleted.title', { count: tasks.length })}

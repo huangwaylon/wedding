@@ -1,32 +1,44 @@
 /**
  * Progress. Pure, and the only file that decides what a percentage means.
  *
- * A task's percentage is where the clock has got to between its start and its
- * end — it advances on its own as time passes, with nobody touching anything.
- * Marking a task done pins it to 100%. Those are two different claims and the UI
- * keeps them apart:
+ * A task is a title, a day and a tick, so a percentage here is WORK DONE and nothing
+ * else:
  *
- *   percent      what to draw. done -> 100, otherwise the elapsed fraction.
- *   timePercent  the elapsed fraction regardless of done. This is the PACE
- *                reference: rolled up, it is where you would be if everything
- *                were exactly on schedule, which is what the marker on the
- *                overall meter points at.
+ *   percent    what to draw. done -> 100, else the subtask tally, else 0.
+ *   duePassed  whether the calendar has already asked for it. Rolled up as
+ *              `expected`, this is where the fill would sit if everything were
+ *              finished exactly on its date — the marker on the overall meter.
  *
- * A window that has run out without being marked done is OVERDUE, and its
- * `percent` is 100 while it is emphatically not complete. That is why `percent`
- * is never the only thing on screen: `overallProgress` reports `done` and
- * `overdue` counts alongside it, and a row states its state in words. A number
- * that reads 100% for both "finished" and "ran out of time" would be the single
- * most misleading thing this app could do.
+ * THOSE TWO ARE DIFFERENT CLAIMS OVER THE SAME DENOMINATOR AND MUST NOT BE MERGED.
+ * `percent` is countable — "9 of 14 tasks" — while `expected` is the calendar's
+ * opinion, and the gap between them is the whole pace signal: a task done early
+ * raises the first and not the second, a date that slipped raises the second and not
+ * the first. It is shown as the distance between a fill and a mark and never as a
+ * sentence, because a sentence has to pick a verdict and a verdict can be wrong —
+ * five things late and five future things ticked early sum to a pace of zero.
  *
- * Every task counts EQUALLY in the roll-up — not weighted by duration. "62% of
- * our tasks" is a sentence somebody can check by counting; a duration-weighted
- * average silently makes a six-month venue hunt worth thirty times the cake
- * tasting, and nobody can reconstruct it from the screen.
+ * This is a deliberate correction of an earlier model, where a task's percentage was
+ * how far the clock had got between a start and an end. That number reached 100% for
+ * a window that had merely run out, so "78% complete" and "78% of the time is gone"
+ * were the same figure and the app needed a badge, a mark and an overdue count just
+ * to stop the headline lying. An unfinished task is now 0%, whatever the date says,
+ * and the headline is a number somebody can check by counting.
+ *
+ * Every task counts EQUALLY in the roll-up — not weighted by subtask count. "62% of
+ * our tasks" is a sentence somebody can check; a weighted average silently makes the
+ * one task somebody decomposed into ten worth ten times the rest.
  */
 
 import { isDone, isLive } from '../schema.js'
-import { isValidWall, wallToInstant } from './time.js'
+import { daysBetween, isValidDay } from './time.js'
+
+/**
+ * How near a due date has to be to count as SOON. Two weeks: near enough that it is
+ * this fortnight's work, far enough that a wedding checklist's chip is not either
+ * empty or the whole board. Exported because it is part of the meaning of the state
+ * rather than a component's constant.
+ */
+export const SOON_DAYS = 14
 
 /**
  * Split a flat row list into top-level tasks and the subtasks hanging off them.
@@ -78,14 +90,15 @@ function byCreated(a, b) {
 export const STATE = {
   DONE: 'done',
   OVERDUE: 'overdue',
-  ACTIVE: 'active',
-  UPCOMING: 'upcoming',
-  /** No usable window. Counted in the total, contributes 0 unless done. */
-  UNSCHEDULED: 'unscheduled',
+  /** Due within `SOON_DAYS`, today included. This fortnight's work. */
+  SOON: 'soon',
+  LATER: 'later',
+  /** No usable date. Counted in the total, contributes 0 unless done. */
+  NODATE: 'nodate',
 }
 
-/** Display order, and the order the filter chips appear in. */
-export const STATE_ORDER = [STATE.OVERDUE, STATE.ACTIVE, STATE.UPCOMING, STATE.DONE]
+/** Display order, and the order the filter chips appear in. Problems first. */
+export const STATE_ORDER = [STATE.OVERDUE, STATE.SOON, STATE.LATER, STATE.DONE]
 
 function clamp01(value) {
   if (!Number.isFinite(value)) return 0
@@ -96,78 +109,59 @@ function clamp01(value) {
 
 /**
  * @param {object} task as returned by `rowToTask`
- * @param {number} nowMs
- * @param {string} timeZone the board's zone; task times are wall-clock in it
+ * @param {string} today the board's current day, 'YYYY-MM-DD' (`time.todayIn`)
  * @param {object[]} [subtasks] this task's LIVE subtasks, if any
- * @returns {{percent:number, timePercent:number, state:string, startMs:number, endMs:number,
- *            scheduled:boolean, tally:{done:number,total:number}|null}}
- *   percentages are 0–1
+ * @returns {{percent:number, duePassed:boolean, state:string, dated:boolean,
+ *            days:number|null, tally:{done:number,total:number}|null}}
+ *   `percent` is 0–1; `days` is signed calendar days until the due date
  */
-export function taskProgress(task, nowMs, timeZone, subtasks = []) {
-  const scheduled = isValidWall(task?.start) && isValidWall(task?.end)
-  const startMs = scheduled ? wallToInstant(task.start, timeZone) : NaN
-  const endMs = scheduled ? wallToInstant(task.end, timeZone) : NaN
+export function taskProgress(task, today, subtasks = []) {
+  const dated = isValidDay(task?.due)
   const done = isDone(task)
+  const days = dated ? daysBetween(today, task.due) : null
 
   /**
    * The subtask tally, and why it can be trusted where an estimate could not.
    *
-   * The header says this app never asks anybody how far along a task is. Ticking a subtask is
-   * not an estimate, it is a count — so this is the first real work-done measurement the app
-   * has, and it did not have to ask for it.
+   * This app never asks anybody how far along a task is. Ticking a subtask is not an estimate,
+   * it is a count — so a tally is the only partial measurement in the model, and it did not
+   * have to be asked for.
    *
    * LIVE subtasks only, which `partitionSubtasks` has already filtered. A parent whose subtasks
-   * are all tombstoned therefore has no tally and falls back to the clock, exactly as before.
+   * are all tombstoned therefore has no tally and reads 0% until somebody ticks it.
    */
   const total = subtasks.length
   const tally = total ? { done: subtasks.filter(isDone).length, total } : null
-  const tallied = tally ? tally.done / tally.total : null
 
-  if (!scheduled) {
-    // A task with no schedule cannot be ahead of one, so both figures stay equal and it
-    // contributes nothing to the pace in either direction.
-    const value = done ? 1 : (tallied ?? 0)
-    return {
-      percent: value,
-      timePercent: value,
-      state: done ? STATE.DONE : STATE.UNSCHEDULED,
-      startMs,
-      endMs,
-      scheduled,
-      tally,
-    }
-  }
-
-  // A zero-length window is a milestone — "register the marriage" happens at a
-  // moment, not over an interval — so it is 0% until its instant and 100% after,
-  // never a division by zero.
-  const span = endMs - startMs
-  const timePercent =
-    span > 0 ? clamp01((nowMs - startMs) / span) : nowMs >= endMs ? 1 : 0
+  /**
+   * PRECEDENCE: `done_at` > the subtask tally > nothing.
+   *
+   * `done_at` wins because it is the only explicit human assertion in the model — somebody
+   * ticking a parent with two items open is saying "the rest turned out not to be needed", and
+   * answering 60% tells them the app knows better. Nothing is blended: "3 of 5 = 60%" is a
+   * sentence somebody can check by counting.
+   */
+  const percent = done ? 1 : clamp01(tally ? tally.done / tally.total : 0)
 
   let state
   if (done) state = STATE.DONE
-  else if (nowMs >= endMs) state = STATE.OVERDUE
-  else if (nowMs >= startMs) state = STATE.ACTIVE
-  else state = STATE.UPCOMING
+  else if (!dated) state = STATE.NODATE
+  else if (days < 0) state = STATE.OVERDUE
+  else if (days <= SOON_DAYS) state = STATE.SOON
+  else state = STATE.LATER
 
   return {
+    percent,
     /**
-     * PRECEDENCE: `done_at` > the subtask tally > the clock.
-     *
-     * `done_at` wins because it is the only explicit human assertion in the model — somebody
-     * ticking a parent with two items open is saying "the rest turned out not to be needed",
-     * and answering 60% tells them the app knows better. The tally beats the clock because it
-     * is evidence and the clock is a stand-in for evidence. Nothing is blended: "3 of 5 = 60%"
-     * is a sentence somebody can check by counting, and `0.5 × elapsed + 0.5 × tally` is not.
+     * Whether the calendar has already asked for this one. An UNDATED task asks nothing of
+     * anybody, so it can be neither ahead nor behind — it counts in the denominator and
+     * contributes to neither numerator, which is the only honest treatment of a task nobody
+     * has committed to a date for.
      */
-    percent: done ? 1 : (tallied ?? timePercent),
-    /** Always the clock. This is the pace reference, and merging it would destroy the signal. */
-    timePercent,
+    duePassed: dated && days < 0,
     state,
-    startMs,
-    endMs,
-    scheduled,
+    dated,
+    days,
     tally,
   }
 }
@@ -175,21 +169,18 @@ export function taskProgress(task, nowMs, timeZone, subtasks = []) {
 /**
  * Attach progress to every live task, sorted for display.
  *
- * Sorted by start ascending, then by end, then by title — a stable order that
- * matches how the plan is read ("what is coming next"). Unscheduled tasks sort
- * last: they have no place on a timeline, and putting them first would bury the
- * thing happening this week.
+ * Sorted by due date ascending, then by title — the order the plan is read in ("what is due
+ * next"). Undated tasks sort last: they have no place in a sequence of dates, and putting them
+ * first would bury the week in progress.
  *
  * TOP-LEVEL TASKS ONLY, each carrying its own `subtasks`. Subtasks are never sorted into this
- * list: they are dateless, so `compareForDisplay` would tear every one of them away from its
+ * list: they are dateless, so the comparison below would tear every one of them away from its
  * parent into a trailing pile.
  */
-export function withProgress(tasks, nowMs, timeZone) {
+export function withProgress(tasks, today) {
   const { parents, children } = partitionSubtasks(tasks)
   return parents
     .map((task) => {
-      // A superset of the old element shape: nothing is removed, so grouping, the cards and
-      // the roll-up all keep working untouched.
       const subtasks = (children.get(task.id) ?? []).slice().sort(byCreated)
       return {
         ...task,
@@ -202,95 +193,58 @@ export function withProgress(tasks, nowMs, timeZone) {
          * is being drawn, counted and rolled up as a task.
          */
         promoted: Boolean(task.parentId),
-        progress: taskProgress(task, nowMs, timeZone, subtasks),
+        progress: taskProgress(task, today, subtasks),
       }
     })
     .sort(compareForDisplay)
 }
 
 function compareForDisplay(a, b) {
-  if (a.progress.scheduled !== b.progress.scheduled) return a.progress.scheduled ? -1 : 1
-  if (a.start !== b.start) return a.start < b.start ? -1 : 1
-  if (a.end !== b.end) return a.end < b.end ? -1 : 1
+  if (a.progress.dated !== b.progress.dated) return a.progress.dated ? -1 : 1
+  if (a.due !== b.due) return a.due < b.due ? -1 : 1
   return a.title.localeCompare(b.title)
 }
 
 /**
- * The headline. `percent` is the mean of every task's `percent`; `expected` is
- * the mean of every `timePercent`, which is where that fill would sit if nothing
- * had been finished early or late. The gap between the two is the whole point of
- * showing both — ahead of the marker is ahead of schedule.
+ * The headline. `percent` is the mean of every task's `percent` — the share of the
+ * work that is done — and `expected` is the share whose date has already passed. Same
+ * denominator, two different claims, and the distance between them is drawn as a fill
+ * against a mark.
+ *
+ * THERE IS NO VERDICT HERE, DELIBERATELY. An earlier version answered "ahead" or
+ * "behind" in words, and the words could be wrong: five tasks past their date with
+ * nothing done, plus five future tasks ticked early, sums to a pace of exactly zero
+ * and read "On schedule". The graphic cannot make that claim, and `overdue` states the
+ * fact independently — so the number that could lie was removed rather than patched.
  *
  * TOP-LEVEL TASKS ONLY, which `withProgress` already guarantees. A subtask must never enter
  * this mean: a parent with ten subtasks would otherwise carry eleven twentieths of a ten-task
- * board — one task outweighing nine — which is duration weighting wearing a different hat, and
- * worse, because decomposing a task is a bookkeeping choice rather than a fact about the
- * wedding. Writing more detail into one task would silently deflate every other.
+ * board — one task outweighing nine — and worse, because decomposing a task is a bookkeeping
+ * choice rather than a fact about the wedding. Writing more detail into one task would
+ * silently deflate every other.
  *
  * @param {Array} tasks live TOP-LEVEL tasks WITH `progress` attached (`withProgress`)
  */
 export function overallProgress(tasks) {
-  const counts = { done: 0, overdue: 0, active: 0, upcoming: 0, unscheduled: 0 }
+  const counts = { done: 0, overdue: 0, soon: 0, later: 0, nodate: 0 }
   let percentSum = 0
-  let expectedSum = 0
+  let passed = 0
 
   for (const task of tasks) {
     counts[task.progress.state] += 1
     percentSum += task.progress.percent
-    expectedSum += task.progress.timePercent
+    if (task.progress.duePassed) passed += 1
   }
 
   const total = tasks.length
   return {
     total,
     percent: total ? percentSum / total : 0,
-    expected: total ? expectedSum / total : 0,
+    expected: total ? passed / total : 0,
+    /** How many dates have already passed. The mark's own accessible wording needs it. */
+    passed,
     ...counts,
-    /**
-     * How far the headline sits ahead of where the clock alone would put it.
-     *
-     * For a task with no subtasks this is still positive-or-zero: `percent` is
-     * `done ? 1 : timePercent`, so an expired unfinished window contributes 1 to both sums and
-     * cancels out. That is why `paceLabel` needs the overdue count.
-     *
-     * A parent WITH subtasks breaks that identity, and deliberately: its `percent` is work done
-     * while its `timePercent` is time elapsed, so one trailing its own window drives this
-     * NEGATIVE — while the window is still open. That is the app's first prospective lateness
-     * signal; overdue only ever fires after a deadline has already passed.
-     */
-    pace: total ? percentSum / total - expectedSum / total : 0,
   }
-}
-
-/**
- * Anything past this reads as genuinely ahead or behind rather than rounding. Symmetric.
- *
- * Exported because it is part of the pace CONTRACT rather than a component's constant: the
- * band is what "on schedule" means here, so anything asserting that meaning has to read the
- * same number rather than restate it.
- */
-export const PACE_DEAD_BAND = 0.02
-
-/**
- * The one-line verdict, and the reason it still needs two arguments.
- *
- * THE OVERDUE BRANCH IS FIRST AND UNCONDITIONAL. For a task with no subtasks, `pace` cannot go
- * negative — an expired unfinished window counts 100% elapsed in the headline AND in the
- * reference, so lateness cancels out of the subtraction. A version taking `pace` alone reported
- * "On schedule" for a board with eight tasks past their date. That branch is not superseded by
- * anything below it: on a board with no subtasks it is still the only evidence there is.
- *
- * THE NEGATIVE BRANCH IS STRICTLY ADDITIVE, and it exists because subtasks gave the app a
- * work-done measurement it never had. A parent 80% through its window with one of five items
- * ticked contributes 0.2 to the headline and 0.8 to the reference — a negative term, and one
- * that does not need the window to have expired. It is the only warning a planner can act on
- * before a deadline rather than after it.
- */
-export function paceLabel(pace, overdue = 0) {
-  if (overdue > 0) return 'behind'
-  if (pace < -PACE_DEAD_BAND) return 'behind'
-  if (pace > PACE_DEAD_BAND) return 'ahead'
-  return 'ontrack'
 }
 
 /** 0–1 -> a whole percent, for both display and aria values. */

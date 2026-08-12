@@ -7,9 +7,9 @@
  * second, and that is why it exists.
  *
  * A STATIC RENDER RUNS NO EFFECT AND NO EVENT HANDLER. Everything asserted here is
- * therefore a DEFAULT: a closed card, an unfocused field, a filter nobody has tapped.
+ * therefore a DEFAULT: a closed row, an unfocused field, a filter nobody has tapped.
  * That is the point — every default has to be correct on its own, because it is what a
- * first paint shows. Anything that needs a tap (opening a card, committing a field on
+ * first paint shows. Anything that needs a tap (opening a row, committing a field on
  * blur) is pinned by driving the pure function the handler would call instead.
  */
 
@@ -18,26 +18,24 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_CONFIG, mergeConfig } from '../src/config.js'
 import { taskToRow } from '../src/schema.js'
 import { STATE, overallProgress, withProgress } from '../src/lib/progress.js'
-import { wallToInstant } from '../src/lib/time.js'
 import { setLocale } from '../src/i18n/index.js'
 import { DEFAULT_LOCALE } from '../src/i18n/catalogs.js'
 import { ConfirmDeleteSheet, DeletedList } from '../src/components/Deleted.jsx'
+import DueLabel from '../src/components/DueLabel.jsx'
 import EmptyBoard from '../src/components/EmptyBoard.jsx'
 import FilterChips, { FILTER_ALL } from '../src/components/FilterChips.jsx'
 import Hero, { coupleTitle } from '../src/components/Hero.jsx'
 import Meter from '../src/components/Meter.jsx'
 import Notice from '../src/components/Notice.jsx'
 import OverallCard from '../src/components/OverallCard.jsx'
-import StateBadge from '../src/components/StateBadge.jsx'
-import TabBar, { TABS } from '../src/components/TabBar.jsx'
+import Plan from '../src/components/Plan.jsx'
 import TaskCard from '../src/components/TaskCard.jsx'
-import { draftFrom, draftToWindow, taskFromDraft } from '../src/components/TaskFields.jsx'
-import Timeline from '../src/components/Timeline.jsx'
+import { draftFrom, taskFromDraft } from '../src/components/TaskFields.jsx'
 import Toasts from '../src/components/Toasts.jsx'
 
-const TOKYO = 'Asia/Tokyo'
-const NOW = wallToInstant('2027-01-06T00:00', TOKYO)
-const NOW_WALL = '2027-01-06T00:00'
+/** The board's day, and the instant that produces it in Tokyo. */
+const TODAY = '2027-01-06'
+const NOW = Date.UTC(2027, 0, 5, 15, 0)
 
 afterEach(() => {
   setLocale(DEFAULT_LOCALE)
@@ -48,12 +46,8 @@ function task(overrides = {}) {
     id: 'a',
     title: 'Book the venue',
     category: 'Venue',
-    start: '2027-01-01T00:00',
-    end: '2027-01-11T23:59',
-    allDay: true,
+    due: '2027-01-11',
     doneAt: '',
-    notes: '',
-    owner: '',
     createdAt: '',
     updatedAt: '',
     deletedAt: '',
@@ -62,22 +56,21 @@ function task(overrides = {}) {
   }
 }
 
-const rows = (list) => withProgress(list, NOW, TOKYO)
+const rows = (list) => withProgress(list, TODAY)
 
 /** A dateless checklist item under `parent`. */
 function sub(parent, id, done = false) {
   return task({
     id: `${parent}-${id}`,
     title: `Step ${id}`,
-    start: '',
-    end: '',
+    due: '',
     parentId: parent,
     doneAt: done ? '2027-01-02T00:00:00.000Z' : '',
   })
 }
 const noop = () => {}
 
-/** The handlers a card needs to render at all. Every one of them is dead in a static render. */
+/** The handlers a row needs to render at all. Every one of them is dead in a static render. */
 const CARD_HANDLERS = {
   onOpen: noop,
   onToggle: noop,
@@ -97,12 +90,12 @@ describe('Meter', () => {
     // advancing toward completion, and iOS VoiceOver maps it patchily enough that an
     // unrecognised one takes the label and value down with it.
     const html = renderToStaticMarkup(
-      <Meter value={0.42} label="Overall" valueText="42% complete" />,
+      <Meter value={0.42} label="Overall" valueText="6 of 14 done" />,
     )
     expect(html).toContain('role="progressbar"')
     expect(html).not.toContain('role="meter"')
     expect(html).toContain('aria-valuenow="42"')
-    expect(html).toContain('aria-valuetext="42% complete"')
+    expect(html).toContain('aria-valuetext="6 of 14 done"')
     expect(html).toContain('width:42%')
   })
 
@@ -117,91 +110,100 @@ describe('Meter', () => {
     expect(renderToStaticMarkup(<Meter value={4} label="x" />)).toContain('width:100%')
     expect(renderToStaticMarkup(<Meter value={-1} label="x" />)).toContain('width:0%')
   })
-
-  it('can be built out of spans, for the row that is one button', () => {
-    // A card's whole collapsed row is a `<button>`, whose content model is phrasing content,
-    // so the three `<div>`s cannot live there. All three swap together — swapping only the
-    // wrapper leaves the fill an inline box that ignores its own height.
-    const html = renderToStaticMarkup(<Meter tag="span" value={0.5} mark={0.5} label="x" />)
-    expect(html).not.toContain('<div')
-    expect(html.match(/<span/g)).toHaveLength(3)
-  })
 })
 
-describe('StateBadge', () => {
-  it('renders NOTHING for every state but overdue', () => {
-    // A card already carries its state three times over — the node's colour, the percentage
-    // beside the meter, the date chip — so four of the five states need no pill, and a badge
-    // on every card is fifty of them competing with fifty titles for the same 393px.
-    for (const state of Object.values(STATE)) {
-      const html = renderToStaticMarkup(<StateBadge state={state} />)
-      if (state === STATE.OVERDUE) expect(html).not.toBe('')
-      else expect(html, state).toBe('')
-    }
+describe('DueLabel', () => {
+  const render = (state, days) => renderToStaticMarkup(<DueLabel state={state} days={days} />)
+
+  it('says how late something is, in words and with a hue beside them', () => {
+    const html = render(STATE.OVERDUE, -3)
+    expect(html).toContain('3 days ago')
+    // The colour is on the DOT, never on the type: a viewer who cannot separate the red from
+    // the green reads exactly the same thing.
+    expect(html).toContain('dot dot--overdue')
+    expect(html).not.toMatch(/color:/)
   })
 
-  it('states overdue in the WORD, not only in colour', () => {
-    // The one state whose figure reads as its own opposite: an expired unfinished window has a
-    // `percent` of 100 while being emphatically incomplete, so that card — and only that card —
-    // says so in type. A viewer who cannot separate the red from the green reads the same thing.
-    const html = renderToStaticMarkup(<StateBadge state={STATE.OVERDUE} />)
-    expect(html).toContain('badge--overdue')
-    expect(html).toMatch(/>Overdue<\/span>$/)
+  it('names today and tomorrow rather than counting them', () => {
+    expect(render(STATE.SOON, 0)).toContain('Today')
+    expect(render(STATE.SOON, 1)).toContain('Tomorrow')
+    expect(render(STATE.SOON, 5)).toContain('in 5 days')
+  })
+
+  it('pluralises through Intl rather than a count === 1 ternary', () => {
+    expect(render(STATE.SOON, 2)).toContain('in 2 days')
+    expect(render(STATE.OVERDUE, -1)).toContain('1 day ago')
+  })
+
+  it('renders NOTHING past the fortnight, or for a finished or undated task', () => {
+    // A four-hundred-day board would otherwise carry four hundred labels. Absence is a
+    // channel of its own: a mark on a row means act on it this fortnight.
+    expect(render(STATE.LATER, 200)).toBe('')
+    expect(render(STATE.DONE, -30)).toBe('')
+    expect(render(STATE.NODATE, null)).toBe('')
   })
 })
 
 describe('OverallCard', () => {
-  it('shows the hero figure, the meter and the four counts', () => {
-    const overall = overallProgress(rows([task({ id: 'a' }), task({ id: 'b' })]))
-    const html = renderToStaticMarkup(<OverallCard overall={overall} />)
+  const overallOf = (list) => overallProgress(rows(list))
+
+  it('shows the hero figure, the countable line and the meter', () => {
+    const html = renderToStaticMarkup(
+      <OverallCard
+        overall={overallOf([task({ id: 'a', doneAt: '2027-01-02T00:00:00.000Z' }), task({ id: 'b' })])}
+        onShowOverdue={noop}
+      />,
+    )
     expect(html).toContain('overall__percent')
     expect(html).toContain('role="progressbar"')
-    // Exactly these four, in scanning order: problems first.
-    const labels = [...html.matchAll(/class="stat__label">([^<]*)</g)].map((m) => m[1])
-    expect(labels).toEqual(['Overdue', 'In progress', 'Upcoming', 'Done'])
+    // The count is what makes the percentage above it checkable by arithmetic. It replaced a
+    // pace sentence, which could be wrong; a count cannot.
+    expect(html).toMatch(/class="overall__count tnum">1 of 2 done</)
   })
 
-  it('never shows a bare 100% for a board that is only overdue', () => {
-    // The single most dangerous reading in the app. The percentage is the clock, and the
-    // overdue count is what stops it being mistaken for a finished plan — so both have
-    // to be in the markup.
-    const overall = overallProgress(
-      rows([
-        task({ id: 'a', start: '2026-01-01T00:00', end: '2026-02-01T00:00' }),
-        task({ id: 'b', start: '2026-01-01T00:00', end: '2026-02-01T00:00' }),
-      ]),
+  it('carries the on-schedule mark, which is the whole pace signal', () => {
+    // No words: the distance between the fill and the mark IS the comparison, and unlike a
+    // sentence it declines to pick a verdict it could get wrong.
+    const level = overallOf([task({ id: 'a' }), task({ id: 'b' })])
+    expect(renderToStaticMarkup(<OverallCard overall={level} onShowOverdue={noop} />)).toContain(
+      'meter__mark',
     )
-    const html = renderToStaticMarkup(<OverallCard overall={overall} />)
-    expect(overall.percent).toBe(1)
-    expect(html).toContain('Overdue')
-    expect(html).toMatch(/dot--overdue/)
-    // The count itself, not just the label.
-    expect(html).toMatch(/dot dot--overdue"[^>]*><\/span>2/)
-    // And it must not claim to be on schedule — see paceLabel. Checked on the pace line
-    // specifically: the meter's aria-valuetext legitimately names the on-schedule mark.
-    const pace = /class="overall__pace">([^<]*)</.exec(html)[1]
-    expect(pace).toContain('past their date')
-    expect(pace).not.toContain('On schedule')
   })
 
-  it('renders an empty board without dividing by zero', () => {
-    const html = renderToStaticMarkup(<OverallCard overall={overallProgress([])} />)
-    expect(html).toContain('Nothing to measure yet')
-    expect(html).not.toContain('NaN')
+  it('names the mark in the spoken value, its only other channel', () => {
+    const overall = overallOf([task({ id: 'a', due: '2026-12-01' }), task({ id: 'b' })])
+    const html = renderToStaticMarkup(<OverallCard overall={overall} onShowOverdue={noop} />)
+    expect(html).toMatch(/aria-valuetext="[^"]*1 of 2 dates have passed"/)
   })
 
-  it('draws the on-schedule mark whether or not the two figures diverge', () => {
-    // The mark is NOT optional. The headline counts a task as 100% once its window has run
-    // out, whether or not anybody finished it, so on its own that number reads as progress
-    // when it is really just the calendar advancing. Dropping the mark on a level board would
-    // remove the reference exactly when it is the only thing saying the two figures agree.
-    const level = overallProgress(rows([task({ id: 'a' }), task({ id: 'b' })]))
-    expect(renderToStaticMarkup(<OverallCard overall={level} />)).toContain('meter__mark')
-
-    const ahead = overallProgress(
-      rows([task({ id: 'a', doneAt: '2027-01-02T00:00:00.000Z' }), task({ id: 'b' })]),
+  it('offers the overdue count as an ACTION, and only when there is one', () => {
+    const clean = overallOf([task({ id: 'a' })])
+    expect(renderToStaticMarkup(<OverallCard overall={clean} onShowOverdue={noop} />)).not.toContain(
+      'overall__alert',
     )
-    expect(renderToStaticMarkup(<OverallCard overall={ahead} />)).toContain('meter__mark')
+
+    const late = overallOf([task({ id: 'a', due: '2026-12-01' }), task({ id: 'b', due: '2026-12-02' })])
+    const html = renderToStaticMarkup(<OverallCard overall={late} onShowOverdue={noop} />)
+    expect(html).toContain('overall__alert')
+    expect(html).toContain('2 overdue')
+  })
+
+  it('never reads as a finished plan when nothing is finished', () => {
+    // The old model's most dangerous reading, kept as a regression: every date passed and
+    // nothing done used to report 100%.
+    const late = overallOf(
+      Array.from({ length: 8 }, (_, index) => task({ id: `t${index}`, due: '2026-12-01' })),
+    )
+    const html = renderToStaticMarkup(<OverallCard overall={late} onShowOverdue={noop} />)
+    expect(html).toMatch(/class="overall__percent">0</)
+    expect(html).toContain('8 overdue')
+  })
+
+  it('renders nothing at all for an empty board rather than a 0% card', () => {
+    // `EmptyBoard` says what an empty board means; a hero figure measuring nothing does not.
+    expect(
+      renderToStaticMarkup(<OverallCard overall={overallProgress([])} onShowOverdue={noop} />),
+    ).toBe('')
   })
 })
 
@@ -211,7 +213,6 @@ describe('TaskCard', () => {
     renderToStaticMarkup(
       <TaskCard
         task={task_}
-        nowWall={NOW_WALL}
         canEdit
         open={false}
         categories={CATEGORIES}
@@ -220,48 +221,74 @@ describe('TaskCard', () => {
       />,
     )
 
-  it('renders the title, the window and the percentage as TEXT', () => {
+  it('prints a bare day, no month, and no percentage', () => {
+    // The month is in the sticky group heading and was always identical to it. The percentage
+    // went with the per-row meter: it is 0 or 100 for a task with no checklist, which the tick
+    // beside it already says.
     const html = render(row)
     expect(html).toContain('Book the venue')
-    expect(html).toContain('In progress')
-    // The percentage is beside the bar, not a label on it: at 13px it does not fit
-    // inside an 8px fill.
-    expect(html).toMatch(/tcard__percent[^>]*>\d+%/)
+    expect(html).toMatch(/class="tcard__day tnum">11</)
+    expect(html).not.toContain('tcard__mon')
+    expect(html).not.toContain('tcard__percent')
+    expect(html).not.toContain('role="progressbar"')
   })
 
-  it('describes the whole card IN WORDS on the head, so colour is never the only channel', () => {
-    // The node's hue is a second channel and a `title` tooltip does not exist on touch, so the
-    // disclosure's own accessible name has to carry the state as a word — and the percentage,
-    // which a fill length is not a way to read off.
+  it('never puts a state colour on the day column', () => {
+    // A column a third of whose entries are red stops being a column, and the state hue would
+    // then be on type. Overdue and upcoming rows draw the SAME day number.
+    const [late] = rows([task({ due: '2026-12-11' })])
+    expect(render(late)).toMatch(/class="tcard__day tnum">11</)
+    expect(render(late)).not.toMatch(/tcard__day[^>]*--overdue/)
+  })
+
+  it('describes the whole row IN WORDS, with the date spelled out', () => {
+    // The visible row leans on a two-digit day plus the sticky month heading, and neither of
+    // those reaches a screen reader — so this is the one place the full date appears.
     const html = render(row)
     expect(html).toMatch(
-      /class="tcard__head"[^>]*aria-label="Book the venue: [^"]*, \d+% complete, In progress"/,
+      /class="tcard__head"[^>]*aria-label="Book the venue: Jan 11, 2027, Soon"/,
     )
   })
 
-  it('carries a state dot on the spine', () => {
-    // The node is the one mark on the card that carries the state's hue, and it rides on the
-    // card rather than in a gutter of its own so the segments meet down the month.
-    const [done] = rows([task({ doneAt: '2027-01-02T00:00:00.000Z' })])
-    expect(render(done)).toMatch(/class="dot dot--done tcard__node"/)
-    expect(render(row)).toMatch(/class="dot dot--active tcard__node"/)
+  it('puts the urgency, the tally and the category on one meta line', () => {
+    const parent = rows([task({ id: 'p' }), sub('p', 1, true), sub('p', 2)])[0]
+    const html = render(parent)
+    const meta = /class="tcard__meta">([\s\S]*?)<\/span><\/span>/.exec(html)[1]
+    expect(meta).toContain('in 5 days')
+    expect(meta).toContain('1/2')
+    expect(meta).toContain('Venue')
   })
 
-  it('splits the date chip into a day and the month under it', () => {
-    const [april] = rows([task({ start: '2027-04-18T00:00', end: '2027-04-20T23:59' })])
-    const html = render(april)
-    expect(html).toMatch(/class="tcard__day tnum">18</)
-    expect(html).toMatch(/class="tcard__mon">APR</)
+  it('renders no meta line at all when there is nothing on it', () => {
+    // Most of a freshly seeded board: a task months out, no checklist, no category.
+    const [quiet] = rows([task({ due: '2027-09-01', category: '' })])
+    expect(render(quiet)).not.toContain('tcard__meta')
+  })
+
+  it('keeps the day slot occupied for an undated task', () => {
+    // A dash rather than an invented date, and the slot stays so the titles down a month stay
+    // in one column.
+    const [none] = rows([task({ due: '' })])
+    expect(render(none)).toMatch(/class="tcard__day tnum">–</)
   })
 
   it('hides every control from a viewer but keeps the row aligned', () => {
-    const viewer = render(row, { canEdit: false })
-    // The head is still the disclosure — a viewer opens a card to read the notes — but the
-    // check is a static glyph, so the slot stays occupied and a planner's cards line up with
+    const parent = rows([task({ id: 'p' }), sub('p', 1)])[0]
+    const viewer = render(parent, { canEdit: false })
+    // The head is still the disclosure — a viewer opens a row to read the checklist — but the
+    // check is a static glyph, so the slot stays occupied and a planner's rows line up with
     // an editor's instead of shifting 44px.
     expect(viewer.match(/<button/g)).toHaveLength(1)
     expect(viewer).toContain('tcard__check--static')
-    expect(render(row).match(/<button/g)).toHaveLength(2)
+    expect(render(parent).match(/<button/g)).toHaveLength(2)
+  })
+
+  it('gives a viewer with nothing to reveal no disclosure at all', () => {
+    // A row with no checklist and no editor used to open a padded empty box, which is the
+    // normal case for a planner on a freshly seeded board.
+    const viewer = render(row, { canEdit: false })
+    expect(viewer).not.toContain('tcard__chev')
+    expect(viewer).not.toContain('aria-expanded')
   })
 
   it('labels the done toggle by what it will do', () => {
@@ -275,53 +302,90 @@ describe('TaskCard', () => {
     expect(closed).toContain('tcard--done')
   })
 
-  it('says so when a task has no usable window, and keeps the chip slot', () => {
-    const [none] = rows([task({ start: '', end: '' })])
-    const html = render(none)
-    expect(html).toContain('No dates set')
-    // A dash rather than an invented date, and the slot is still there so the titles down a
-    // month stay in one column.
-    expect(html).toMatch(/class="tcard__day tnum">–</)
-    expect(html).not.toContain('tcard__mon')
-  })
-
-  it('shows a viewer the owner and the notes the collapsed row has no room for', () => {
-    const [full] = rows([task({ notes: 'call first', owner: 'Aoi' })])
-    const html = render(full, { canEdit: false, open: true })
-    expect(html).toContain('call first')
-    expect(html).toContain('Aoi')
-    // And not one field, ever — a control a viewer's writes would be refused by.
-    expect(html).not.toContain('<input')
-
-    const bare = render(row, { canEdit: false, open: true })
-    expect(bare).not.toContain('caption')
-  })
-
-  it('marks an unsaved card without hiding it', () => {
+  it('marks an unsaved row without hiding it', () => {
     const [pending] = rows([{ ...task(), pending: true }])
     const html = render(pending)
     expect(html).toContain('tcard--pending')
     expect(html).toContain('Book the venue')
   })
 
-  it('renders the whole editor in place, with no Save button and no form', () => {
-    // Editing happens inside the open card: every field commits on blur, so there is no
-    // dirty state a collapse or a reload can throw away — and therefore nothing to submit.
+  it('OPENS READ-ONLY, with no field armed by the tap that opened it', () => {
+    // Tapping a row is how you read it and tick its checklist, a hundred times a week.
+    // Live fields behind that tap meant the common gesture put a caret in a text input, and
+    // the editor commits on blur — so a stray tap could retitle a task with no confirmation.
     const html = render(row, { open: true })
+    expect(html).not.toContain('class="editor"')
+    // No TITLE field above all — that is the one a caret lands in, and the one a stray blur
+    // would have written. The add-a-subtask field is a different thing and stays; see below.
+    expect(html).not.toContain('type="date"')
+    expect(html).not.toContain('<select')
+    expect(html).not.toMatch(/class="input"/)
+    // What it shows instead: the date spelled out, and the way in.
+    expect(html).toContain('tcard__fact')
+    expect(html).toContain('Mon, January 11, 2027')
+    expect(html).toMatch(/aria-pressed="false"[^>]*>.*?Edit</s)
+  })
+
+  it('offers no delete on the read path either', () => {
+    // Two destructive-adjacent controls behind an ordinary tap is one too many.
+    expect(render(row, { open: true })).not.toContain('Delete this task')
+    expect(render(row, { open: true, editing: true })).toContain('Delete this task')
+  })
+
+  it('says so when an open row has no date', () => {
+    const [none] = rows([task({ due: '' })])
+    expect(render(none, { open: true })).toMatch(/tcard__fact[\s\S]*?No date/)
+  })
+
+  it('renders three fields once editing, with no Save button and no form', () => {
+    // Every field commits on blur, so there is no dirty state a collapse or a reload can throw
+    // away — and therefore nothing to submit.
+    const html = render(row, { open: true, editing: true })
     expect(html).toContain('class="editor"')
     expect(html).toContain('>Title<')
-    expect(html).toContain('>Owner<')
+    expect(html).toContain('>Due<')
+    expect(html).toContain('>Category<')
     expect(html).not.toContain('<form')
+    // The fields the model no longer has.
+    expect(html).not.toContain('>Owner<')
+    expect(html).not.toContain('>Notes<')
+    expect(html).not.toContain('>All day<')
+    expect(html).not.toContain('type="time"')
+    expect(html.match(/type="date"/g)).toHaveLength(1)
+    // And the facts line is replaced rather than stacked above the fields.
+    expect(html).not.toContain('tcard__fact')
+    expect(html).toContain('aria-pressed="true"')
+  })
+
+  it('offers a subtask a title and no date field', () => {
+    // `validateTask` returns early for anything with a parentId, so a date offered here would
+    // be saved unvalidated — and it did once save an end before a start.
+    const child = rows([task({ id: 'p' }), sub('p', 1)])[0].subtasks[0]
+    const html = render(
+      { ...child, progress: { state: STATE.NODATE, days: null, dated: false, tally: null }, subtasks: [] },
+      { open: true, editing: true },
+    )
+    expect(html).toContain('class="editor"')
+    expect(html).not.toContain('type="date"')
+  })
+
+  it('hides the toggle from a viewer, who has nothing to switch to', () => {
+    const parent = rows([task({ id: 'p' }), sub('p', 1)])[0]
+    const viewer = render(parent, { open: true, canEdit: false })
+    expect(viewer).not.toContain('tcard__foot')
+    expect(viewer).not.toContain('Edit')
+    // But the facts and the checklist are both there — that is the whole disclosure for them.
+    expect(viewer).toContain('tcard__fact')
+    expect(viewer).toContain('Step 1')
   })
 })
 
-describe('the checklist inside an open card', () => {
+describe('the checklist inside an open row', () => {
   const parented = (subs) => rows([task({ id: 'p' }), ...subs])[0]
   const render = (task_, extra = {}) =>
     renderToStaticMarkup(
       <TaskCard
         task={task_}
-        nowWall={NOW_WALL}
         canEdit
         open={false}
         categories={CATEGORIES}
@@ -330,13 +394,21 @@ describe('the checklist inside an open card', () => {
       />,
     )
 
+  it('keeps the checklist tickable on the READ path', () => {
+    // Ticking an item is doing the work, not editing the task, so it is in both modes — and it
+    // is the reason a row is opened at all.
+    const html = render(parented([sub('p', 1)]), { open: true })
+    expect(html).not.toContain('class="editor"')
+    expect(html).toContain('subtask__toggle')
+    expect(html).toContain('subtask-add__field')
+  })
+
   it('offers no add field when the deployment cannot store a subtask', () => {
     // The banner tells somebody their script is out of date; leaving a live field under it invites
     // them to type a checklist that will be refused. The existing items stay fully live — an old
     // script ticks and deletes them correctly, it just cannot write `parent_id`.
     const row = parented([sub('p', 1), sub('p', 2)])
-    const offered = render(row, { open: true })
-    expect(offered).toContain('subtask-add__field')
+    expect(render(row, { open: true })).toContain('subtask-add__field')
 
     const withheld = render(row, { open: true, canAddSubtask: false })
     expect(withheld).not.toContain('subtask-add__field')
@@ -344,7 +416,7 @@ describe('the checklist inside an open card', () => {
     expect(withheld).toContain('subtask__toggle')
   })
 
-  it('renders no disclosure content at all while the card is closed', () => {
+  it('renders no disclosure content at all while the row is closed', () => {
     // The load-bearing decision: a freshly seeded 52-task board is 52 collapsed rows and
     // nothing else — no fields, no checklists, no height. A static render runs no effect, so
     // this closed default is also all the preview harness will ever see.
@@ -357,19 +429,16 @@ describe('the checklist inside an open card', () => {
   })
 
   it('costs a task with no subtasks no tally and no rail', () => {
-    // Nothing to count, so nothing is drawn: no `3/5` in the collapsed row, and — for a viewer,
-    // who has no add field to be offered — no empty checklist rail in the opened one either.
     const bare = parented([])
     expect(render(bare)).not.toContain('tcard__tally')
     expect(render(bare, { open: true, canEdit: false })).not.toContain('class="subtasks"')
   })
 
-  it('shows the tally beside the fill and names it in the card’s label', () => {
-    // The tally is what tells the reader a tallied fill is a COUNT rather than a clock reading.
+  it('shows the tally and names it in the row’s label', () => {
     // It is never coloured: `5/5` in the done colour would claim a `done_at` the sheet does
     // not have.
     const html = render(parented([sub('p', 1, true), sub('p', 2), sub('p', 3)]))
-    expect(html).toMatch(/class="tcard__tally tnum"[^>]*>1\/3</)
+    expect(html).toMatch(/class="tcard__tally tnum">1\/3</)
     expect(html).toMatch(/aria-label="[^"]*1 of 3 subtasks"/)
   })
 
@@ -385,24 +454,30 @@ describe('the checklist inside an open card', () => {
     expect(open).toContain('Step 1')
   })
 
-  it('gives a subtask a check and a delete, but no meter and no badge', () => {
-    // A dateless item has nothing for a bar to measure, and a meter would encode exactly the
-    // one bit the checkbox beside it already does.
+  it('gives a subtask a check, but no meter and no urgency label', () => {
+    // A dateless item has nothing for a bar to measure or a distance to count.
     const open = render(parented([sub('p', 1)]), { open: true })
-    // BOUNDED TO THE LIST. Slicing to the end of the document read the PARENT's own meter,
-    // which of course has a progressbar, and the assertion passed for the wrong reason — it
-    // would have gone on passing with a meter on every subtask. The bound is what makes this
-    // a statement about the checklist, whatever order the card renders its parts in.
     const start = open.indexOf('class="subtasks"')
     const list = open.slice(start, open.indexOf('</ul>', start))
     expect(list).toContain('subtask__toggle')
-    expect(list).toContain('aria-label="Delete Step 1"')
     expect(list).not.toContain('role="progressbar"')
-    expect(list).not.toContain('class="badge')
+    expect(list).not.toContain('class="due"')
+  })
+
+  it('holds the per-item delete back until editing, with the task\u2019s own', () => {
+    // Three trash icons under every ordinary tap is three chances to lose an item somebody
+    // meant to tick. Ticking and ADDING stay on the read path — both are doing the work.
+    const read = render(parented([sub('p', 1)]), { open: true })
+    expect(read).not.toContain('aria-label="Delete Step 1"')
+    expect(read).toContain('subtask__toggle')
+    expect(read).toContain('subtask-add__field')
+
+    const editing = render(parented([sub('p', 1)]), { open: true, editing: true })
+    expect(editing).toContain('aria-label="Delete Step 1"')
   })
 
   it('adds with Enter rather than a nested form', () => {
-    // This list renders inside a card that also holds the editor's fields, and HTML forbids
+    // This list renders inside a row that also holds the editor's fields, and HTML forbids
     // nested forms: the parser drops the inner one, so Enter reached the outer submit and
     // tried to save the TASK. A static render cannot catch that — the nesting only becomes
     // invalid once a browser parses it — so the shape is pinned here instead.
@@ -424,21 +499,20 @@ describe('the checklist inside an open card', () => {
     expect(viewer).toContain('subtask__toggle--static')
   })
 
-  it('drives the parent meter from the tally, not the clock', () => {
-    // The window is half elapsed; three of four are ticked.
+  it('is the only thing that gives a task a partial figure', () => {
+    // Three of four ticked. Without a checklist a task is 0 or 100, which is why the meter
+    // left the row — but the tally still reaches the roll-up.
     const row = parented([sub('p', 1, true), sub('p', 2, true), sub('p', 3, true), sub('p', 4)])
-    const html = render(row)
-    expect(html).toMatch(/tcard__percent[^>]*>75%/)
-    expect(html).toContain('width:75%')
+    expect(row.progress.percent).toBe(0.75)
+    expect(overallProgress([row]).percent).toBe(0.75)
   })
 })
 
-describe('Timeline', () => {
+describe('Plan', () => {
   const render = (tasks, extra = {}) =>
     renderToStaticMarkup(
-      <Timeline
+      <Plan
         tasks={tasks}
-        nowWall={NOW_WALL}
         canEdit
         categories={CATEGORIES}
         expanded={new Set()}
@@ -450,10 +524,10 @@ describe('Timeline', () => {
 
   const months = (html) => [...html.matchAll(/class="plan__month">([^<]*)</g)].map((m) => m[1])
 
-  it('groups by month and keeps every task', () => {
+  it('groups by the month it is DUE in, and keeps every task', () => {
     const list = rows([
-      task({ id: 'a', start: '2027-01-01T00:00', end: '2027-01-31T23:59' }),
-      task({ id: 'b', title: 'Order invitations', start: '2027-03-01T00:00', end: '2027-03-31T23:59' }),
+      task({ id: 'a', due: '2027-01-31' }),
+      task({ id: 'b', title: 'Order invitations', due: '2027-03-31' }),
     ])
     const html = render(list)
     expect(months(html)).toEqual(['January 2027', 'March 2027'])
@@ -464,15 +538,17 @@ describe('Timeline', () => {
 
   it('collects undated tasks in their own group, last', () => {
     // They sort last, so putting the group anywhere else would bury the month in progress.
-    const list = rows([task({ id: 'a' }), task({ id: 'b', title: 'Someday', start: '', end: '' })])
-    expect(months(render(list, { canEdit: false }))).toEqual(['January 2027', 'No dates set'])
+    const list = rows([task({ id: 'a' }), task({ id: 'b', title: 'Someday', due: '' })])
+    expect(months(render(list, { canEdit: false }))).toEqual(['January 2027', 'No date'])
   })
 
-  it('hangs one card per task off the spine', () => {
+  it('draws one row per task and no spine', () => {
+    // The spine's node cost 24px of the left edge on every row to imply a continuity the
+    // sticky month heading now states outright.
     const list = rows([task({ id: 'a' }), task({ id: 'b', title: 'Order invitations' })])
     const html = render(list)
     expect(html.match(/class="tcard"/g)).toHaveLength(2)
-    expect(html.match(/tcard__node/g)).toHaveLength(2)
+    expect(html).not.toContain('tcard__node')
   })
 
   it('renders nothing rather than an empty shell', () => {
@@ -481,39 +557,16 @@ describe('Timeline', () => {
     expect(render([])).toBe('')
   })
 
-  it('opens only the cards the app has expanded', () => {
+  it('opens only the rows the app has expanded', () => {
     // `expanded` is a Set owned by `App`, session-only: relaunching into twelve expanded
-    // cards is a board nobody can read.
+    // rows is a board nobody can read.
     const list = rows([task({ id: 'a' }), task({ id: 'b', title: 'Order invitations' })])
     const html = render(list, { expanded: new Set(['b']) })
     expect(html.match(/aria-expanded="true"/g)).toHaveLength(1)
     expect(html.match(/tcard--open/g)).toHaveLength(1)
-    expect(html.match(/class="editor"/g)).toHaveLength(1)
-    // And it is the right one: the editor sits inside b's content, not a's.
-    expect(html.indexOf('class="editor"')).toBeGreaterThan(html.indexOf('Order invitations'))
-  })
-})
-
-describe('TabBar', () => {
-  it('gives each of the two tabs a WORD as well as a glyph', () => {
-    // A pair of unlabelled icons is a guess, and the two labels cost one line of 13px type.
-    const html = renderToStaticMarkup(<TabBar tab={TABS.HOME} onTab={noop} />)
-    const labels = [...html.matchAll(/class="tabbtn__label">([^<]*)</g)].map((m) => m[1])
-    expect(labels).toEqual(['Home', 'Timeline'])
-    expect(html.match(/<button/g)).toHaveLength(2)
-  })
-
-  it('marks the current tab once, with aria-current', () => {
-    // `<nav>` with `aria-current`, not `role="tablist"`: the ARIA tabs pattern also commits
-    // to arrow-key traversal and a focus contract that half-implementing is worse than not
-    // claiming at all.
-    const html = renderToStaticMarkup(<TabBar tab={TABS.TIMELINE} onTab={noop} />)
-    expect(html).toContain('<nav')
-    expect(html).not.toContain('role="tab')
-    expect(html.match(/aria-current="page"/g)).toHaveLength(1)
-    expect(html.match(/tabbtn--on/g)).toHaveLength(1)
-    // On the second one, not the first.
-    expect(html.indexOf('tabbtn--on')).toBeGreaterThan(html.indexOf('Home'))
+    expect(html.match(/tcard__content/g)).toHaveLength(1)
+    // And it is the right one: the content sits inside b's row, not a's.
+    expect(html.indexOf('tcard__content')).toBeGreaterThan(html.indexOf('Order invitations'))
   })
 })
 
@@ -569,7 +622,7 @@ describe('Hero', () => {
   })
 
   it('handles the day itself and the days after', () => {
-    const config = mergeConfig({ weddingDate: '2027-01-06' })
+    const config = mergeConfig({ weddingDate: TODAY })
     expect(
       renderToStaticMarkup(<Hero config={config} nowMs={NOW} canEdit onOpenSettings={noop} />),
     ).toContain('Today is the day')
@@ -589,11 +642,12 @@ describe('FilterChips', () => {
     )
   }
 
-  it('carries a count on every filter', () => {
+  it('carries a count on every filter, and is the only place the counts live', () => {
+    // The four read-only stat tiles that used to sit on the tracker are gone: the same
+    // numbers are here, and here they are also the control that acts on them.
     const html = render([task({ id: 'a' }), task({ id: 'b' })])
     const labels = [...html.matchAll(/class="chip"[^>]*>([^<]*)</g)].map((m) => m[1])
-    // `all` plus one per state, in scanning order — problems first.
-    expect(labels).toEqual(['All', 'Overdue', 'In progress', 'Upcoming', 'Done'])
+    expect(labels).toEqual(['All', 'Overdue', 'Soon', 'Later', 'Done'])
     expect(html).toContain('aria-pressed="true"')
     expect(html).toContain('chip__count')
   })
@@ -646,6 +700,9 @@ describe('Deleted', () => {
     )
     expect(html).toContain('Deleted (1)')
     expect(html).toContain('Restore')
+    // A plain disclosure, not a card: it lives inside Settings › Maintenance now, beside the
+    // purge that empties it.
+    expect(html).not.toContain('class="card')
   })
 
   it('renders nothing when nothing is deleted', () => {
@@ -667,18 +724,6 @@ describe('Deleted', () => {
       <ConfirmDeleteSheet task={parent} onConfirm={noop} onClose={noop} />,
     )
     expect(html).toContain('Its 2 subtasks go with it.')
-  })
-})
-
-describe('the stat list', () => {
-  it('emits dt before dd, which is the only valid order in a dl', () => {
-    // The other way round is invalid markup and pairs the four counts wrongly for a screen
-    // reader. `.stat` reverses them visually with column-reverse.
-    const overall = overallProgress(rows([task()]))
-    const html = renderToStaticMarkup(<OverallCard overall={overall} />)
-    const group = /<div class="stat[^"]*">([\s\S]*?)<\/div>/.exec(html)[1]
-    expect(group.indexOf('<dt')).toBeGreaterThanOrEqual(0)
-    expect(group.indexOf('<dt')).toBeLessThan(group.indexOf('<dd'))
   })
 })
 
@@ -729,10 +774,9 @@ describe('Japanese', () => {
           canEdit={false}
           onOpenSettings={noop}
         />
-        <OverallCard overall={overall} />
-        <Timeline
+        <OverallCard overall={overall} onShowOverdue={noop} />
+        <Plan
           tasks={rows([task()])}
-          nowWall={NOW_WALL}
           canEdit
           categories={CATEGORIES}
           expanded={new Set()}
@@ -743,7 +787,9 @@ describe('Japanese', () => {
     )
     expect(html).toContain('あと102日')
     expect(html).toContain('全体の進捗')
-    expect(html).toContain('進行中')
+    expect(html).toContain('1件中0件完了')
+    // The relative distance, which is the row's only urgency wording.
+    expect(html).toContain('あと5日')
     // The category is translated through the runtime family, with the sheet's own word
     // as the fallback.
     expect(html).toContain('会場')
@@ -755,9 +801,8 @@ describe('Japanese', () => {
     // The sheet is the source of truth and the catalog is a courtesy on top of it.
     setLocale('ja')
     const html = renderToStaticMarkup(
-      <Timeline
+      <Plan
         tasks={rows([task({ category: 'ハネムーン旅費' })])}
-        nowWall={NOW_WALL}
         canEdit={false}
         categories={CATEGORIES}
         expanded={new Set()}
@@ -772,37 +817,6 @@ describe('Japanese', () => {
 describe('defaults', () => {
   it('ships a category list the templates can seed from', () => {
     expect(DEFAULT_CONFIG.categories.length).toBeGreaterThan(0)
-  })
-})
-
-describe('draftToWindow', () => {
-  const base = { startDay: '2027-04-18', endDay: '2027-04-20', startTime: '09:00', endTime: '17:00' }
-
-  it('spans whole days when all-day, ending at 23:59', () => {
-    // Not the next midnight: a task due on the 20th has to be overdue on the 21st rather
-    // than 99% complete. The clock fields are ignored entirely.
-    expect(draftToWindow({ ...base, allDay: true })).toEqual({
-      start: '2027-04-18T00:00',
-      end: '2027-04-20T23:59',
-    })
-  })
-
-  it('uses the clock fields when not all-day', () => {
-    expect(draftToWindow({ ...base, allDay: false })).toEqual({
-      start: '2027-04-18T09:00',
-      end: '2027-04-20T17:00',
-    })
-  })
-
-  it('gives a single all-day task a real span, not a zero-length one', () => {
-    // A zero-length window would read 0% all day and then flip to 100% at midnight.
-    const { start, end } = draftToWindow({ ...base, endDay: base.startDay, allDay: true })
-    expect(wallToInstant(end, TOKYO)).toBeGreaterThan(wallToInstant(start, TOKYO))
-  })
-
-  it('returns empty for a missing day rather than inventing one', () => {
-    expect(draftToWindow({ ...base, startDay: '', allDay: true }).start).toBe('')
-    expect(draftToWindow({ ...base, endDay: '', allDay: false }).end).toBe('')
   })
 })
 
@@ -827,21 +841,35 @@ describe('the payload TaskEditor hands to onSave', () => {
     expect(payload.title).toBe('Ring the venue')
   })
 
-  it('leaves a subtask’s window cells untouched rather than writing an empty one', () => {
-    // A subtask is a title and a tick and is offered no date field, so a window written from
-    // that empty draft would blank two cells of a row somebody hand-dated in the spreadsheet
+  it('leaves a subtask’s date cell untouched rather than writing an empty one', () => {
+    // A subtask is a title and a tick and is offered no date field, so a day written from
+    // that empty draft would blank the cell of a row somebody hand-dated in the spreadsheet
     // — and nothing downstream would ever have checked what it wrote.
-    const dated = task({ id: 'p-1', parentId: 'p', start: '2027-03-01T00:00', end: '2027-03-02T17:00' })
+    const dated = task({ id: 'p-1', parentId: 'p', due: '2027-03-01' })
     const payload = taskFromDraft({ ...draftFrom(dated), title: 'Step 1' }, dated)
-    expect(payload.start).toBe('2027-03-01T00:00')
-    expect(payload.end).toBe('2027-03-02T17:00')
+    expect(payload.due).toBe('2027-03-01')
   })
 
   it('is the WHOLE task, so an untouched field commits nothing at all', () => {
     // `TaskEditor` decides "did this change" by comparing the ROW it is about to write with
-    // the row already there. If the payload dropped a field, or rewrote a window it should
-    // not, every blur would differ from the stored row and cost a round trip and a toast.
-    const [row] = rows([task({ notes: 'call first', owner: 'Aoi', doneAt: '2027-01-02T00:00:00.000Z' })])
+    // the row already there. If the payload dropped a field, every blur would differ from the
+    // stored row and cost a round trip and a toast.
+    const [row] = rows([task({ doneAt: '2027-01-02T00:00:00.000Z' })])
     expect(taskToRow(taskFromDraft(draftFrom(row), row))).toEqual(taskToRow(row))
+  })
+
+  it('repairs a legacy value on the way through, once, rather than blanking it', () => {
+    // A board written before dates lost their clock times holds '2027-04-18T23:59' in every
+    // row. `type=date` renders an unparseable value as blank, so without normalising on the
+    // way IN the first commit would have cleared a date still visible on the row.
+    const legacy = task({ due: '2027-04-18T23:59' })
+    expect(draftFrom(legacy).due).toBe('2027-04-18')
+    expect(taskFromDraft(draftFrom(legacy), legacy).due).toBe('2027-04-18')
+  })
+
+  it('stores no date at all when none was given', () => {
+    // Not today's date. Defaulting to today would make every task typed in a hurry overdue
+    // tomorrow, which is a false number nobody typed.
+    expect(taskFromDraft(draftFrom(null)).due).toBe('')
   })
 })

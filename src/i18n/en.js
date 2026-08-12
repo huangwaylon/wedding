@@ -12,6 +12,10 @@ export default {
   'common.save': 'Save',
   'common.delete': 'Delete',
   'common.close': 'Close',
+  /* The read/edit toggle inside an open row. Two words for one control, because a toggle that
+     does not say which way it is about to go is a guess. */
+  'common.edit': 'Edit',
+  'common.editDone': 'Done',
   'common.restore': 'Restore',
   'common.settings': 'Settings',
   'common.dash': '–',
@@ -37,36 +41,37 @@ export default {
   'countdown.unset': 'No wedding date set',
 
   'overall.title': 'Overall progress',
-  'overall.empty': 'Nothing to measure yet',
-  'overall.expected': 'On schedule: {percent}%',
-  'overall.pace.ahead': '{percent}% ahead of schedule',
-  'overall.pace.behind': {
-    one: 'Behind: {count} task is past its date',
-    other: 'Behind: {count} tasks are past their date',
-  },
-  'overall.pace.ontrack': 'On schedule',
+  /* The count that makes the figure above it checkable by arithmetic, and what replaced a
+     pace sentence that could be wrong — see OverallCard. No noun is counted, so this is a
+     plain string rather than a plural object. */
+  'overall.summary': '{done} of {count} done',
+  'overall.expected': '{count} of {total} dates have passed',
+  'overall.overdue': { one: '{count} overdue', other: '{count} overdue' },
 
   'state.done': 'Done',
   'state.overdue': 'Overdue',
-  'state.active': 'In progress',
-  'state.upcoming': 'Upcoming',
-  'state.unscheduled': 'No dates',
+  'state.soon': 'Soon',
+  'state.later': 'Later',
+  'state.nodate': 'No date',
+
+  /* How near the due date is, and the only urgency wording on a row. Nothing is rendered
+     past the fortnight, so there is no key for it. */
+  'due.ago': { one: '{count} day ago', other: '{count} days ago' },
+  'due.today': 'Today',
+  'due.tomorrow': 'Tomorrow',
+  'due.in': { one: 'in {count} day', other: 'in {count} days' },
 
   'filter.all': 'All',
   'filter.label': 'Show',
-  'tab.label': 'Sections',
-  'tab.home': 'Home',
-  'tab.timeline': 'Timeline',
 
-  'list.unscheduled': 'No dates set',
   'list.emptyFiltered': 'Nothing matches.',
   'list.showAll': 'Show everything',
-  'list.percentLabel': '{percent}% complete',
-  /* The collapsed card's accessible name. It states the state in WORDS, which is what
-     keeps the node's colour from being the only channel — and the tallied variant carries
-     the count, because a tallied card's fill IS a count rather than a clock reading. */
-  'plan.cardLabel': '{title}: {when}, {percent}% complete, {state}',
-  'plan.cardLabelSubs': '{title}: {when}, {percent}% complete, {state}, {subs}',
+  /* The collapsed row's accessible name, and the one place the date is spelled out in full:
+     the visible row leans on a bare day number plus the sticky month heading, and neither of
+     those reaches a screen reader. It states the state in WORDS, so the dot's colour is never
+     the only channel. */
+  'plan.cardLabel': '{title}: {when}, {state}',
+  'plan.cardLabelSubs': '{title}: {when}, {state}, {subs}',
   'list.subtasks': {
     one: '{done} of {count} subtask',
     other: '{done} of {count} subtasks',
@@ -98,22 +103,11 @@ export default {
   'form.titlePlaceholder': 'Book the venue',
   'form.category': 'Category',
   'form.categoryNone': 'No category',
-  'form.allDay': 'All day',
-  'form.start': 'Starts',
-  'form.end': 'Due by',
-  'form.startTime': 'Start time',
-  'form.endTime': 'End time',
-  'form.owner': 'Owner',
-  'form.ownerPlaceholder': 'Either of us',
-  'form.notes': 'Notes',
+  'form.due': 'Due',
   'form.deleteThis': 'Delete this task',
 
   'error.MISSING_TITLE': 'Give the task a name.',
-  'error.MISSING_START': 'Set a start date.',
-  'error.MISSING_END': 'Set a due date.',
-  'error.BAD_START': 'That start date is not a real date.',
-  'error.BAD_END': 'That due date is not a real date.',
-  'error.END_BEFORE_START': 'The due date is before the start.',
+  'error.BAD_DUE': 'That is not a real date.',
 
   'confirm.deleteTitle': 'Delete this task?',
   'confirm.deleteBody': '“{title}” goes to the Deleted list, where you can put it back.',
@@ -131,7 +125,6 @@ export default {
   'settings.partner2': 'The other',
   'settings.wedding': 'The wedding',
   'settings.weddingDate': 'Date',
-  'settings.weddingTime': 'Time',
   'settings.venue': 'Venue',
   'settings.timezone': 'Time zone',
   'settings.timezoneHint': 'Every time on the board is read in this zone.',

@@ -46,6 +46,21 @@ function makeSheet(name, grid) {
       return 0
     },
     getMaxRows: () => Math.max(sheet.grid.length, 1000),
+    getLastColumn: () => Math.max(0, ...sheet.grid.map((line) => line.length)),
+    /**
+     * ONE service call for the header and every row, which is what the script reads the grid
+     * with. It reports the columns that are ACTUALLY there rather than the nine this version
+     * expects — that is the whole point, and it is what lets a legacy thirteen-column layout be
+     * seen as one instead of read as nine wrong cells. Clamped to 1x1 like the real thing, so an
+     * empty tab still yields a row for the header check to fail on.
+     */
+    getDataRange: () =>
+      sheet.getRange(
+        1,
+        1,
+        Math.max(1, sheet.getLastRow()),
+        Math.max(1, Math.max(0, ...sheet.grid.map((line) => line.length))),
+      ),
     setFrozenRows: () => {},
     deleteRow: (row) => {
       sheet.grid.splice(row - 1, 1)
@@ -86,6 +101,14 @@ function makeSheet(name, grid) {
         sheet.formatted.push({ top, left, rows, columns, format })
       },
       setFontWeight: () => {},
+      clearContent: () => {
+        sheet.writes += 1
+        for (let r = 0; r < rows; r += 1) {
+          for (let c = 0; c < columns; c += 1) {
+            if (sheet.grid[top - 1 + r]) sheet.grid[top - 1 + r][left - 1 + c] = ''
+          }
+        }
+      },
     }),
   }
   return sheet
@@ -161,16 +184,85 @@ const task = (overrides) => ({
   id: 'p1',
   title: 'Book the venue',
   category: 'Venue',
-  start: '2027-01-01T00:00',
-  end: '2027-02-01T23:59',
-  all_day: 'TRUE',
+  due: '2027-02-01',
   done_at: '',
-  notes: '',
-  owner: '',
   deleted_at: '',
   parent_id: '',
   ...overrides,
 })
+
+/** The layout this script replaced, for the relayout cases. */
+const LEGACY_COLUMNS = [
+  'id',
+  'title',
+  'category',
+  'start',
+  'end',
+  'all_day',
+  'done_at',
+  'notes',
+  'owner',
+  'created_at',
+  'updated_at',
+  'deleted_at',
+  'parent_id',
+]
+
+/** A tasks tab still on the old thirteen-column layout. */
+function makeLegacyBook(rows) {
+  const tasks = makeSheet('tasks', [
+    LEGACY_COLUMNS.slice(),
+    ...rows.map((row) => LEGACY_COLUMNS.map((name) => row[name] ?? '')),
+  ])
+  const config = makeSheet('config', [
+    ['key', 'value'],
+    ['timezone', 'Asia/Tokyo'],
+  ])
+  const sheets = [tasks, config]
+  return {
+    tasks,
+    config,
+    getSheets: () => sheets,
+    getSheetByName: (name) => sheets.find((sheet) => sheet.name === name) ?? null,
+    getSpreadsheetTimeZone: () => 'Asia/Tokyo',
+    insertSheet: (name) => {
+      const made = makeSheet(name, [[]])
+      sheets.push(made)
+      return made
+    },
+    deleteSheet: (sheet) => sheets.splice(sheets.indexOf(sheet), 1),
+  }
+}
+
+const LEGACY_ROWS = [
+  {
+    id: 'L1',
+    title: 'Book the venue',
+    category: 'Venue',
+    start: '2026-12-01T00:00',
+    end: '2027-02-01T23:59',
+    all_day: 'TRUE',
+    notes: 'call first',
+    owner: 'Both',
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-02T00:00:00.000Z',
+    deleted_at: '',
+    parent_id: '',
+  },
+  {
+    id: 'L2',
+    title: 'Shortlist three',
+    category: '',
+    start: '',
+    end: '',
+    all_day: '',
+    done_at: '2026-06-06T00:00:00.000Z',
+    created_at: '2026-01-03T00:00:00.000Z',
+    updated_at: '2026-01-03T00:00:00.000Z',
+    deleted_at: '',
+    parent_id: 'L1',
+  },
+]
 
 /** The stored grid as row objects, header excluded. */
 function stored(book) {
@@ -209,9 +301,10 @@ describe('the read', () => {
   })
 
   it('reformats a cell the Sheets UI coerced to a Date', () => {
-    // Otherwise it crosses the wire as "Fri Aug 07 2026 …" and the client cannot parse it.
-    book.tasks.grid[1][TASK_COLUMNS.indexOf('start')] = new Date('2027-01-01T00:00:00Z')
-    expect(JSON.parse(script.doGet()).tasks[0].start).toBe('2027-01-01T00:00')
+    // Otherwise it crosses the wire as "Fri Aug 07 2026 …" and the client cannot parse it. The
+    // client's `normalizeDay` then slices the clock half off.
+    book.tasks.grid[1][TASK_COLUMNS.indexOf('due')] = new Date('2027-01-01T00:00:00Z')
+    expect(JSON.parse(script.doGet()).tasks[0].due).toBe('2027-01-01T00:00')
   })
 
   it('reports its column list even on a board with no tabs yet', () => {
@@ -281,9 +374,9 @@ describe('update', () => {
     expect(book.tasks.formatted.length).toBeGreaterThan(0)
   })
 
-  it('escapes a note that would otherwise become a formula', () => {
-    post(script, 'update', { task: task({ id: 'p1', notes: '=SUM(A:A)' }) })
-    expect(stored(book)[0].notes).toBe("'=SUM(A:A)")
+  it('escapes a title that would otherwise become a formula', () => {
+    post(script, 'update', { task: task({ id: 'p1', title: '=SUM(A:A)' }) })
+    expect(stored(book)[0].title).toBe("'=SUM(A:A)")
   })
 })
 
@@ -424,7 +517,7 @@ describe('structure', () => {
     expect(theirs.inserted).toEqual([])
   })
 
-  it('repairs a header row that predates a column', () => {
+  it('repairs a header row somebody blanked a cell in', () => {
     book.tasks.grid[0] = TASK_COLUMNS.slice(0, -1).concat([''])
     post(script, 'update', { task: task({ id: 'p1' }) })
     expect(book.tasks.grid[0]).toEqual(TASK_COLUMNS)
@@ -435,6 +528,79 @@ describe('structure', () => {
     post(script, 'update', { task: task({ id: 'p1' }) })
     // One write: the row itself. A header rewrite on every save would be a wasted round trip.
     expect(book.tasks.writes - before).toBe(1)
+  })
+})
+
+describe('an existing board on the previous layout', () => {
+  let legacy
+  let legacyScript
+
+  beforeEach(() => {
+    legacy = makeLegacyBook(LEGACY_ROWS)
+    legacyScript = load(legacy)
+  })
+
+  it('READS by column name, so the anonymous read needs no write', () => {
+    // `doGet` cannot relayout — an anonymous request must not cause a write — so it resolves
+    // its own columns from the header row it just read. Reading at this version's indices
+    // instead would report `start` as the due date and `notes` as `created_at`.
+    const before = legacy.tasks.writes
+    const body = JSON.parse(legacyScript.doGet())
+    expect(legacy.tasks.writes).toBe(before)
+    expect(body.tasks).toHaveLength(2)
+    expect(body.tasks[0]).toMatchObject({
+      id: 'L1',
+      title: 'Book the venue',
+      // The old closing end of the window IS the due date; the client slices the clock off.
+      due: '2027-02-01T23:59',
+      created_at: '2026-01-01T00:00:00.000Z',
+    })
+    expect(body.tasks[1]).toMatchObject({ id: 'L2', parent_id: 'L1', due: '' })
+  })
+
+  it('moves the grid onto the new layout on the first WRITE', () => {
+    post(legacyScript, 'update', { task: task({ id: 'L1', title: 'Booked', due: '2027-02-01' }) })
+    expect(legacy.tasks.grid[0].slice(0, TASK_COLUMNS.length)).toEqual(TASK_COLUMNS)
+    const rows = stored(legacy)
+    expect(rows[0]).toMatchObject({
+      id: 'L1',
+      title: 'Booked',
+      due: '2027-02-01',
+      created_at: '2026-01-01T00:00:00.000Z',
+      parent_id: '',
+    })
+    // The untouched row was carried across by NAME, not by position — read by index it would
+    // have taken `start` as its due date and `notes` as its created_at.
+    expect(rows[1]).toMatchObject({
+      id: 'L2',
+      title: 'Shortlist three',
+      due: '',
+      done_at: '2026-06-06T00:00:00.000Z',
+      created_at: '2026-01-03T00:00:00.000Z',
+      parent_id: 'L1',
+    })
+  })
+
+  it('clears the columns the old layout had past the new width', () => {
+    // An orphaned `owner` column under a blank header is exactly the kind of thing somebody
+    // deletes by hand, taking a real column with it if the count ever shifts again.
+    post(legacyScript, 'update', { task: task({ id: 'L1' }) })
+    for (const line of legacy.tasks.grid) {
+      expect(line.slice(TASK_COLUMNS.length).every((cell) => cell === '')).toBe(true)
+    }
+  })
+
+  it('runs once, then leaves the grid alone', () => {
+    post(legacyScript, 'update', { task: task({ id: 'L1', title: 'Booked' }) })
+    const after = legacy.tasks.writes
+    post(legacyScript, 'update', { task: task({ id: 'L1', title: 'Booked again' }) })
+    // One write: the row itself. A relayout on every save would be wasted round trips.
+    expect(legacy.tasks.writes - after).toBe(1)
+  })
+
+  it('does not lose a row to the move', () => {
+    post(legacyScript, 'create', { task: task({ id: 'N1', title: 'Order flowers' }) })
+    expect(stored(legacy).map((row) => row.id)).toEqual(['L1', 'L2', 'N1'])
   })
 })
 

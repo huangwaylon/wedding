@@ -14,7 +14,6 @@ import { getLocale, interpolate, setLocale, t, translate } from '../src/i18n/ind
 import { STATE, STATE_ORDER } from '../src/lib/progress.js'
 import { CATEGORIES, TEMPLATE_IDS } from '../src/lib/templates.js'
 import { ACCENTS } from '../src/lib/theme.js'
-import { TABS } from '../src/components/TabBar.jsx'
 
 /** A test that changes the locale must put it back, or the state leaks across files. */
 afterEach(() => {
@@ -43,16 +42,9 @@ const RUNTIME_FAMILIES = [
   ...CATEGORIES.map((category) => `category.${category.toLowerCase()}`),
   ...TEMPLATE_IDS.map((id) => `template.${id}`),
   ...ACCENTS.map((accent) => `accent.${accent}`),
-  ...Object.values(TABS).map((tab) => `tab.${tab}`),
-  ...['ahead', 'behind', 'ontrack'].map((pace) => `overall.pace.${pace}`),
-  ...[
-    'MISSING_TITLE',
-    'MISSING_START',
-    'MISSING_END',
-    'BAD_START',
-    'BAD_END',
-    'END_BEFORE_START',
-  ].map((code) => `error.${code}`),
+  /* `DueLabel` builds these from the state and the day count. */
+  ...['due.ago', 'due.today', 'due.tomorrow', 'due.in'],
+  ...['MISSING_TITLE', 'BAD_DUE'].map((code) => `error.${code}`),
   ...[
     'unconfigured',
     'unauthorized',
@@ -174,12 +166,12 @@ describe('runtime key families', () => {
     }
   })
 
-  /* The tab bar builds `tab.${id}` from TABS, so the literal scan cannot see either
-     label — which is exactly the case CLAUDE.md requires a coverage test for. */
-  it('has a label for every tab', () => {
-    for (const tab of Object.values(TABS)) {
+  /* `DueLabel` picks one of these from the state and the signed day count, so the literal
+     scan cannot see any of them — exactly the case CLAUDE.md requires a coverage test for. */
+  it('has a phrase for every distance a row can print', () => {
+    for (const key of ['due.ago', 'due.today', 'due.tomorrow', 'due.in']) {
       for (const locale of SUPPORTED) {
-        expect(CATALOGS[locale][`tab.${tab}`], `${locale}: ${tab}`).toBeTruthy()
+        expect(CATALOGS[locale][key], `${locale}: ${key}`).toBeTruthy()
       }
     }
   })

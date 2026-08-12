@@ -1,33 +1,27 @@
 /**
  * A task's fields, and the only home for the markup and the draft arithmetic behind them.
  *
- * Two surfaces edit a task and they commit differently — `TaskEditor` sends each field as
- * focus leaves it, `TaskFormSheet` buffers a whole draft and submits once — so every field
- * here is pure value + onChange, and `onCommit` is the optional report that blur or Enter
- * happened. The two must not own separate copies of the rules below: a second copy of the
- * all-day handling is a second chance to get 23:59 wrong.
+ * THREE FIELDS: a title, a day, a category. A task used to carry a start, an end, two clock
+ * times, an all-day switch, an owner and a memo — seven controls, five of which were left
+ * empty on almost every row, and between them they made a task something you filled in rather
+ * than something you wrote down. What is left is what a checklist actually needs: what it is,
+ * when it is due, and roughly what kind of thing it is.
  *
- * Dates and times are split into separate `date` and `time` inputs rather than one
- * `datetime-local`. Three reasons, and the first is the deciding one: an all-day task has no
- * time at all, and `datetime-local` cannot express that without either inventing a clock
- * reading or swapping the control type mid-form. The second is that iOS Safari's
- * `datetime-local` picker is a combined spinner that is markedly slower to set than the date
- * wheel, and entering a task has to be fast enough to do standing in a venue. The third is
- * that `date` and `time` degrade independently.
+ * Two surfaces edit a task and they commit differently — `TaskEditor` sends each field as focus
+ * leaves it, `TaskFormSheet` buffers a whole draft and submits once — so every field here is
+ * pure value + onChange, and `onCommit` is the optional report that blur or Enter happened.
  *
- * The stored value is always a full wall-clock string; an all-day task gets 00:00 and 23:59,
- * so progress arithmetic never has to special-case it. That is also why the end time is 23:59
- * rather than the next midnight: a task due Friday must be overdue on Saturday morning, not
- * 99% complete.
+ * THE DAY IS A NATIVE `type=date` AND THAT IS DELIBERATE. The platform wheel is the fastest
+ * date entry on a phone by a wide margin and it is the control people already know; a
+ * hand-rolled calendar would be more markup, worse with a screen reader, and slower. What it
+ * costs is a control whose intrinsic width comes from the platform rather than from us — see
+ * `.input[type="date"]` in primitives.css, which is what stops it drawing past the edge of the
+ * card it sits in.
  */
 
 import { validateTask } from '../schema.js'
-import { endOfDay, isValidWall, normalizeWall, startOfDay, wallDay } from '../lib/time.js'
+import { isValidDay, normalizeDay } from '../lib/time.js'
 import { useCategoryLabel, useT } from '../i18n/index.js'
-
-/** Offered when the clock is turned on, so nobody has to spin a wheel from 00:00. */
-const DEFAULT_START_TIME = '09:00'
-const DEFAULT_END_TIME = '17:00'
 
 /**
  * The two homes this field set has. A field is identical in both; only the wrapper and the
@@ -62,8 +56,8 @@ function skinOf(name) {
  * its own draft passes neither prop and gets no handlers at all.
  *
  * @param {object} handlers
- * @param {boolean} [handlers.enter] false where Return means a newline, or a wheel's own
- *   confirmation, rather than "I am done with this field"
+ * @param {boolean} [handlers.enter] false where Return means a wheel's own confirmation rather
+ *   than "I am done with this field"
  */
 function fieldEvents({ onCommit, onFocusChange, enter = true }) {
   const events = {}
@@ -84,11 +78,6 @@ function fieldEvents({ onCommit, onFocusChange, enter = true }) {
   return events
 }
 
-/** '2027-04-18T14:00' -> '14:00'. '' for anything unusable. */
-function timeOf(wall) {
-  return isValidWall(wall) ? wall.slice(11, 16) : ''
-}
-
 /**
  * A task -> the shape the fields work in, or a blank draft for a new one.
  *
@@ -97,49 +86,17 @@ function timeOf(wall) {
  * answer to "when was this finished" — as a side effect of fixing a typo.
  */
 export function draftFrom(task, defaultDay = '') {
-  if (!task) {
-    return {
-      title: '',
-      category: '',
-      allDay: true,
-      startDay: defaultDay,
-      endDay: defaultDay,
-      startTime: DEFAULT_START_TIME,
-      endTime: DEFAULT_END_TIME,
-      owner: '',
-      notes: '',
-    }
-  }
-  const allDay = Boolean(task.allDay)
+  if (!task) return { title: '', category: '', due: defaultDay }
   return {
     title: task.title,
     category: task.category,
-    allDay,
-    startDay: wallDay(task.start),
-    endDay: wallDay(task.end),
     /**
-     * An all-day task's stored 00:00 and 23:59 are the sentinels its window is built from,
-     * not a clock reading anybody chose, so turning the clock back ON offers the working-day
-     * default rather than proposing a task that runs from midnight to a minute before it.
+     * Normalised on the way IN, not just on the way out. A board written before dates lost
+     * their clock times holds '2027-04-18T23:59', and `type=date` silently renders an
+     * unparseable value as blank — so opening such a task showed an empty wheel and the first
+     * commit would have cleared a date somebody could still see on the card.
      */
-    startTime: (allDay ? '' : timeOf(task.start)) || DEFAULT_START_TIME,
-    endTime: (allDay ? '' : timeOf(task.end)) || DEFAULT_END_TIME,
-    owner: task.owner,
-    notes: task.notes,
-  }
-}
-
-/**
- * The draft -> the two wall-clock strings. An all-day window is the whole of both days, so a
- * single-day all-day task still has a span rather than a zero-length one that would read 0%
- * right up to midnight and then 100%.
- */
-export function draftToWindow(draft) {
-  const start = draft.startDay ? `${draft.startDay}T${draft.allDay ? '00:00' : draft.startTime}` : ''
-  const end = draft.endDay ? `${draft.endDay}T${draft.allDay ? '23:59' : draft.endTime}` : ''
-  return {
-    start: draft.allDay && start ? startOfDay(start) : normalizeWall(start),
-    end: draft.allDay && end ? endOfDay(end) : normalizeWall(end),
+    due: normalizeDay(task.due),
   }
 }
 
@@ -147,13 +104,13 @@ export function draftToWindow(draft) {
  * The draft plus whatever it was built from -> the WHOLE task to store.
  *
  * `base` spreads before the fields so the id, `parentId`, `doneAt` and `deletedAt` survive:
- * `updateTask` writes the whole row from this payload, and one built without `parentId`
- * blanks the cell and silently promotes a subtask to a task. The three empty strings above it
- * are what a brand-new task needs and an existing one overrides.
+ * `updateTask` writes the whole row from this payload, and one built without `parentId` blanks
+ * the cell and silently promotes a subtask to a task. The three empty strings above it are what
+ * a brand-new task needs and an existing one overrides.
  *
- * A SUBTASK KEEPS ITS CELLS UNTOUCHED. It is a title and a tick — `validateTask` returns early
- * for anything with a `parentId`, and no caller offers it a date field — so a window written
- * from an empty draft here would blank the two cells of a row somebody hand-dated in the
+ * A SUBTASK KEEPS ITS DATE CELL UNTOUCHED. It is a title and a tick — `validateTask` returns
+ * early for anything with a `parentId`, and no caller offers it a date field — so a day written
+ * from an empty draft here would blank the cell of a row somebody hand-dated in the
  * spreadsheet, and nothing downstream would ever have checked what it wrote.
  */
 export function taskFromDraft(draft, base) {
@@ -164,29 +121,24 @@ export function taskFromDraft(draft, base) {
     ...base,
     title: draft.title,
     category: draft.category,
-    allDay: draft.allDay,
-    owner: draft.owner,
-    notes: draft.notes,
   }
-  return next.parentId ? next : { ...next, ...draftToWindow(draft) }
+  return next.parentId ? next : { ...next, due: normalizeDay(draft.due) }
 }
 
 /** Structural failures, from the one validator both surfaces use. */
 export function codesFor(task) {
-  return validateTask(task, isValidWall)
+  return validateTask(task, isValidDay)
 }
 
 /**
  * Codes -> which field says what. A code family collapses to the FIRST match because a field
- * shows one message: "not a real date" and "before the start" describe the same input, and
- * stacking both under one wheel just pushes the wheel off screen.
+ * shows one message.
  */
 export function fieldErrors(codes) {
   const first = (...wanted) => wanted.find((code) => codes.includes(code)) ?? ''
   return {
     title: first('MISSING_TITLE'),
-    start: first('MISSING_START', 'BAD_START'),
-    end: first('MISSING_END', 'BAD_END', 'END_BEFORE_START'),
+    due: first('BAD_DUE'),
   }
 }
 
@@ -221,86 +173,44 @@ export function TitleField({ id, skin, value, error, onChange, onCommit, onFocus
 }
 
 /**
- * One end of the window: a day, and a clock reading only when the task is timed.
+ * The one date, and it is OPTIONAL — see `validateTask`. Full width, on a row of its own,
+ * which is half of why it no longer overflows: the pair of wheels this replaced sat in a
+ * two-track grid whose 11rem minimum was narrower than a `type=date` control's own idea of how
+ * much room it needs.
  *
- * `label` and `timeLabel` arrive already translated. The time input carries no visible label
- * because the day beside it already names the field, but it still needs one for a screen
- * reader — "09:00" alone does not say which end it is.
+ * `scrollIntoView` on focus because THE DATE WHEEL IS NOT A KEYBOARD. iOS raises a ~330px
+ * inline picker for it, and `interactive-widget=resizes-content` — which is what keeps the
+ * keyboard off the sheet's Save button — does not fire for it at all, so a field low in the
+ * viewport ends up underneath the wheel that is editing it. `nearest` so a field already
+ * comfortably visible is not yanked; the same fix `AddSubtask` needed.
  */
-export function DateField({
-  id,
-  skin,
-  label,
-  timeLabel,
-  day,
-  time,
-  showTime,
-  error,
-  onDay,
-  onTime,
-  onCommit,
-  onFocusChange,
-}) {
+export function DueField({ id, skin, value, error, onChange, onCommit, onFocusChange }) {
+  const { t } = useT()
   const classes = skinOf(skin)
-  /* A date and a time wheel are one field with one commit: moving between them fires a blur
-     that has nothing to report, which `TaskEditor` drops as an unchanged value. */
   const events = fieldEvents({ onCommit, onFocusChange })
   return (
     <div className={classes.field}>
       <label className={classes.label} htmlFor={id}>
-        {label}
+        {t('form.due')}
       </label>
-      <div className="field__row">
-        <input
-          id={id}
-          type="date"
-          className={`input${error ? ' input--invalid' : ''}`}
-          value={day}
-          onChange={(event) => onDay(event.target.value)}
-          {...events}
-        />
-        {showTime ? (
-          <input
-            type="time"
-            className="input"
-            value={time}
-            onChange={(event) => onTime(event.target.value)}
-            aria-label={timeLabel}
-            {...events}
-          />
-        ) : null}
-      </div>
+      <input
+        id={id}
+        type="date"
+        className={`input${error ? ' input--invalid' : ''}`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        {...events}
+        onFocus={(event) => {
+          events.onFocus?.(event)
+          event.currentTarget.scrollIntoView({ block: 'nearest' })
+        }}
+      />
       <FieldError code={error} />
     </div>
   )
 }
 
-/**
- * The switch that decides whether the window has clock times at all.
- *
- * A checkbox has nothing to buffer — the value IS the gesture — so it reports through
- * `onChange` and a commit-on-blur caller commits from there.
- */
-export function AllDayField({ skin, checked, onChange, onFocusChange }) {
-  const { t } = useT()
-  const classes = skinOf(skin)
-  return (
-    <div className={classes.field}>
-      <label className="switch">
-        <input
-          type="checkbox"
-          className="switch__input"
-          checked={checked}
-          onChange={(event) => onChange(event.target.checked)}
-          {...fieldEvents({ onFocusChange, enter: false })}
-        />
-        <span className="switch__text">{t('form.allDay')}</span>
-      </label>
-    </div>
-  )
-}
-
-/** Same as the switch: a picker commits the moment it changes, so `onChange` is the commit. */
+/** A picker commits the moment it changes, so `onChange` is the commit. */
 export function CategoryField({ id, skin, value, categories, onChange, onFocusChange }) {
   const { t } = useT()
   const categoryLabel = useCategoryLabel()
@@ -328,51 +238,6 @@ export function CategoryField({ id, skin, value, categories, onChange, onFocusCh
           ),
         )}
       </select>
-    </div>
-  )
-}
-
-export function OwnerField({ id, skin, value, onChange, onCommit, onFocusChange }) {
-  const { t } = useT()
-  const classes = skinOf(skin)
-  return (
-    <div className={classes.field}>
-      <label className={classes.label} htmlFor={id}>
-        {t('form.owner')}
-      </label>
-      <input
-        id={id}
-        className="input"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={t('form.ownerPlaceholder')}
-        autoComplete="off"
-        {...fieldEvents({ onCommit, onFocusChange })}
-      />
-    </div>
-  )
-}
-
-/**
- * Notes commit on blur ALONE. Return has to insert a newline here — it is the one field that
- * holds more than a line — so the Enter half of `fieldEvents` would eat the only way to write
- * a second paragraph.
- */
-export function NotesField({ id, skin, value, onChange, onCommit, onFocusChange }) {
-  const { t } = useT()
-  const classes = skinOf(skin)
-  return (
-    <div className={classes.field}>
-      <label className={classes.label} htmlFor={id}>
-        {t('form.notes')}
-      </label>
-      <textarea
-        id={id}
-        className="input textarea"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        {...fieldEvents({ onCommit, onFocusChange, enter: false })}
-      />
     </div>
   )
 }

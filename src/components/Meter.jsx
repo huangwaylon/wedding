@@ -1,5 +1,7 @@
 /**
- * The progress bar, and the only component that draws one.
+ * The progress bar. One of these is rendered in the whole app — the overall tracker — and
+ * that is the point: a bar per task would be 0% or 100% for anything without a checklist,
+ * which the tick beside it already says.
  *
  * Three things are deliberate and easy to "clean up" wrongly:
  *
@@ -9,18 +11,13 @@
  * advancing toward completion, and which iOS VoiceOver maps patchily enough that an
  * unrecognised one degrades to a generic and takes the label and value with it.
  *
- * THE VALUE IS ALSO TEXT. Every caller renders the percentage beside the bar, and
- * `aria-valuetext` states it as a sentence, because a fill length is not a value
- * anybody can read off precisely and colour is never the only channel.
+ * THE VALUE IS ALSO TEXT. The caller renders the count beside the bar, and `aria-valuetext`
+ * states both the count and the mark's meaning, because a fill length is not a value anybody
+ * can read off precisely and colour is never the only channel.
  *
- * THE MARK HAS NO COLOUR OF ITS OWN. It is ink with a 2px ring in the surface
- * colour, which is what keeps it legible whether it lands on the fill or on the
- * bare track. See `.meter__mark` in primitives.css.
- *
- * IT CAN BE BUILT OUT OF SPANS. A card's whole collapsed row is one `<button>`, whose
- * content model is phrasing content, so the three `<div>`s this renders by default cannot
- * live there. `tag` swaps all three at once — never just the wrapper, or the fill inside a
- * span wrapper is an inline box that ignores its own height.
+ * THE MARK HAS NO COLOUR OF ITS OWN. It is ink with a 2px ring in the surface colour, which
+ * is what keeps it legible whether it lands on the fill or on the bare track. See
+ * `.meter__mark` in primitives.css.
  */
 
 import { toPercent } from '../lib/progress.js'
@@ -28,29 +25,16 @@ import { toPercent } from '../lib/progress.js'
 /**
  * @param {object} props
  * @param {number} props.value 0–1
- * @param {number} [props.mark] 0–1; the on-schedule reference, omitted on task rows
- * @param {string} [props.state] one of `STATE`, which picks the fill colour
+ * @param {number} [props.mark] 0–1; the on-schedule reference
  * @param {boolean} [props.large]
  * @param {string} props.label an accessible name — the bar is never self-explanatory
  * @param {string} [props.valueText] overrides the spoken value
- * @param {'div'|'span'} [props.tag] `span` inside a control; the caller's CSS gives the
- *   three of them `display: block`
  */
-export default function Meter({
-  value,
-  mark,
-  state,
-  large = false,
-  label,
-  valueText,
-  tag: Tag = 'div',
-}) {
+export default function Meter({ value, mark, large = false, label, valueText }) {
   const percent = toPercent(value)
   return (
-    <Tag
-      className={`meter${large ? ' meter--lg' : ''}${mark == null ? '' : ' meter--marked'}${
-        state ? ` meter--${state}` : ''
-      }`}
+    <div
+      className={`meter${large ? ' meter--lg' : ''}${mark == null ? '' : ' meter--marked'}`}
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}
@@ -58,12 +42,12 @@ export default function Meter({
       aria-valuetext={valueText}
       aria-label={label}
     >
-      <Tag className="meter__fill" style={{ width: `${percent}%` }} />
+      <div className="meter__fill" style={{ width: `${percent}%` }} />
       {mark == null ? null : (
-        // Presentational: the value it marks is already in the parent's text, so a
-        // screen reader announcing "97%" again here would only be confusing.
-        <Tag className="meter__mark" style={{ left: `${toPercent(mark)}%` }} aria-hidden="true" />
+        // Presentational: the value it marks is already in `aria-valuetext`, so a screen
+        // reader announcing it again here would only be confusing.
+        <div className="meter__mark" style={{ left: `${toPercent(mark)}%` }} aria-hidden="true" />
       )}
-    </Tag>
+    </div>
   )
 }

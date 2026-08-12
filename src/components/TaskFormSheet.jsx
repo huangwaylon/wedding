@@ -4,21 +4,22 @@
  * An existing task is edited in place, inside its own card (`TaskEditor`), so the one job left
  * for a modal is the case where there is nothing on screen to edit yet. That is also why this
  * one keeps a buffered draft and a Save button while the editor has neither: a task that does
- * not exist cannot be written field by field — it needs a title and a window before the sheet
- * has anything to send.
+ * not exist cannot be written field by field.
  *
- * The field set, the wall-clock handling and the validation all live in `TaskFields`.
+ * THE DATE IS LEFT BLANK, never defaulted to today. Every task typed in a hurry would
+ * otherwise be overdue tomorrow, which is the one way this app can put a false number on
+ * somebody's screen without anybody typing anything wrong. A dateless task lands in its own
+ * group at the foot of the list and waits.
+ *
+ * The field set and the validation live in `TaskFields`.
  */
 
 import { useState } from 'react'
 import { useT } from '../i18n/index.js'
 import BottomSheet from './BottomSheet.jsx'
 import {
-  AllDayField,
   CategoryField,
-  DateField,
-  NotesField,
-  OwnerField,
+  DueField,
   TitleField,
   codesFor,
   draftFrom,
@@ -26,9 +27,9 @@ import {
   taskFromDraft,
 } from './TaskFields.jsx'
 
-export default function TaskFormSheet({ categories, defaultDay, onSave, onClose }) {
+export default function TaskFormSheet({ categories, onSave, onClose }) {
   const { t } = useT()
-  const [draft, setDraft] = useState(() => draftFrom(null, defaultDay))
+  const [draft, setDraft] = useState(() => draftFrom(null))
   const [codes, setCodes] = useState([])
 
   const set = (patch) => setDraft((previous) => ({ ...previous, ...patch }))
@@ -79,44 +80,17 @@ export default function TaskFormSheet({ categories, defaultDay, onSave, onClose 
           error={errors.title}
           onChange={(title) => set({ title })}
         />
-        <DateField
-          id="task-start"
-          label={t('form.start')}
-          timeLabel={t('form.startTime')}
-          day={draft.startDay}
-          time={draft.startTime}
-          showTime={!draft.allDay}
-          error={errors.start}
-          onDay={(startDay) => set({ startDay })}
-          onTime={(startTime) => set({ startTime })}
+        <DueField
+          id="task-due"
+          value={draft.due}
+          error={errors.due}
+          onChange={(due) => set({ due })}
         />
-        <DateField
-          id="task-end"
-          label={t('form.end')}
-          timeLabel={t('form.endTime')}
-          day={draft.endDay}
-          time={draft.endTime}
-          showTime={!draft.allDay}
-          error={errors.end}
-          onDay={(endDay) => set({ endDay })}
-          onTime={(endTime) => set({ endTime })}
-        />
-        <AllDayField checked={draft.allDay} onChange={(allDay) => set({ allDay })} />
         <CategoryField
           id="task-category"
           value={draft.category}
           categories={categories}
           onChange={(category) => set({ category })}
-        />
-        <OwnerField
-          id="task-owner"
-          value={draft.owner}
-          onChange={(owner) => set({ owner })}
-        />
-        <NotesField
-          id="task-notes"
-          value={draft.notes}
-          onChange={(notes) => set({ notes })}
         />
       </form>
     </BottomSheet>

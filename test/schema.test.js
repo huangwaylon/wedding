@@ -9,24 +9,22 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   TASK_COLUMNS,
-  TRUE_TEXT,
   cellText,
   isDone,
   isLive,
-  parseBool,
   rowToTask,
   taskToRow,
   validateTask,
 } from '../src/schema.js'
-import { isValidWall } from '../src/lib/time.js'
+import { isValidDay } from '../src/lib/time.js'
 
 describe('the Code.gs column contract', () => {
   it('matches src/schema.js exactly, in order', () => {
     const source = readFileSync('apps-script/Code.gs', 'utf8')
-    const block = /var TASK_COLUMNS = \[([\s\S]*?)\]/.exec(source)
+    const block = /var TASK_COLUMNS = \[([\s\S]*?)\n\]/.exec(source)
     expect(block, 'TASK_COLUMNS not found in Code.gs').toBeTruthy()
 
-    const columns = [...block[1].matchAll(/'([a-z_]+)'/g)].map((match) => match[1])
+    const columns = [...block[1].matchAll(/^\s*'([a-z_]+)',$/gm)].map((match) => match[1])
     expect(columns).toEqual(TASK_COLUMNS)
   })
 
@@ -37,10 +35,22 @@ describe('the Code.gs column contract', () => {
   })
 
   it('still escapes a leading formula character on write', () => {
-    // If this helper is ever "tidied" away, a note of "=SUM(A:A)" becomes a live
+    // If this helper is ever "tidied" away, a title of "=SUM(A:A)" becomes a live
     // formula in somebody's spreadsheet and the cell no longer holds what they typed.
     const source = readFileSync('apps-script/Code.gs', 'utf8')
     expect(source).toMatch(/\/\^\[=\+\\-@\]\/\.test/)
+  })
+
+  it('keeps parent_id last, which is what the outdated-script guard reads', () => {
+    // `useBoard` takes the FINAL entry as the column a deployment must understand before a
+    // subtask can be stored. Moving it would silently point that guard at something else.
+    expect(TASK_COLUMNS[TASK_COLUMNS.length - 1]).toBe('parent_id')
+  })
+
+  it('carries no column the simplification removed', () => {
+    for (const gone of ['start', 'end', 'all_day', 'notes', 'owner']) {
+      expect(TASK_COLUMNS).not.toContain(gone)
+    }
   })
 })
 
@@ -50,51 +60,35 @@ describe('rowToTask', () => {
       id: ' abc ',
       title: ' Book the venue ',
       category: 'Venue',
-      start: '2027-01-01T00:00',
-      end: '2027-02-01T23:59',
-      all_day: 'TRUE',
+      due: ' 2027-02-01 ',
       done_at: '',
-      notes: 'call first',
-      owner: 'Both',
       created_at: '2026-08-07T00:00:00.000Z',
       updated_at: '2026-08-07T00:00:00.000Z',
       deleted_at: '',
+      parent_id: '',
     })
-    expect(task).toMatchObject({
+    expect(task).toEqual({
       id: 'abc',
       title: 'Book the venue',
       category: 'Venue',
-      allDay: true,
+      due: '2027-02-01',
       doneAt: '',
-      notes: 'call first',
+      createdAt: '2026-08-07T00:00:00.000Z',
+      updatedAt: '2026-08-07T00:00:00.000Z',
       deletedAt: '',
+      parentId: '',
     })
   })
 
   it('never yields the string "undefined" for a missing cell', () => {
     const task = rowToTask({ id: 'a', title: 'x' })
-    expect(task.notes).toBe('')
+    expect(task.due).toBe('')
     expect(task.category).toBe('')
-    expect(task.allDay).toBe(false)
+    expect(task.parentId).toBe('')
   })
 
   it('survives a null row', () => {
     expect(rowToTask(null).id).toBe('')
-  })
-})
-
-describe('parseBool', () => {
-  it('is lenient on read', () => {
-    // Somebody typing any of these into the cell by hand means the same thing.
-    for (const truthy of ['TRUE', 'true', 'True', 'yes', '1', 'x']) {
-      expect(parseBool(truthy)).toBe(true)
-    }
-  })
-
-  it('treats everything else as false', () => {
-    for (const falsy of ['', 'FALSE', 'no', '0', null, undefined, 'maybe']) {
-      expect(parseBool(falsy)).toBe(false)
-    }
   })
 })
 
@@ -103,24 +97,23 @@ describe('taskToRow', () => {
     id: 'abc',
     title: 'Book the venue',
     category: 'Venue',
-    start: '2027-01-01T00:00',
-    end: '2027-02-01T23:59',
-    allDay: true,
+    due: '2027-02-01',
     doneAt: '',
-    notes: '',
-    owner: '',
     deletedAt: '',
+    parentId: '',
   }
-
-  it('writes exactly one spelling of true', () => {
-    expect(taskToRow(task).all_day).toBe(TRUE_TEXT)
-    expect(taskToRow({ ...task, allDay: false }).all_day).toBe('')
-  })
 
   it('sends every value as a string', () => {
     for (const value of Object.values(taskToRow(task))) {
       expect(typeof value).toBe('string')
     }
+  })
+
+  it('always sends parent_id', () => {
+    // `update` rewrites the whole row from this payload, so omitting it blanks the cell and
+    // silently promotes a subtask to a task.
+    expect(taskToRow({ ...task, parentId: 'p1' }).parent_id).toBe('p1')
+    expect(taskToRow(task)).toHaveProperty('parent_id')
   })
 
   it('omits the timestamps the script owns', () => {
@@ -140,50 +133,38 @@ describe('taskToRow', () => {
     expect(rowToTask(taskToRow(task))).toMatchObject({
       id: task.id,
       title: task.title,
-      start: task.start,
-      end: task.end,
-      allDay: true,
+      due: task.due,
     })
   })
 })
 
 describe('validateTask', () => {
-  const ok = { title: 'x', start: '2027-01-01T00:00', end: '2027-02-01T00:00' }
-
-  it('passes a usable task', () => {
-    expect(validateTask(ok, isValidWall)).toEqual([])
+  it('passes a task with a title and a date', () => {
+    expect(validateTask({ title: 'x', due: '2027-01-01' }, isValidDay)).toEqual([])
   })
 
-  it('names what is missing', () => {
-    expect(validateTask({ title: '', start: '', end: '' }, isValidWall)).toEqual([
-      'MISSING_TITLE',
-      'MISSING_START',
-      'MISSING_END',
-    ])
+  it('needs only a title', () => {
+    // THE DUE DATE IS OPTIONAL, DELIBERATELY. Forcing one forces a wrong one — during entry
+    // the date is exactly what is not yet known — and an invented date lands straight in the
+    // overdue count and the on-schedule mark.
+    expect(validateTask({ title: 'Find a florist', due: '' }, isValidDay)).toEqual([])
   })
 
-  it('separates missing from unparseable', () => {
-    expect(validateTask({ ...ok, start: '2027-02-31T00:00' }, isValidWall)).toEqual(['BAD_START'])
+  it('names a missing title', () => {
+    expect(validateTask({ title: '   ', due: '' }, isValidDay)).toEqual(['MISSING_TITLE'])
   })
 
-  it('catches a reversed window', () => {
-    expect(
-      validateTask({ ...ok, start: '2027-03-01T00:00', end: '2027-01-01T00:00' }, isValidWall),
-    ).toEqual(['END_BEFORE_START'])
+  it('refuses a hand-typed date that is not a date', () => {
+    // Reachable only from the spreadsheet — the UI normalises every value — and silently
+    // rewriting it to "no date" is the one outcome worse than refusing it.
+    expect(validateTask({ title: 'x', due: '2027-02-31' }, isValidDay)).toEqual(['BAD_DUE'])
   })
 
-  it('allows a zero-length window, which is a milestone', () => {
-    expect(
-      validateTask(
-        { ...ok, start: '2027-04-18T14:00', end: '2027-04-18T14:00' },
-        isValidWall,
-      ),
-    ).toEqual([])
-  })
-
-  it('does not claim a reversed window when one end is already unreadable', () => {
-    // Reporting both would put two errors under one field for one mistake.
-    expect(validateTask({ ...ok, start: 'nope' }, isValidWall)).toEqual(['BAD_START'])
+  it('asks nothing of a subtask but a title', () => {
+    // A date wheel per checklist item would make entering five in a row unusable on a phone,
+    // and then no parent's progress would ever advance.
+    expect(validateTask({ title: 'x', parentId: 'p1', due: '' }, isValidDay)).toEqual([])
+    expect(validateTask({ title: '', parentId: 'p1' }, isValidDay)).toEqual(['MISSING_TITLE'])
   })
 })
 

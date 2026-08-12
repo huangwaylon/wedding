@@ -27,15 +27,12 @@ const BOARD = {
       id: 'a',
       title: 'Book the venue',
       category: 'Venue',
-      start: '2027-01-01T00:00',
-      end: '2027-02-01T23:59',
-      all_day: 'TRUE',
+      due: '2027-02-01',
       done_at: '',
-      notes: '',
-      owner: '',
       created_at: '',
       updated_at: '',
       deleted_at: '',
+      parent_id: '',
     },
   ],
   config: { wedding_date: '2027-04-18', categories: 'Venue, Attire' },
@@ -46,7 +43,11 @@ describe('readBoard', () => {
   it('decodes tasks and parses the config', () => {
     vi.stubGlobal('fetch', reply(BOARD))
     return readBoard(1).then((board) => {
-      expect(board.tasks[0]).toMatchObject({ id: 'a', title: 'Book the venue', allDay: true })
+      expect(board.tasks[0]).toMatchObject({
+        id: 'a',
+        title: 'Book the venue',
+        due: '2027-02-01',
+      })
       expect(board.config).toEqual({
         weddingDate: '2027-04-18',
         categories: ['Venue', 'Attire'],

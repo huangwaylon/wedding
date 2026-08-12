@@ -13,6 +13,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ACCENTS, ACCENT_HEX, DEFAULT_ACCENT } from '../src/lib/theme.js'
+import { STATE } from '../src/lib/progress.js'
 
 const tokens = readFileSync('src/styles/tokens.css', 'utf8')
 const base = readFileSync('src/styles/base.css', 'utf8')
@@ -164,88 +165,63 @@ describe('the meter', () => {
   })
 })
 
-/**
- * One state's row in the one table: the rest of its selector list, and its body.
- *
- * Matched from the END of the previous rule, so `.badge--<state>` has to come FIRST in the
- * list. That pins the table's shape as well as its contents: anchoring on a line start
- * instead lets a family be inserted in front of the badge, and then the badge is reading a
- * list it no longer heads.
- */
+/** Every state's entry in the one table: the whole selector list, and the body. */
 function stateRow(state) {
-  const found = new RegExp(`(?:^|\\})\\s*(\\.badge--${state},[^{}]*)\\{([^}]*)\\}`).exec(
+  const found = new RegExp(`(?:^|\\})\\s*((?:[^{}]*,\\s*)?\\.dot--${state}[^{}]*)\\{([^}]*)\\}`).exec(
     code(primitives),
   )
   return found ? { selectors: found[1], body: found[2] } : null
 }
 
-/** Every state's entry in the one table, keyed on the state name. */
 function stateEntry(state) {
   const row = stateRow(state)
   return row ? row.body : null
 }
 
-const STATES = ['done', 'overdue', 'active', 'upcoming', 'unscheduled']
+/** Every state `progress.js` can report. Derived, so adding one fails here first. */
+const STATES = Object.values(STATE)
 
 describe('the state table', () => {
   it('maps every state exactly once, in one place', () => {
-    // Four families — the badge's wash, its dot, the standalone dot, a meter fill — plus the
-    // task card, which used to restate this same mapping in nineteen blocks across two files.
+    // This mapping used to be restated in nineteen blocks across two files, and had already
+    // produced two defects — a badge modifier with no rule at all, and a dot modifier that
+    // was a no-op restating the base.
     for (const state of STATES) {
       const entry = stateEntry(state)
       expect(entry, `${state} has no entry`).toBeTruthy()
       expect(entry, `${state} sets no fill`).toMatch(/--state-fill:/)
-      expect(entry, `${state} sets no wash`).toMatch(/--state-wash:/)
     }
   })
 
-  it('lists the card alongside the other families, from the same row', () => {
-    // A card is a mark that carries state: `.tcard--<state>` sets the two properties at the
-    // card's root so anything inside it — the node on the spine, the meter in the head —
-    // resolves them without a second mapping. A family with its own block is how the two
-    // copies drift.
-    for (const state of STATES) {
-      expect(stateRow(state).selectors, `${state} does not reach the card`).toContain(
-        `.tcard--${state}`,
-      )
-    }
-  })
-
-  it('covers `unscheduled`, which had no rule at all', () => {
-    // StateBadge builds `badge--${state}` for EVERY state, so this one was rendered with no
-    // matching rule and its dot fell back to currentColor — grey, but a different grey from
-    // every other unstarted state.
-    expect(stateEntry('unscheduled')).toMatch(/--state-fill: var\(--ink-4\)/)
-  })
-
-  it('is read by every mark that carries state', () => {
-    expect(ruleFor(primitives, '.badge')).toMatch(/background-color: var\(--state-wash,/)
-    expect(ruleFor(primitives, '.badge__dot')).toMatch(/background-color: var\(--state-fill,/)
+  it('is read through the property, never by naming a colour twice', () => {
     expect(ruleFor(primitives, '.dot')).toMatch(/background-color: var\(--state-fill,/)
-    expect(ruleFor(primitives, '.meter__fill')).toMatch(/background-color: var\(--state-fill,/)
-    // Every one of them is a primitive, which is the point: app.css paints no state colour of
-    // its own. A hue hardcoded onto a card mark would be a second palette for the same claim.
-    for (const state of STATES) {
-      expect(app, `${state} is painted outside the table`).not.toMatch(
-        new RegExp(`\\.tcard--${state}[^{]*\\{[^}]*--state-(fill|wash):`),
-      )
-    }
+    // app.css paints no state colour of its own: a hue hardcoded onto a card mark would be a
+    // second palette for the same claim.
+    expect(code(app), 'a state hue is painted outside the table').not.toMatch(
+      /--state-(fill|wash):/,
+    )
   })
 
   it('falls back rather than painting nothing for a state it has never heard of', () => {
-    // A new state name must degrade to the neutral treatment, not to `transparent`.
-    expect(ruleFor(primitives, '.badge')).toMatch(/var\(--neutral-wash\)\)/)
     expect(ruleFor(primitives, '.dot')).toMatch(/var\(--ink-4\)\)/)
-    expect(ruleFor(primitives, '.meter__fill')).toMatch(/var\(--accent\)\)/)
   })
 
   it('never puts a state colour on type', () => {
-    // The wash carries the tint; the label stays ink. One of the state colours cannot clear
-    // 4.5:1 on white, which is the whole reason the badge pattern exists.
-    expect(ruleFor(primitives, '.badge')).toMatch(/color: var\(--ink-2\)/)
+    // The hue paints a graphic — a dot — and the meaning always sits in ink beside it. It is
+    // also why the day column on a task row is not tinted: a column a third of which is red
+    // stops being a column.
     for (const state of STATES) {
       expect(stateEntry(state), state).not.toMatch(/[^-]color:/)
     }
+    expect(ruleFor(app, '.tcard__day')).toMatch(/color: var\(--ink\)/)
+    expect(ruleFor(app, '.due')).toMatch(/color: var\(--ink-2\)/)
+  })
+
+  it('gives the ONE remaining meter a flat accent fill', () => {
+    // No meter carries a state class any more: there is one, it measures the whole board, and
+    // a board has no single state.
+    expect(ruleFor(primitives, '.meter__fill')).toMatch(/background-color: var\(--accent\)/)
+    expect(code(primitives)).not.toMatch(/\.meter--(done|overdue|soon|later|nodate)/)
   })
 })
 
@@ -349,15 +325,15 @@ describe('elevation', () => {
     expect(new Set(users)).toEqual(new Set(['.fab', '.sheet__panel', '.toast']))
   })
 
-  it('holds the tab bar up with a hairline and a blur, not a shadow', () => {
-    // A fixed bar over scrolling content is the obvious place to reach for elevation. The
-    // separation here is the top hairline plus the blur behind it — a shadow under a
-    // translucent bar reads as a second, darker bar.
-    const tabbar = ruleFor(app, '.tabbar')
-    expect(tabbar, '.tabbar rule missing').toBeTruthy()
-    expect(tabbar).toMatch(/border-top: 1px solid var\(--line\)/)
-    expect(tabbar).toMatch(/backdrop-filter: blur\(/)
-    expect(tabbar).not.toContain('box-shadow')
+  it('holds the sticky month heading up with a background, not a shadow', () => {
+    // The heading is what replaced the list's vertical spine, and rows scroll UNDER it — so
+    // the opaque background is load-bearing rather than decoration. A shadow beneath it would
+    // read as a bar of chrome the app does not have.
+    const month = ruleFor(app, '.plan__month')
+    expect(month, '.plan__month rule missing').toBeTruthy()
+    expect(month).toMatch(/position: sticky/)
+    expect(month).toMatch(/background-color: var\(--bg\)/)
+    expect(month).not.toContain('box-shadow')
   })
 
   it('adds no shadow on hover', () => {
@@ -461,17 +437,15 @@ describe('touch ergonomics', () => {
 })
 
 describe('layout', () => {
-  it('reserves clearance for the tab bar and the FAB so neither covers the last card', () => {
-    // The two fixed things at the bottom of the screen are reserved ONCE, by the views
-    // wrapper, and every tab inherits it. Dropping the reservation is exactly how the button
+  it('reserves clearance for the FAB, the only fixed chrome left, so it covers no row', () => {
+    // Reserved ONCE, by the views wrapper. Dropping the reservation is exactly how the button
     // once landed on top of a row's delete control in the sibling app.
     const views = ruleFor(app, '.views')
     expect(views, '.views rule missing').toBeTruthy()
-    // [\s\S], not `.`: the calc wraps across three lines, and a `.`-based regex silently
-    // stops at the first newline and reports the reservation as missing.
+    // [\s\S], not `.`: the calc can wrap across lines, and a `.`-based regex silently stops
+    // at the first newline and reports the reservation as missing.
     const clearance = /padding-bottom:([\s\S]*?);/.exec(views)
     expect(clearance, '.views reserves no bottom clearance').toBeTruthy()
-    expect(clearance[1]).toContain('--tabbar-height')
     expect(clearance[1]).toContain('--fab-size')
     expect(clearance[1]).toContain('--safe-bottom')
 
@@ -491,9 +465,17 @@ describe('layout', () => {
     expect(tokens).toMatch(/--column-max: 40rem/)
     expect(ruleFor(app, '.views')).toMatch(/max-width: var\(--column-max\)/)
     expect(ruleFor(app, '.views')).toMatch(/margin: 0 auto/)
-    // The fixed bar is not inside `.views`, so it has to repeat the cap or its two tabs
-    // stretch across a monitor while the content they switch sits in a 40rem column.
-    expect(ruleFor(app, '.tabbar__inner')).toMatch(/max-width: var\(--column-max\)/)
+  })
+
+  it('has no fixed bar left to keep clear of', () => {
+    // ONE SCROLL. The two-tab bar cost 56px plus its safe-area inset of permanent chrome on
+    // every screen, to hold one card and a photograph — and it forced the standing notices to
+    // be rendered on both tabs, because the out-of-date-script warning explains a control
+    // missing from a row on the other one.
+    expect(code(app)).not.toContain('tabbar')
+    expect(code(app)).not.toContain('tabbtn')
+    expect(code(tokens)).not.toContain('--tabbar-height')
+    expect(code(tokens)).not.toContain('--z-tabbar')
   })
 
   it('has only the ONE documented breakpoint, across EVERY stylesheet', () => {
@@ -524,16 +506,24 @@ describe('layout', () => {
     expect(all).not.toContain('-webkit-overflow-scrolling')
   })
 
-  it('stitches the spine across exactly the gap it has to cross', () => {
-    // The spine is drawn per CARD and reaches into the gap below it, because one line spanning
-    // the group would run behind the month heading. The reach and the group's gap are therefore
-    // the same token by necessity: shorter and the segments visibly do not meet, longer and the
-    // line crosses the heading it was drawn this way to avoid.
-    expect(ruleFor(app, '.plan__group')).toMatch(/gap: var\(--space-3\)/)
-    expect(ruleFor(app, '.tcard::before')).toMatch(/bottom: calc\(var\(--space-3\) \* -1\)/)
-    // And nothing hangs off the last card: a line running past the last node reads as a plan
-    // that continues somewhere off screen.
-    expect(ruleFor(app, '.tcard:last-of-type::before')).toMatch(/bottom: 0/)
+  it('draws no spine, and spends the left edge on the row instead', () => {
+    // The spine sat at --space-3 and the row padded to --space-6 to clear its node's lane:
+    // 24px of a 250px row at 320pt, spent implying a continuity the sticky heading now states.
+    // Its node was also pinned to a magic offset tuned to a two-line date chip, which stopped
+    // being correct the moment the chip became one line.
+    expect(ruleFor(app, '.tcard::before')).toBeNull()
+    expect(ruleFor(app, '.tcard__node')).toBeNull()
+    expect(ruleFor(app, '.tcard')).toMatch(/padding: var\(--space-2\) var\(--space-3\)/)
+    // A gap between the check and the head, because a thumb aiming at the day to OPEN the row
+    // would otherwise land pixels from "mark done". A gap, never a negative margin.
+    expect(ruleFor(app, '.tcard')).toMatch(/column-gap: var\(--space-1\)/)
+  })
+
+  it('separates the month groups more than the rows inside one', () => {
+    // That difference is the only thing saying "next month" rather than "next task".
+    const group = /gap: var\(--space-(\d)\)/.exec(ruleFor(app, '.plan__group'))[1]
+    const plan = /gap: var\(--space-(\d)\)/.exec(ruleFor(app, '.plan'))[1]
+    expect(Number(plan)).toBeGreaterThan(Number(group))
   })
 
   it('contains only the horizontal overscroll on the chip row', () => {
@@ -751,42 +741,61 @@ describe('the hero', () => {
   })
 })
 
-describe('the tab bar', () => {
-  it('is opaque where the blur is unsupported', () => {
-    // The bar is a translucent 82% wash of --bg, which over a scrolling white card is not
-    // legible on its own: without this fallback the list reads straight through the two tabs.
-    const fallback = blocksAfter(
-      code(app),
-      '@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {',
-    )
-    expect(fallback.length, 'no @supports not fallback for the blur').toBe(1)
-    expect(fallback[0]).toMatch(/\.tabbar \{[^}]*background-color: var\(--bg\);/)
-    // Both spellings in the query, or Safari — the one platform that needs the prefix — is
-    // told it has no blur and gets the opaque bar it did not need.
-    expect(app).toContain('-webkit-backdrop-filter')
+describe('the open row', () => {
+  it('keeps the edit toggle in one place as the mode changes', () => {
+    // The delete appears to the toggle's LEFT when editing. `margin-inline-start: auto` is what
+    // makes a one-control row and a two-control row put the toggle at the same x — with
+    // `justify-content` alone it would slide left the moment the delete appeared, under a thumb
+    // that is about to press it again.
+    expect(ruleFor(app, '.tcard__edit')).toMatch(/margin-inline-start: auto/)
+    expect(ruleFor(app, '.tcard__foot')).toMatch(/border-top: 1px solid var\(--line\)/)
   })
 
-  it('does not mark the selected tab with colour alone', () => {
-    // The accent on the label is one channel; a rule on the bar's own top edge is the second,
-    // and `aria-current` in TabBar.jsx is the third. Colour alone fails 1.4.1.
-    const marker = ruleFor(app, '.tabbtn--on::before')
-    expect(marker, '.tabbtn--on::before rule missing').toBeTruthy()
-    expect(marker).toMatch(/content: ""/)
-    expect(marker).toMatch(/height: 2px/)
-    expect(marker).toMatch(/background-color: var\(--accent\)/)
-    expect(ruleFor(app, '.tabbtn--on')).toMatch(/color: var\(--accent\)/)
+  it('gives the read-mode fact a label that clears AA at 13px', () => {
+    // --ink-3 is documented as the lightest ink that does. A label is information, so it does
+    // not get the --ink-4 placeholder treatment.
+    expect(ruleFor(app, '.tcard__factLabel')).toMatch(/color: var\(--ink-3\)/)
+    expect(ruleFor(app, '.tcard__factLabel')).toMatch(/font-size: var\(--fs-caption\)/)
+  })
+})
+
+describe('the date control', () => {
+  it('turns the platform appearance OFF, which is the only way it fits the card', () => {
+    // With it on, Safari sizes `input[type=date]` from its own shadow tree and that intrinsic
+    // width is a FLOOR — `width: 100%` is a ceiling it ignores, so the control drew past the
+    // right edge of a 252px card on a 320pt phone. Nothing clips it either: `.tcard` has to
+    // stay `overflow: visible` or the focus ring is cut off.
+    const rule = ruleFor(primitives, '.input[type="date"]')
+    expect(rule, '.input[type="date"] rule missing').toBeTruthy()
+    expect(rule).toMatch(/-webkit-appearance: none/)
+    expect(rule).toMatch(/\n  appearance: none/)
+    expect(rule).toMatch(/min-width: 0/)
+    expect(rule).toMatch(/max-width: 100%/)
   })
 
-  it('gives each tab the full bar height and a 13px label', () => {
-    // Two controls across the whole width, so the height is the only dimension that can be
-    // short — and --tabbar-height is what every fixed thing above the bar composes from.
-    expect(tokens).toMatch(/--tabbar-height: 3\.5rem/)
-    expect(ruleFor(app, '.tabbtn')).toMatch(/min-height: var\(--tabbar-height\)/)
-    expect(ruleFor(app, '.tabbtn__label')).toMatch(/font-size: var\(--fs-caption\)/)
-    // The bar pads ITSELF with the inset rather than sitting above it, or the blur stops
-    // short of the bottom edge of the glass and a strip of list shows under it.
-    expect(ruleFor(app, '.tabbar')).toMatch(/padding-bottom: var\(--safe-bottom\)/)
-    expect(ruleFor(app, '.tabbar')).toMatch(/z-index: var\(--z-tabbar\)/)
+  it('puts back the metrics that turning the appearance off takes away', () => {
+    // The value loses its box and centres itself; the indicator loses its own.
+    const value = ruleFor(primitives, '.input[type="date"]::-webkit-date-and-time-value')
+    expect(value, 'the shadow value has no rule').toBeTruthy()
+    expect(value).toMatch(/text-align: start/)
+    expect(value).toMatch(/min-height: 1\.5em/)
+
+    const indicator = ruleFor(primitives, '.input[type="date"]::-webkit-calendar-picker-indicator')
+    expect(indicator, 'the picker indicator has no rule').toBeTruthy()
+    // WCAG 2.5.8's graphic floor. It is the whole affordance.
+    expect(indicator).toMatch(/min-width: 1\.25rem/)
+  })
+
+  it('keeps the 16px floor, which is why the control is wide in the first place', () => {
+    // Narrowing the type would narrow the intrinsic width — and zoom the viewport on focus
+    // with no way back out. `appearance: none` is the only lever.
+    expect(ruleFor(primitives, '.input')).toMatch(/font-size: max\(1rem, var\(--fs-body\)\)/)
+    expect(ruleFor(primitives, '.input[type="date"]')).not.toContain('font-size')
+  })
+
+  it('offers no clock control anywhere, because nothing on the board is timed', () => {
+    expect(code(primitives)).not.toContain('type="time"')
+    expect(code(all)).not.toContain('.switch')
   })
 })
 
@@ -796,7 +805,9 @@ describe('the checklist and the tally', () => {
     // done deliberately does not make a parent done.
     const tally = ruleFor(app, '.tcard__tally')
     expect(tally, '.tcard__tally rule missing').toBeTruthy()
-    expect(tally).toMatch(/color: var\(--ink-3\)/)
+    // --ink-2 rather than the meta line's own --ink-3: it is the only progress figure a task
+    // has left. Still never a state colour.
+    expect(tally).toMatch(/color: var\(--ink-2\)/)
     expect(tally).not.toMatch(/--good|--critical|--accent/)
   })
 

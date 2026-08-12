@@ -4,7 +4,12 @@
  * THERE IS NO SAVE BUTTON AND NO DIRTY STATE. Every field commits when focus leaves it, or on
  * Return — so there is never a pending edit that a tap on the scrim, a collapse of the card or
  * a reload can throw away, and no "unsaved changes" question anybody has to be asked. The
- * price is one write per field, which is why an unchanged value sends nothing at all.
+ * price is one write per field, which is why an unchanged value sends nothing at all. That
+ * comparison matters MORE now that a date wheel is one of the three fields: opening the picker
+ * and dismissing it is a blur with nothing to report.
+ *
+ * COMMITTING THE DATE ON BLUR IS LOAD-BEARING, not incidental. iOS fires `change` on every
+ * spin of the wheel, so an `onChange` commit would be one round trip per digit.
  *
  * ONE FIELD IS BUFFERED AT A TIME: the one under the finger. Everything else renders straight
  * from `task`, so the optimistic row this component just wrote — and any edit the other person
@@ -15,19 +20,25 @@
  * from the payload, so a payload missing `parent_id` blanks the cell and silently promotes a
  * subtask to a task.
  *
+ * CLEARING THE DATE IS A LEGAL EDIT and is not confirmed. The receipt is that the row leaves
+ * its month and lands in the "No date" group at the foot of the list, which is louder than a
+ * dialog and cannot be dismissed by accident.
+ *
+ * THE DELETE AFFORDANCE IS NOT HERE, and that is a correction. It used to be this component's
+ * last row, which put it between the fields and the checklist below them — so it read as
+ * belonging to the checklist, and the hairline meant to separate it from the fields separated
+ * it from the wrong thing. It belongs to the open row as a whole, so `TaskCard` owns it and
+ * renders it last.
+ *
  * A viewer never gets here — `TaskCard` renders this only when `canEdit` — and that is a
  * rendering decision, not the security boundary: the endpoint refuses every keyless write.
  */
 
 import { useState } from 'react'
 import { taskToRow } from '../schema.js'
-import { useT } from '../i18n/index.js'
 import {
-  AllDayField,
   CategoryField,
-  DateField,
-  NotesField,
-  OwnerField,
+  DueField,
   TitleField,
   codesFor,
   draftFrom,
@@ -43,12 +54,6 @@ import {
  * a change for a trailing space that `taskToRow` trims away, and every blur would then cost a
  * round trip and a toast.
  *
- * A row somebody hand-edited in the spreadsheet is the one case where this reports a change
- * nobody typed: a bare `2027-04-18`, or an all-day window ending at 17:00, is rewritten to the
- * stored shape by the first field anybody leaves. That is a repair toward the invariant — an
- * all-day task has to end at 23:59 or it reads 99% complete on the morning it is overdue — and
- * it only ever happens to a task somebody has deliberately opened.
- *
  * `null` for a row `taskToRow` would refuse: somebody can empty a title cell in the
  * spreadsheet, and that row must read as "changed" by whatever is typed over it rather than
  * throwing out of a blur handler. The payload side is always a validated task, so the two can
@@ -59,8 +64,7 @@ function wireRow(task) {
   return JSON.stringify(taskToRow(task))
 }
 
-export default function TaskEditor({ task, categories, onSave, onDelete, onFieldFocus }) {
-  const { t } = useT()
+export default function TaskEditor({ task, categories, onSave, onFieldFocus }) {
   /** The field with focus, as a patch over the stored values. Null between fields. */
   const [pending, setPending] = useState(null)
   const [codes, setCodes] = useState([])
@@ -70,20 +74,20 @@ export default function TaskEditor({ task, categories, onSave, onDelete, onField
   const fieldId = (name) => `edit-${task.id}-${name}`
   const edit = (patch) => setPending((previous) => ({ ...previous, ...patch }))
   /**
-   * A SUBTASK IS A TITLE AND A TICK, so it is offered no window at all.
+   * A SUBTASK IS A TITLE AND A TICK, so it is offered no date at all.
    *
-   * `validateTask` returns early for anything with a `parentId` — two date wheels per item
-   * would make entering five in a row unusable on a phone, and then no parent's progress would
-   * advance, which is the whole point of a checklist. Offering the fields anyway would put
-   * three controls on screen that nothing validates and nothing draws.
+   * `validateTask` returns early for anything with a `parentId` — a date wheel per item would
+   * make entering five in a row unusable on a phone, and then no parent's progress would
+   * advance, which is the whole point of a checklist. Offering the field anyway would put a
+   * control on screen that nothing validates and nothing draws.
    */
   const dated = !task.parentId
 
   /**
    * One field, committed.
    *
-   * `patch` is the value of a control with no useful blur — a checkbox and a picker are done
-   * the moment they change — while a text field's blur commits whatever the buffer holds.
+   * `patch` is the value of a control with no useful blur — a picker is done the moment it
+   * changes — while a text field's blur commits whatever the buffer holds.
    */
   const commit = (patch) => {
     const next = taskFromDraft({ ...draft, ...patch }, task)
@@ -117,93 +121,28 @@ export default function TaskEditor({ task, categories, onSave, onDelete, onField
         onFocusChange={onFieldFocus}
       />
 
-      {/* The window, two-up where the column is wide enough to hold two date wheels and
-          one-up where it is not — no breakpoint, because the card is narrower than the
-          viewport by an amount that depends on which tab it is in. */}
+      {/* One column, three rows. The two-track grid this replaced existed to hold two date
+          wheels side by side, and its 11rem minimum was measured for exactly that. */}
       {dated ? (
-        <div className="editor__grid">
-          <DateField
-            id={fieldId('start')}
-            skin="editor"
-            label={t('form.start')}
-            timeLabel={t('form.startTime')}
-            day={draft.startDay}
-            time={draft.startTime}
-            showTime={!draft.allDay}
-            error={errors.start}
-            onDay={(startDay) => edit({ startDay })}
-            onTime={(startTime) => edit({ startTime })}
-            onCommit={commit}
-            onFocusChange={onFieldFocus}
-          />
-          <DateField
-            id={fieldId('end')}
-            skin="editor"
-            label={t('form.end')}
-            timeLabel={t('form.endTime')}
-            day={draft.endDay}
-            time={draft.endTime}
-            showTime={!draft.allDay}
-            error={errors.end}
-            onDay={(endDay) => edit({ endDay })}
-            onTime={(endTime) => edit({ endTime })}
-            onCommit={commit}
-            onFocusChange={onFieldFocus}
-          />
-        </div>
-      ) : null}
-
-      {dated ? (
-        <AllDayField
+        <DueField
+          id={fieldId('due')}
           skin="editor"
-          checked={draft.allDay}
-          onChange={(allDay) => commit({ allDay })}
-          onFocusChange={onFieldFocus}
-        />
-      ) : null}
-
-      {/* The quieter half. Neither is needed to describe a task, so they share a row and stay
-          out of the way of the three fields above them. */}
-      <div className="editor__row">
-        <CategoryField
-          id={fieldId('category')}
-          skin="editor"
-          value={draft.category}
-          categories={categories}
-          onChange={(category) => commit({ category })}
-          onFocusChange={onFieldFocus}
-        />
-        <OwnerField
-          id={fieldId('owner')}
-          skin="editor"
-          value={draft.owner}
-          onChange={(owner) => edit({ owner })}
+          value={draft.due}
+          error={errors.due}
+          onChange={(due) => edit({ due })}
           onCommit={commit}
           onFocusChange={onFieldFocus}
         />
-      </div>
+      ) : null}
 
-      <NotesField
-        id={fieldId('notes')}
+      <CategoryField
+        id={fieldId('category')}
         skin="editor"
-        value={draft.notes}
-        onChange={(notes) => edit({ notes })}
-        onCommit={commit}
+        value={draft.category}
+        categories={categories}
+        onChange={(category) => commit({ category })}
         onFocusChange={onFieldFocus}
       />
-
-      {/* One quiet destructive affordance, and it does not delete anything: it opens the
-          confirm sheet, because a delete inside a card somebody opened to fix a typo is a
-          tap away from the fields above it. */}
-      <div className="editor__foot">
-        <button
-          type="button"
-          className="btn btn--ghost editor__danger"
-          onClick={() => onDelete(task)}
-        >
-          {t('form.deleteThis')}
-        </button>
-      </div>
     </div>
   )
 }

@@ -8,50 +8,40 @@
  *
  * Everything crossing the wire is a STRING. The sheet stores text (the script
  * forces the '@' number format), so a task's fields are strings here too and are
- * parsed at the point of use — `all_day` and `done_at` are the only two that
- * carry meaning as anything but text, and both are decoded here.
+ * parsed at the point of use — `done_at` is the only one that carries meaning as
+ * anything but text, and it is decoded here.
+ *
+ * A TASK IS A TITLE, A DAY AND A TICK. There is no start, no clock time, no
+ * all-day flag, no owner and no memo: a wedding checklist is read as "what is due
+ * next", every one of those fields was optional in practice, and each one cost a
+ * control on a 393px screen and a column somebody had to understand in the
+ * spreadsheet. Removing them is what lets a task row be scannable at a glance and
+ * the editor be three fields long.
  */
 
 /**
  * Sheet column order. Kept as data rather than as an object so the order is
  * unambiguous and the .gs comparison is a plain array equality.
+ *
+ * `parent_id` stays LAST: `useBoard` reads the final entry as the column a
+ * deployment must know about before a subtask may be written, and appending is
+ * the only change that cannot shift an existing index.
  */
 export const TASK_COLUMNS = [
   'id',
   'title',
   'category',
-  'start',
-  'end',
-  'all_day',
+  /** The day it is due, 'YYYY-MM-DD'. No time: see the header. */
+  'due',
   'done_at',
-  'notes',
-  'owner',
   'created_at',
   'updated_at',
   'deleted_at',
-  /**
-   * The id of this row's parent, or empty for a top-level task. APPENDED LAST, and it must
-   * stay last: appending is the only change that cannot shift an existing column's index, and
-   * it keeps the human-meaningful columns leftmost where somebody reading the sheet is looking.
-   */
   'parent_id',
 ]
 
 export const TASKS_SHEET = 'tasks'
 export const CONFIG_SHEET = 'config'
-
-/**
- * The one truthy spelling written to the sheet. Read is deliberately lenient —
- * somebody typing TRUE, true, yes or 1 into the cell by hand means the same
- * thing — but write is exactly this, so the column never accumulates variants.
- */
-export const TRUE_TEXT = 'TRUE'
-
-const TRUTHY = new Set(['true', 'TRUE', 'True', 'yes', 'YES', '1', 'x', 'X'])
-
-export function parseBool(text) {
-  return TRUTHY.has(String(text ?? '').trim())
-}
 
 /** Trim without turning a missing cell into the string "undefined". */
 export function cellText(value) {
@@ -61,23 +51,18 @@ export function cellText(value) {
 /**
  * A row object from the endpoint -> the shape the app works in.
  *
- * `start` and `end` are WALL-CLOCK strings ("2027-04-18T14:00") with no zone —
- * they mean that reading of a clock at the venue, and are resolved against the
- * board's configured timezone by `src/lib/time.js`. They are deliberately not
- * instants: "the ceremony is at 14:00" must read 14:00 for a planner in another
- * country, which a UTC timestamp rendered locally would not.
+ * `due` is a WALL-CLOCK DAY ('2027-04-18') with no zone and no time. It means that
+ * date on a calendar at the venue, and whether it has passed is decided against
+ * the board's configured timezone by `src/lib/time.js` — never against the
+ * device's. "Due on the 18th" must read the 18th for a planner in another country.
  */
 export function rowToTask(row) {
   return {
     id: cellText(row?.id),
     title: cellText(row?.title),
     category: cellText(row?.category),
-    start: cellText(row?.start),
-    end: cellText(row?.end),
-    allDay: parseBool(row?.all_day),
+    due: cellText(row?.due),
     doneAt: cellText(row?.done_at),
-    notes: cellText(row?.notes),
-    owner: cellText(row?.owner),
     createdAt: cellText(row?.created_at),
     updatedAt: cellText(row?.updated_at),
     deletedAt: cellText(row?.deleted_at),
@@ -86,10 +71,7 @@ export function rowToTask(row) {
 }
 
 /**
- * The inverse, for the wire. Every value is a string — `all_day` becomes 'TRUE'
- * or '' rather than a boolean, because a boolean would arrive at the sheet as a
- * checkbox-shaped value and read back as the string "true" on some locales and
- * "TRUE" on others.
+ * The inverse, for the wire. Every value is a string.
  *
  * `created_at` and `updated_at` are omitted deliberately: the script stamps both,
  * so a device with a wrong clock cannot backdate a row, and `created_at` on an
@@ -102,12 +84,8 @@ export function taskToRow(task) {
     id: task.id,
     title: cellText(task.title),
     category: cellText(task.category),
-    start: cellText(task.start),
-    end: cellText(task.end),
-    all_day: task.allDay ? TRUE_TEXT : '',
+    due: cellText(task.due),
     done_at: cellText(task.doneAt),
-    notes: cellText(task.notes),
-    owner: cellText(task.owner),
     deleted_at: cellText(task.deletedAt),
     /**
      * Never omit this. `updateTask` writes the WHOLE row from the payload, so a task object
@@ -133,37 +111,40 @@ function isSubtask(task) {
 
 /**
  * Structural problems that must stop a save, as codes rather than sentences so
- * the catalog owns the wording. Time validity is checked here too, because an
- * unparseable date silently becomes "unscheduled" rather than an error.
+ * the catalog owns the wording.
+ *
+ * A TITLE IS THE ONLY THING REQUIRED. The due date is deliberately optional, and that
+ * is not laziness: forcing one forces a WRONG one. During entry the date is exactly
+ * what is not yet known — "find a florist" is real, "find a florist by the 12th" is an
+ * invention — and under this app's arithmetic an invented date lands straight in the
+ * overdue count and in the on-schedule mark. A dateless task sorts to its own group at
+ * the foot of the list, counts in the total, and asks nothing of anybody until somebody
+ * gives it a day.
  *
  * @param {object} task
- * @param {(wall: string) => boolean} isValidWall injected from `lib/time.js` to
+ * @param {(day: string) => boolean} isValidDay injected from `lib/time.js` to
  *   keep this module free of date logic
  */
-export function validateTask(task, isValidWall) {
+export function validateTask(task, isValidDay) {
   const codes = []
   if (!cellText(task?.title)) codes.push('MISSING_TITLE')
 
   /**
-   * A subtask is a checklist item: a title and a tick. It carries no window, so the date rules
-   * below do not apply to it — requiring two date wheels per item would make entering five of
-   * them in a row unusable on a phone, and then no parent's progress would ever advance, which
-   * is the whole point of the feature. One branch rather than a second function, so the title
-   * check cannot drift between them.
+   * A subtask is a checklist item: a title and a tick. It carries no date at all — not even an
+   * optional one — because a date wheel per item would make entering five of them in a row
+   * unusable on a phone, and then no parent's progress would ever advance, which is the whole
+   * point of the feature. One branch rather than a second function, so the title check cannot
+   * drift between them.
    */
   if (isSubtask(task)) return codes
 
-  const start = cellText(task?.start)
-  const end = cellText(task?.end)
-  if (!start) codes.push('MISSING_START')
-  else if (!isValidWall(start)) codes.push('BAD_START')
-  if (!end) codes.push('MISSING_END')
-  else if (!isValidWall(end)) codes.push('BAD_END')
-
-  // Only meaningful once both parsed; wall-clock strings in this format sort
-  // lexicographically, which is why no date objects are needed to compare them.
-  if (start && end && isValidWall(start) && isValidWall(end) && end < start) {
-    codes.push('END_BEFORE_START')
-  }
+  /**
+   * Unreachable from the UI — `taskFromDraft` runs every day through `normalizeDay`, which
+   * yields '' for anything unparseable — and kept anyway, because this is also the guard on a
+   * cell somebody typed by hand in the spreadsheet. Silently rewriting that to "no date" is
+   * the one outcome worse than refusing it.
+   */
+  const due = cellText(task?.due)
+  if (due && !isValidDay(due)) codes.push('BAD_DUE')
   return codes
 }

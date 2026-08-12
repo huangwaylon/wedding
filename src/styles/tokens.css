@@ -198,12 +198,9 @@
   --tap-target-sm: 36px;
   --column-max: 40rem;
   --sheet-max: 32rem;
-  /* The bottom tab bar's own height, WITHOUT the safe-area inset it pads itself
-     with. Every fixed thing above it — the FAB, the toasts — and every view's
-     bottom padding compose from this, so the bar can never cover the last row. */
-  --tabbar-height: 3.5rem;
-  /* The FAB, and therefore the clearance the views keep beneath their content so
-     the button never covers the last card. */
+  /* The FAB — the only fixed chrome left — and therefore the clearance the view keeps
+     beneath its content so the button never covers the last row. The toasts stack above
+     it from the same number. */
   --fab-size: 3.5rem;
 
   /* ---- Motion ----------------------------------------------------------
@@ -221,7 +218,6 @@
   --transition-base: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* ---- Stacking order --------------------------------------------------- */
-  --z-tabbar: 100;
   --z-fab: 200;
   --z-sheet: 300;
   --z-toast: 400;

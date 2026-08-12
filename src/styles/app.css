@@ -5,8 +5,8 @@
    only breakpoint is 48rem, and all it does is give the photograph more room. */
 
 /* ---- Shell -------------------------------------------------------------
-   The tab bar is fixed, so nothing else has to reason about it: `.views` reserves
-   the bar plus the FAB below its content, once, and every tab inherits that. */
+   ONE column, ONE scroller, no fixed chrome but the FAB. `.views` reserves the FAB's
+   clearance below its content, once, so the button can never cover the last row. */
 .app {
   min-height: 100dvh;
 }
@@ -15,22 +15,13 @@
   width: 100%;
   max-width: var(--column-max);
   margin: 0 auto;
-  padding-bottom: calc(
-    var(--tabbar-height) + var(--fab-size) + var(--space-6) + var(--safe-bottom)
-  );
+  padding-bottom: calc(var(--fab-size) + var(--space-6) + var(--safe-bottom));
 }
 
 /* Padding only. `.stack` supplies the rhythm, and the two are always used together —
-   a tab that also declared a gap would set it twice with two different meanings. */
+   a container that also declared a gap would set it twice with two different meanings. */
 .view {
   padding: var(--space-4);
-}
-
-/* The Timeline tab has no photograph above it, so it pads past the status bar and the
-   Dynamic Island itself. The Home tab must NOT: the hero paints into that inset
-   deliberately. */
-.view--plan {
-  padding-top: calc(var(--safe-top) + var(--space-4));
 }
 
 .stack {
@@ -166,74 +157,6 @@
   }
 }
 
-/* ---- Bottom tab bar ----------------------------------------------------
-   Two destinations, fixed, translucent over whatever scrolls beneath it. It pads
-   itself with the bottom inset rather than sitting above it, so the blur runs to the
-   bottom edge of the glass the way a platform tab bar does. */
-.tabbar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: var(--z-tabbar);
-  padding-bottom: var(--safe-bottom);
-  background-color: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(16px);
-  border-top: 1px solid var(--line);
-}
-
-/* Without a working blur the bar has to be opaque, or the list reads straight through
-   it. `color-mix` at 82% over a scrolling card is not legible on its own. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .tabbar {
-    background-color: var(--bg);
-  }
-}
-
-.tabbar__inner {
-  display: flex;
-  width: 100%;
-  max-width: var(--column-max);
-  margin: 0 auto;
-}
-
-.tabbtn {
-  position: relative;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1);
-  min-height: var(--tabbar-height);
-  color: var(--ink-3);
-  transition: color var(--transition-fast);
-}
-
-.tabbtn--on {
-  color: var(--accent);
-}
-
-.tabbtn__label {
-  font-size: var(--fs-caption);
-  font-weight: 500;
-}
-
-/* A second channel for the selected tab, so it is not colour alone: a short rule on
-   the bar's own top edge, which is where a platform tab bar puts it. `aria-current`
-   is the third. */
-.tabbtn--on::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: 1.75rem;
-  height: 2px;
-  border-radius: 0 0 var(--radius-full) var(--radius-full);
-  background-color: var(--accent);
-  transform: translateX(-50%);
-}
-
 /* ---- Overall progress --------------------------------------------------
    The one hero figure in the app. `container-type: inline-size` is what lets
    --fs-display be container-relative, so the same card reads correctly in a 320px
@@ -265,150 +188,98 @@
   color: var(--ink-3);
 }
 
-.overall__pace {
+/* The count that makes the figure above it checkable by arithmetic. It replaced a pace
+   sentence, which is why it carries the space that sentence did. */
+.overall__count {
   font-size: var(--fs-label);
   color: var(--ink-2);
   margin-bottom: var(--space-4);
 }
 
-.overall__meter {
-  margin-bottom: var(--space-2);
-}
-
-/* Four counts. Two columns on a narrow phone, four once there is room — never a
-   single row of four on 320px, where the numbers and their labels collide. */
-.overall__stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--line);
-}
-
-@container (min-width: 22rem) {
-  .overall__stats {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
-.stat {
-  /* The markup is dt-then-dd, which is the only valid order inside a `dl`; the number
-     still reads above its label. */
-  display: flex;
-  flex-direction: column-reverse;
-}
-
-.stat__value {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  line-height: var(--lh-tight);
-}
-
-.stat__label {
-  font-size: var(--fs-caption);
-  color: var(--ink-3);
-}
-
-.stat--zero .stat__value {
-  color: var(--ink-4);
+/* The one call to action on the card, and only when there is one. Spaced off the meter
+   rather than hairlined off it: at one button a rule is heavier than the seam it marks. */
+.overall__alert {
+  margin-top: var(--space-4);
+  justify-content: space-between;
 }
 
 /* ---- The plan ----------------------------------------------------------
-   A stack of month groups. The gap between groups is larger than the gap
-   between cards inside one, because that difference is the only thing
-   separating "next month" from "next task". */
+   A stack of month groups. The gap between groups is larger than the gap between rows
+   inside one, because that difference is what separates "next month" from "next task". */
 .plan {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
 }
 
-/* Flex, and the gap here is load-bearing: `.tcard::before` reaches into it by
-   exactly --space-3 to stitch the spine across the gap between two cards. The
-   two values must stay equal. */
 .plan__group {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
-/* The month, quiet. No text-transform and no letter-spacing — a short month is
-   Japanese-capable (4月), uppercase is a no-op on kanji, and tracking inserts a
-   gap between every kana. Size, weight and ink carry the micro-label instead.
-   Indented to the cards' date column so the heading sits over the dates it
-   names. */
+/* THE MONTH, AND IT STAYS ON SCREEN. Sticky is what replaced the vertical spine this list
+   used to draw through every card: the spine cost 24px of the left edge to imply continuity,
+   while a heading that does not scroll away NAMES the month — which is also what lets a row
+   print a bare `18` instead of restating APR on all forty of them.
+
+   Three things it depends on, none of them optional. The background is REQUIRED, not
+   decoration: rows scroll underneath it. `top` is the safe-area inset, so it parks below the
+   Dynamic Island rather than under it. And it sticks within `.plan__group`, which is a flex
+   column, so the next month's heading pushes this one out — exactly the wanted behaviour, and
+   the reason the heading is inside the group rather than above it.
+
+   No text-transform and no letter-spacing: a short month is Japanese-capable (4月), uppercase
+   is a no-op on kanji, and tracking inserts a gap between every kana. Size, weight and ink
+   carry the micro-label instead. */
 .plan__month {
-  padding-inline-start: var(--space-6);
+  position: sticky;
+  top: var(--safe-top);
+  z-index: 1;
+  padding-block: var(--space-2);
+  background-color: var(--bg);
   font-size: var(--fs-caption);
   font-weight: 600;
   line-height: var(--lh-tight);
   color: var(--ink-2);
 }
 
-/* ---- A task card ------------------------------------------------------
-   Two columns: the 44px check, then everything else. The check cannot live
-   inside the head — a button inside a button is dropped by the parser — so it is
-   a sibling, and the grid is what keeps the two on one row with the open content
-   spanning beneath them.
+/* ---- A task row -------------------------------------------------------
+   Two columns: the 44px check, then everything else. The check cannot live inside the head
+   — a button inside a button is dropped by the parser — so it is a sibling, and the grid is
+   what keeps the two on one row with the open content spanning beneath them. It is also why
+   the check LEADS: the head cannot be split around it.
 
-   The left padding is the spine's lane: the node sits at --space-3 and the
-   check clears it. */
+   The column gap is not cosmetic. Without it a 44px toggle sits flush against the day number
+   a thumb aims at to OPEN the row, and the two most consequential taps on the screen are
+   pixels apart. A gap, never a negative margin — that mistake is documented on
+   `.subtask__toggle`. */
 .tcard {
-  position: relative;
   display: grid;
   grid-template-columns: var(--tap-target) minmax(0, 1fr);
+  column-gap: var(--space-1);
   align-items: start;
-  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-6);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
   background-color: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
 }
 
-/* THE SPINE, drawn per card and stitched across the gap below it, rather than
-   once on the group: a single line spanning the group would run behind the month
-   heading, and masking it there would depend on the heading's own background
-   matching whatever the tab is painted on. Each segment runs the card's full
-   height and --space-3 further — exactly the group's gap — so the segments meet.
-
-   --track-line, NOT --line. This is the same defect that made the meter's hairline
-   draw nothing: --line measures 1.2:1 against the card it sits on, so the spine was
-   invisible at 390px and the nodes read as twelve unrelated dots. --track-line is
-   1.95:1 on --surface — quiet, and actually there. */
-.tcard::before {
-  content: "";
-  position: absolute;
-  left: var(--space-3);
-  top: 0;
-  bottom: calc(var(--space-3) * -1);
-  width: 2px;
-  margin-left: -1px;
-  background-color: var(--track-line);
-}
-
-/* Nothing hangs off the final card: a line running past the last node reads as
-   a plan that continues somewhere off screen. */
-.tcard:last-of-type::before {
-  bottom: 0;
-}
-
-/* An open card contains form controls of its own, and 1.4.11 wants 3:1 for the
-   boundary that identifies one — which --line is nowhere near. */
+/* An open row contains form controls of its own, and 1.4.11 wants 3:1 for the boundary that
+   identifies one — which --line is nowhere near. */
 .tcard--open {
   border-color: var(--line-input);
 }
 
-/* An unsaved card. Opacity only — no spinner and no skeleton: the card is real
-   and readable, it just has not landed yet. */
+/* An unsaved row. Opacity only — no spinner and no skeleton: the row is real and readable,
+   it just has not landed yet. */
 .tcard--pending {
   opacity: 0.55;
 }
 
 /* ---- The check --------------------------------------------------------
-   The primary interaction of the whole app, at the full tap target and in the
-   same ink and radius as the icon buttons elsewhere. */
+   The primary interaction of the whole app, at the full tap target and in the same ink and
+   radius as the icon buttons elsewhere. */
 .tcard__check {
   grid-column: 1;
   display: flex;
@@ -432,79 +303,54 @@
   color: var(--good);
 }
 
-/* Read-only: the same slot, so a viewer's cards line up with an editor's rather
-   than shifting 44px. */
+/* Read-only: the same slot, so a viewer's rows line up with an editor's rather than shifting
+   44px. */
 .tcard__check--static {
   cursor: default;
 }
 
 /* ---- The head --------------------------------------------------------
-   One target for the whole collapsed row, so a card costs two controls instead
-   of five. `align-items: flex-start` rather than centre: the date has to sit
-   against the title's first line, and the body grows downwards. */
+   One target for the whole collapsed row, so a row costs two controls instead of five.
+
+   BASELINE, not flex-start. Both children are column flexes, so their baselines are the day
+   number's and the title's — which are exactly the two things that have to sit on one line.
+   Aligned to the top instead, the title's first line landed 6px above the day's, a mismatch
+   the old meter and node were busy enough to hide. */
 .tcard__head {
   grid-column: 2;
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   gap: var(--space-3);
   min-height: var(--tap-target);
   padding-block: var(--space-1);
   text-align: start;
 }
 
-/* The node, on the spine. `.dot` supplies the state fill from the one state
-   table; only the size and the position belong here. A step bigger than a stat
-   tile's dot, because this one has a 2px line running through it. */
-.tcard__node {
-  position: absolute;
-  left: var(--space-3);
-  /* The day number's optical centre — card padding, the head's own padding and
-     half the day's 1.5 line box — not the card's centre: a fixed offset keeps the
-     nodes in one regular column whether a card is one line, three, or open. */
-  top: 1.875rem;
-  width: 0.625rem;
-  height: 0.625rem;
-  transform: translate(-50%, -50%);
-}
+/* ---- The day ----------------------------------------------------------
+   ONE LINE, day only, fixed width so every title in a group starts in the same column.
+   The month is in the sticky heading above and was always identical to it.
 
-/* A ring on the one state whose figure reads as its own opposite — an expired
-   unfinished window is 100% and nowhere near done. Shape as well as hue, and the
-   card also says the word; see StateBadge.
-
-   `--state-wash` rather than `--critical-wash` directly: the card root sets it from
-   the one state table, so this rule names the ROLE and the table stays the only
-   place a state maps to a colour. */
-.tcard--overdue .tcard__node {
-  box-shadow: 0 0 0 3px var(--state-wash);
-}
-
-/* ---- The date chip ----------------------------------------------------
-   day over month, fixed width so every title in a group starts in the same
-   column. `flex: none` because the day is the thing a month of cards is scanned
-   for and must never be squeezed by a long title. */
-.tcard__date {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  width: 2.25rem;
-}
-
-/* Spans, because the head is a <button> and its content model is phrasing
-   content, so they need blockifying by hand. line-height stays at --lh-tight:
-   nothing in this app goes under 1.5 but the digits-only hero figure. */
+   `flex: none` because the day is the thing a month of rows is scanned for and must never be
+   squeezed by a long title. NEVER state-coloured — see the state table in primitives.css.
+   Tabular digits and --lh-tight; nothing in this app goes under 1.5. */
 .tcard__day {
+  flex: none;
   display: block;
+  /* 2rem, and `nowrap` is the guard rather than the width. Two tabular digits at --fs-xl
+     measure ~29px, so a 1.75rem box broke "18" into "1" and "8" on two lines and printed the
+     day as a column of single digits — visible in the first screenshot of this layout. */
+  width: 2rem;
+  white-space: nowrap;
+  text-align: end;
   font-size: var(--fs-xl);
   font-weight: 600;
   line-height: var(--lh-tight);
   color: var(--ink);
 }
 
-.tcard__mon {
-  display: block;
-  font-size: var(--fs-caption);
-  font-weight: 500;
-  line-height: var(--lh-tight);
+/* A finished row recedes as a whole, the date with it. Left at full ink the day was the
+   loudest thing on a row whose title is already struck through. */
+.tcard--done .tcard__day {
   color: var(--ink-3);
 }
 
@@ -525,7 +371,7 @@
   color: var(--ink);
 }
 
-/* A done card reads as done without its colour: the strikethrough is the second
+/* A finished row reads as finished without its colour: the strikethrough is the second
    channel, and the tick beside it is the third. */
 .tcard--done .tcard__title {
   color: var(--ink-2);
@@ -534,8 +380,10 @@
   text-decoration-thickness: 1px;
 }
 
-/* The dates, the overdue word and the category pill. Also the viewer's owner
-   pill in the open card, which is the same row of static facts. */
+/* The facts line: how near the date is, the checklist tally, the category. Rendered only
+   when it holds something, which on a freshly seeded board is a minority of rows. It WRAPS
+   rather than clipping — at 320pt three items do not fit one line, and a wrapped second line
+   is better than a truncated first. */
 .tcard__meta {
   display: flex;
   flex-wrap: wrap;
@@ -546,50 +394,29 @@
   color: var(--ink-3);
 }
 
-/* The percentage sits BESIDE the bar, never on it: 13px does not fit inside an
-   8px fill, and a label that will not fit moves outside the mark rather than
-   being clipped. */
-.tcard__bar {
-  display: flex;
+/* How near the due date is. The WORDS carry the meaning and the dot carries the hue, which
+   is what keeps a state colour off type. */
+.due {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-1);
+  color: var(--ink-2);
 }
 
-/* `Meter` renders spans here rather than divs, because the head is a button. An
-   inline box ignores height, so the track and its fill are blockified — the
-   mark is absolutely positioned and blockifies itself. */
-.tcard__bar > .meter {
-  display: block;
-  flex: 1;
-  min-width: 0;
-}
-
-.tcard__bar .meter__fill {
-  display: block;
-}
-
-.tcard__percent {
-  flex: none;
-  width: 2.75rem;
-  text-align: right;
-  font-size: var(--fs-caption);
+/* NEVER coloured. `5/5` in the done colour would claim a `done_at` the sheet does not have —
+   all subtasks done deliberately does not make a parent done. --ink-2 rather than the meta
+   line's --ink-3: it is the only progress figure a task has left, and it used to sit in a
+   column of its own at the row's trailing edge. Moving it here is what stopped every chevron
+   in the list sitting at a different x depending on whether the row had a checklist. */
+.tcard__tally {
   font-weight: 500;
   color: var(--ink-2);
 }
 
-/* NEVER coloured. `5/5` in the done colour would claim a `done_at` the sheet
-   does not have — all subtasks done deliberately does not make a parent done. */
-.tcard__tally {
-  flex: none;
-  /* Centred on the day number's line, like everything else in the head. */
-  margin-top: var(--space-2);
-  font-size: var(--fs-caption);
-  font-weight: 500;
-  color: var(--ink-3);
-}
-
+/* An SVG has no baseline, so it would otherwise align its bottom margin edge to the text's. */
 .tcard__chev {
   flex: none;
+  align-self: flex-start;
   margin-top: var(--space-2);
   color: var(--ink-3);
   transition: transform var(--transition-fast);
@@ -599,16 +426,16 @@
   transform: rotate(90deg);
 }
 
-/* ---- The open card ----------------------------------------------------
-   Spans both columns, so the fields get the card's full width rather than the
-   head's. A hairline, not a gap, marks the seam: the content belongs to this
-   card and a gap would read as a second one.
+/* ---- The open row ----------------------------------------------------
+   Spans both columns, so the fields get the row's full width rather than the head's. A
+   hairline, not a gap, marks the seam: the content belongs to this row and a gap would read
+   as a second one.
 
-   NOT ANIMATED, and that is deliberate. Height and max-height are layout
-   properties — max-height slips past the "never transition width/height" test
-   while being exactly the thrash that test exists to prevent — and a mount is
-   not a transition, so the only alternative is a keyframe animation on every
-   card that opens. The disclosure is instant; the chevron carries the motion. */
+   NOT ANIMATED, and that is deliberate. Height and max-height are layout properties —
+   max-height slips past the "never transition width/height" test while being exactly the
+   thrash that test exists to prevent — and a mount is not a transition, so the only
+   alternative is a keyframe animation on every row that opens. The disclosure is instant; the
+   chevron carries the motion. */
 .tcard__content {
   grid-column: 1 / -1;
   margin-top: var(--space-2);
@@ -767,22 +594,22 @@
     padding-inline: 0;
   }
 
-  /* The card can afford a calmer left lane once the column is not 361px. Same
-     tokens, no new breakpoint. */
+  /* A row can afford more air once the column is not 361px. Same tokens, no new
+     breakpoint. */
   .tcard {
-    padding-inline: var(--space-7) var(--space-4);
-  }
-
-  .tcard::before,
-  .tcard__node {
-    left: var(--space-4);
+    padding-inline: var(--space-3) var(--space-4);
   }
 }
 
 /* ---- The inline editor -------------------------------------------------
-   The fields inside an open card, not a form on its own surface. There is no Save button and
+   The fields inside an open row, not a form on its own surface. There is no Save button and
    no footer of actions: every field commits when focus leaves it, so the only thing at the
-   foot is the delete affordance. */
+   foot is the delete affordance.
+
+   ONE COLUMN, THREE ROWS. Two multi-track grids used to live here, sized around a pair of date
+   wheels and a category/owner pair. With a title, one day and a category left, a single column
+   is both simpler and wider — and width is the whole reason the date control used to hang off
+   the card's right edge. */
 .editor {
   display: grid;
   /* space-3, not the `.field` margin of space-4. This block sits inside a card that already
@@ -792,9 +619,9 @@
 }
 
 .editor__field {
-  /* A grid item's minimum content size is its intrinsic width, and a date input's intrinsic
-     width is wide: without this, one date field widens the whole track and the second column
-     never gets to exist. */
+  /* A grid item's minimum content size is its intrinsic width, and a date control's is wide.
+     The real fix for that lives on `.input[type="date"]` in primitives.css; this keeps the
+     track from being widened by it as well. */
   min-width: 0;
 }
 
@@ -812,62 +639,61 @@
   line-height: var(--lh-tight);
 }
 
-/* The window: two date wheels side by side where the card is wide enough for both, one where
-   it is not. auto-fit rather than a media query, because what constrains this is the CARD's
-   width — which depends on the column and the tab it is in — not the viewport's, and the app
-   is allowed exactly two breakpoints.
-
-   11rem is MEASURED, not guessed: a `type=date` input's min-content width is 164px at the 16px
-   floor (the reading, plus the picker button, plus the padding), so a narrower track clips the
-   date rather than stacking it. Two of these plus the gap need ~364px of column, which a card
-   in the wide layout has and a card on a phone does not. */
-.editor__grid {
-  display: grid;
-  gap: var(--space-3);
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-}
-
-/* The quieter pair, category and owner. A lower minimum than the dates above: neither is
-   needed to understand a task, so they share one row and stay out of the way. */
-.editor__row {
-  display: grid;
-  gap: var(--space-3);
-  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-}
-
-/* A day and a clock reading are one field, and the same 164px minimum applies to the day half
-   of it. `.field__row`'s `flex: 1 1 0` never wraps: right in the sheet, where the panel is wide
-   enough for both, and wrong in a card column that can be half as wide — there it shrank the
-   date until its own value was clipped. So the pair becomes a grid HERE and nowhere else, and
-   stacks when the column cannot hold both. */
-.editor .field__row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-}
-
-/* The delete affordance, alone on the last row and after the notes. A destructive control
-   sitting between fields somebody is tabbing through is how the wrong task gets deleted; the
-   hairline says the fields above are a group and this is not part of it. */
-.editor__foot {
+/* The one fact an open row shows in read mode: its due date, spelled out. `space-between` on
+   the label, so the value sits against the right edge under the Edit toggle rather than
+   floating mid-row. */
+.tcard__fact {
   display: flex;
-  justify-content: flex-end;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--fs-label);
+  color: var(--ink);
+}
+
+.tcard__factLabel {
+  flex: none;
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  /* --ink-3 is the lightest ink measured to pass AA at 13px. A label is information, so it does
+     not get the --ink-4 placeholder treatment. */
+  color: var(--ink-3);
+}
+
+/* The controls at the foot of an open row: the Edit toggle, always, and the delete only while
+   editing. `space-between` puts the destructive one at the far end from the toggle a thumb is
+   returning to; with one control `flex-end` is what the toggle gets, which is where it stays as
+   the mode changes. The hairline says everything above is the task and this is not part of it. */
+.tcard__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px solid var(--line);
 }
 
+/* Last, always, so it does not move between the two modes — the delete appears to its LEFT.
+   `margin-inline-start: auto` rather than a second justification rule, because that is what
+   makes a one-control row and a two-control row put this in the same place. */
+.tcard__edit {
+  margin-inline-start: auto;
+}
+
 /* Quiet, and never a filled --danger button: filled, it would be the loudest thing in an open
-   card, competing with the checklist for a control that most people never press. The WORD
+   row, competing with the checklist for a control that most people never press. The WORD
    carries it — the ink is a second channel, not the only one — and it opens the confirmation
    sheet rather than deleting anything.
 
    Worn with `.btn--ghost`, whose own hover sets `color: var(--ink)`. Same specificity, so this
    wins on order alone: app.css is loaded after primitives.css. Not `.btn--sm` — a thumb aims
    at this, so it keeps the full --tap-target from `.btn`. */
-.editor__danger {
+.btn--danger-quiet {
   color: var(--danger);
 }
 
-.editor__danger:hover {
+.btn--danger-quiet:hover {
   background-color: var(--critical-wash);
   color: var(--danger);
 }

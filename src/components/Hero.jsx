@@ -11,8 +11,8 @@
  * so it flips at midnight rather than at whatever o'clock the page happened to load.
  */
 
-import { weddingWall } from '../config.js'
-import { daysUntil, formatWall } from '../lib/time.js'
+import { weddingDay } from '../config.js'
+import { daysUntil, formatDay } from '../lib/time.js'
 import { useT } from '../i18n/index.js'
 import { GearIcon } from './icons.jsx'
 
@@ -37,8 +37,8 @@ export function coupleTitle(config, fallback) {
  */
 export default function Hero({ config, nowMs, canEdit, onOpenSettings, photo = PHOTO }) {
   const { t, locale } = useT()
-  const wall = weddingWall(config)
-  const days = wall ? daysUntil(wall, config.timezone, nowMs) : null
+  const day = weddingDay(config)
+  const days = day ? daysUntil(day, config.timezone, nowMs) : null
 
   let countdown = t('countdown.unset')
   if (days != null) {
@@ -75,7 +75,7 @@ export default function Hero({ config, nowMs, canEdit, onOpenSettings, photo = P
         {/* The date, spelled out, above the names — the eyebrow slot Seattle puts its
             region in. Nothing at all until somebody sets it; a placeholder date on a
             wedding hero is worse than a gap. */}
-        {wall ? <p className="hero__eyebrow">{formatWall(wall, { locale, year: true })}</p> : null}
+        {day ? <p className="hero__eyebrow">{formatDay(day, { locale, year: true })}</p> : null}
         <h1 className="hero__title">{coupleTitle(config, t('app.name'))}</h1>
         <p className="hero__sub">
           <span className="hero__count tnum">{countdown}</span>

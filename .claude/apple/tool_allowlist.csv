@@ -1,0 +1,8 @@
+# Apple Claude Code tool allowlist, project scope (merged with ~/.claude/apple; user wins).
+#
+# The dev/preview servers need to bind a local port, which the sandbox refuses with
+# `EPERM: operation not permitted ::1:<port>`. Both entries are long, distinctive
+# contains_match strings — nothing in Claude Code's own shell wrapper contains them —
+# and the port is pinned so the match cannot widen to an arbitrary vite invocation.
+npx vite --port 5199 --strictPort,contains_match,Dev server for the wedding board
+npx vite preview --port 5199 --strictPort,contains_match,Preview the built bundle

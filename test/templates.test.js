@@ -1,17 +1,16 @@
 /**
  * The starter checklists. These are content, but two properties of them are load
- * bearing: the offsets have to produce usable windows for any wedding date, and the two
+ * bearing: the offsets have to produce usable due dates for any wedding date, and the two
  * catalogs of titles have to stay in step so a Japanese seed is not half English.
  */
 
 import { describe, expect, it } from 'vitest'
 import { CATEGORIES, TEMPLATES, TEMPLATE_IDS, findTemplate, materialize } from '../src/lib/templates.js'
-import { isValidWall, wallToInstant } from '../src/lib/time.js'
+import { isValidDay } from '../src/lib/time.js'
 import { taskToRow, validateTask } from '../src/schema.js'
 import en from '../src/i18n/en.js'
 import ja from '../src/i18n/ja.js'
 
-const TOKYO = 'Asia/Tokyo'
 let counter = 0
 const newId = () => `id${counter++}`
 
@@ -48,31 +47,36 @@ describe('the templates themselves', () => {
     }
   })
 
-  it('never closes a window before it opens', () => {
+  it('gives every task exactly one offset', () => {
+    // The pair this replaced described a window. A task is a deadline now, so a leftover
+    // `from` would be data nothing reads — and the symptom of reading the wrong one is a
+    // whole board dated months early.
     for (const template of TEMPLATES) {
       for (const item of template.tasks) {
-        expect(item.to, `${template.id}: ${item.en}`).toBeGreaterThanOrEqual(item.from)
+        expect(typeof item.d, `${template.id}: ${item.en}`).toBe('number')
+        expect(item, `${template.id}: ${item.en}`).not.toHaveProperty('from')
+        expect(item, `${template.id}: ${item.en}`).not.toHaveProperty('to')
       }
     }
   })
 
   it('keeps every offset inside a plausible planning horizon', () => {
     // Two years before to three months after. An offset outside that is a typo, and the
-    // symptom would be a timeline stretched flat by one stray bar.
+    // symptom would be a month group a year away from every other.
     for (const template of TEMPLATES) {
       for (const item of template.tasks) {
-        expect(item.from).toBeGreaterThan(-730)
-        expect(item.to).toBeLessThan(120)
+        expect(item.d).toBeGreaterThan(-730)
+        expect(item.d).toBeLessThan(120)
       }
     }
   })
 
   it('is ordered so the seeded board reads forwards', () => {
     for (const template of TEMPLATES) {
-      const starts = template.tasks.map((item) => item.from)
+      const offsets = template.tasks.map((item) => item.d)
       // Not strictly sorted — parallel workstreams legitimately overlap — but a
       // template that jumped from -60 back to -240 would produce a confusing first read.
-      expect(Math.max(...starts)).toBe(starts[starts.length - 1])
+      expect(Math.max(...offsets)).toBe(offsets[offsets.length - 1])
     }
   })
 })
@@ -85,35 +89,31 @@ describe('materialize', () => {
       const drafts = materialize(template, day, { locale: 'en', newId })
       expect(drafts).toHaveLength(template.tasks.length)
       for (const draft of drafts) {
-        expect(validateTask(draft, isValidWall)).toEqual([])
+        expect(validateTask(draft, isValidDay)).toEqual([])
         expect(() => taskToRow(draft)).not.toThrow()
       }
     }
   })
 
   it('counts back from the wedding day in calendar days', () => {
-    const template = { id: 't', months: 1, tasks: [{ c: 'Venue', from: -30, to: -20, en: 'x', ja: 'x' }] }
+    const template = { id: 't', tasks: [{ c: 'Venue', d: -20, en: 'x', ja: 'x' }] }
     const [task] = materialize(template, day, { locale: 'en', newId })
-    expect(task.start).toBe('2027-03-19T00:00')
-    expect(task.end).toBe('2027-03-29T23:59')
+    expect(task.due).toBe('2027-03-29')
   })
 
-  it('makes every window all-day, opening at midnight and closing at 23:59', () => {
+  it('writes a bare day with no clock time anywhere in it', () => {
     for (const template of TEMPLATES) {
       for (const draft of materialize(template, day, { locale: 'en', newId })) {
-        expect(draft.allDay).toBe(true)
-        expect(draft.start.endsWith('T00:00')).toBe(true)
-        // Not the next midnight: a seeded task due on a day must be overdue the morning
-        // after, not 99% complete.
-        expect(draft.end.endsWith('T23:59')).toBe(true)
+        expect(draft.due).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+        expect(draft).not.toHaveProperty('start')
+        expect(draft).not.toHaveProperty('allDay')
       }
     }
   })
 
-  it('gives a same-day task a real span rather than a zero-length one', () => {
-    const template = { id: 't', months: 1, tasks: [{ c: 'Other', from: 0, to: 0, en: 'x', ja: 'x' }] }
-    const [task] = materialize(template, day, { locale: 'en', newId })
-    expect(wallToInstant(task.end, TOKYO)).toBeGreaterThan(wallToInstant(task.start, TOKYO))
+  it('dates the wedding day itself on the wedding day', () => {
+    const template = { id: 't', tasks: [{ c: 'Other', d: 0, en: 'x', ja: 'x' }] }
+    expect(materialize(template, day, { locale: 'en', newId })[0].due).toBe(day)
   })
 
   it('writes the titles in the requested language', () => {
@@ -140,8 +140,7 @@ describe('materialize', () => {
   })
 
   it('works across a leap day', () => {
-    const template = { id: 't', months: 1, tasks: [{ c: 'Venue', from: -1, to: 0, en: 'x', ja: 'x' }] }
-    const [task] = materialize(template, '2028-03-01', { locale: 'en', newId })
-    expect(task.start).toBe('2028-02-29T00:00')
+    const template = { id: 't', tasks: [{ c: 'Venue', d: -1, en: 'x', ja: 'x' }] }
+    expect(materialize(template, '2028-03-01', { locale: 'en', newId })[0].due).toBe('2028-02-29')
   })
 })

@@ -1,8 +1,8 @@
 # Wedding
 
-A static React app for planning a wedding, with a single Google Sheet as the database. A task has
-a start and an end and its percentage advances on its own as time passes; a task with a checklist
-is measured by how much of it is ticked instead. One figure rolls that up across the whole plan.
+A static React app for planning a wedding, with a single Google Sheet as the database. A task is
+a title, a day it is due, and a tick; a task with a checklist is measured by how much of it is
+ticked. One figure rolls that up across the whole plan.
 
 The point of the design is who can do what. **The site is public and looks it.** A wedding
 planner opens the URL and gets a read-only board — no sign-in, no password, no prompt, no
@@ -17,37 +17,38 @@ silently if broken are in [CLAUDE.md](CLAUDE.md).
 Two numbers, deliberately kept apart, because conflating them would be this app's easiest way
 to lie.
 
-**What a task's bar shows** is decided in one place,
-[`src/lib/progress.js`](src/lib/progress.js), by a three-step precedence:
+**What a task is worth** is decided in one place, [`src/lib/progress.js`](src/lib/progress.js),
+by a two-step precedence:
 
-1. **Marked done** pins it to 100%. This is the only step a person explicitly asserted, so it
-   wins — somebody closing out a task with two items open is saying the rest turned out not to
-   be needed.
-2. **Otherwise, if it has a checklist**, the bar is how many subtasks are ticked. "3 of 5 = 60%"
-   is a sentence you can check by counting.
-3. **Otherwise the clock**: how much of the window between start and end has passed. It moves
-   with nobody touching anything, which is the feature.
+1. **Marked done** is 100%. This is the only step a person explicitly asserted, so it wins —
+   somebody closing out a task with two items open is saying the rest turned out not to be
+   needed.
+2. **Otherwise, if it has a checklist**, it is how many subtasks are ticked. "3 of 5 = 60%" is a
+   sentence you can check by counting.
 
-Nothing is blended. `0.5 × elapsed + 0.5 × ticked` would be a number nobody could reconstruct.
+Anything else is **0%, whatever the date says.** That is the whole point: an unfinished task is
+unfinished, and no number on screen can be mistaken for progress that has not happened.
 
-**A window that has run out unfinished reads 100% and is labelled Overdue.** Not a bug and not
-hidden: the percentage is the clock, and the clock has finished. It is also exactly why the
-headline is never alone on screen.
+This replaced an earlier model in which a task's percentage was how much of the window between a
+start and an end had elapsed. That number reached 100% for a window which had merely run out, so
+"78% complete" and "78% of the time is gone" were the same figure — and the interface needed a
+badge, a mark and an overdue count on every screen just to stop the headline lying. Deleting the
+start date deleted the lie with it.
 
-The overall tracker shows three things at once:
+The tracker shows three things:
 
 | | |
 | --- | --- |
-| The hero percentage | the mean over **top-level** tasks. Each counts equally — not by duration, not by how many subtasks it was split into — so "36%" is a number you can check by counting the cards |
-| The mark on the meter | where that fill would sit if nothing were early or late. A task row with a checklist carries the same pair: the fill is work counted, the mark is where the clock has got to |
-| Overdue / In progress / Upcoming / Done | the counts, which is why the verdict line reads "Behind: 8 tasks are past their date" rather than a percentage |
+| The hero percentage | the mean over **top-level** tasks. Each counts equally — not by how many subtasks it was split into — so "36%" is a number you can check by counting the rows |
+| `9 of 52 done` | the same fact as arithmetic anybody can redo. It replaced a one-line verdict, for the reason below |
+| The mark on the meter | the share of due dates that have already passed. Where the fill would sit if everything had been finished on its day, so ahead of the mark is ahead of schedule |
 
-**Lateness has two sources and the verdict needs both.** For a task with no checklist, being
-behind cannot be derived from the arithmetic at all: an overdue task counts 100% in the headline
-*and* in the reference, so it cancels itself out of the subtraction. The overdue count is the
-only evidence there is. A parent *with* a checklist breaks that tie, and usefully — its fill is
-real work while its mark is elapsed time, so one trailing its own window pushes the pace
-negative **while the deadline is still ahead**. Overdue is retrospective; that is not.
+**There is no "on schedule" sentence, and that is deliberate.** Work done and dates passed share a
+denominator, so subtracting them looks like a pace — but two tasks a month late plus two future
+tasks finished early sum to exactly zero, and the sentence read "On schedule" with two things
+late. A graphic cannot make that claim: the fill sits where it sits, the mark sits where it sits,
+and the overdue count states the fact on its own, as a button that takes you to the rows in
+question.
 
 ## Subtasks
 
@@ -69,46 +70,73 @@ Subtasks never enter the overall percentage. A parent with ten of them would oth
 eleven twentieths of a ten-task board, so writing more detail about one task would deflate every
 other. They move their parent's single share and nothing else.
 
-## The two tabs
+## One screen
 
-**Home** is the photograph, the countdown and one number. A full-bleed hero (`public/hero.jpg`)
-carries the wedding date, the couple's names and the days left; below it the overall tracker gives
-the headline percentage, the on-schedule mark, the verdict line and the four counts. Nothing else,
-and no explanatory prose — a board that opens on a progress bar reads like a project tracker.
+**There are no tabs.** The photograph is the header, the tracker is under it, and the plan is
+under that — one scroll, and a tap on the status bar returns to the top. A two-tab bar cost 56px
+of permanent chrome plus its safe-area inset on every screen to hold, on one side, a photograph
+and a single card.
 
-**Timeline** is the work: every task as a card on one vertical spine, grouped by the month it
-starts in. A plan is read forwards, and grouping by state reshuffles the whole board every time
-something is ticked, which loses the reader's place — state slicing lives in the filter chips
-instead.
+**The hero** (`public/hero.jpg`) carries the wedding date, the couple's names and the days left.
+A board that opens on a progress bar reads like a project tracker.
 
-A collapsed card is a check, a `18 / APR` date chip on the spine, the title, the dates, its
-category, and a meter with the percentage beside it. **Tapping the card opens it in place**, and
-that is where everything else lives: the fields, the checklist, and the delete. Opening in place
-rather than pushing a screen or a sheet keeps the neighbouring cards, the month heading and the
-card's own progress visible while its dates are being changed — and a tap closes it again with
-nothing to save and nothing to lose.
+**The plan** is every task as a row, grouped by the month it is due in. A plan is read forwards,
+and grouping by state reshuffles the whole board every time something is ticked, which loses the
+reader's place — state slicing lives in the filter chips, which are also the only place the
+per-state counts appear, because there they are the control that acts on them.
 
-**Editing is the open card.** There is no Save button: each field commits when focus leaves it,
-and nothing is sent when the value did not change. Every commit writes the *whole* row, because
-the script rewrites a row from the payload it is given — a partial one would blank `parent_id` and
-silently promote a subtask. The bottom sheet survives for one job, creating a task.
+**The month heading is sticky, and it replaced a vertical spine.** An earlier version drew a line
+through a node on every row to make twelve rows read as one sequence; it cost 24px of the left
+edge — a tenth of the row on a 320pt phone — and pinned the node to a magic offset tuned to a
+two-line date chip. A heading that stays on screen names the month instead of implying it, costs
+nothing horizontally, and is what lets a row print a bare `18` rather than restating `APR` forty
+times.
 
-**A subtask is a title and a tick, in the parent's open card.** No dates, so nothing draws it on a
-time axis and nothing needs to: what a checklist contributes upward is the parent's `3/5` tally
-beside its fill, which is what tells the reader that fill is a count rather than a clock reading.
-The tally is never coloured — `5/5` in the done colour would claim a `done_at` the sheet does not
-have. **The whole subtask row is the tick target**, not the circle at its end.
+A collapsed row is a check, the day of the month, the title, and — only when there is something to
+say — one quiet line: how near the date is, the `3/5` tally, the category. **Tapping the row opens
+it in place**, which keeps the neighbouring rows and the month heading visible while it is being
+worked on, and a tap closes it again with nothing to save and nothing to lose.
 
-**State is read from three places and only one of them is colour**: the node on the spine carries
-the hue, the percentage carries the amount, the date chip says when the window was, and every
-card's accessible name states the state in words. Overdue is the one state that also gets a
-written word on screen, because it is the one whose figure reads as its own opposite — an expired
-unfinished window is 100% and nowhere near done.
+**There is no bar on a task row.** Without a checklist a task is 0% or 100%, which the tick beside
+it already says. The one meter in the app is the tracker's.
+
+**Opening a row reveals it. It does not arm it.** An open row starts read-only: the due date spelled
+out — the one fact the collapsed row abbreviates, and the only place the weekday appears — and the
+checklist, tickable. An **Edit** toggle swaps the facts for the fields. Tapping a row is how you
+read it and tick things off, a hundred times a week; retitling it happens once, and it is not worth
+putting a live text input under the common gesture when the editor commits on blur.
+
+The toggle takes every **destructive** control with it: the task's delete and the per-item trash
+icons are behind it, while ticking *and adding* an item stay on the read path, because both are
+doing the work rather than changing the task. Closing the row resets the mode — the detail
+unmounts, so there is nothing to synchronise.
+
+**Editing is three fields.** Title, due date, category. There is no Save button: each field commits
+when focus leaves it, and nothing is sent when the value did not change. Every commit writes the
+*whole* row, because the script rewrites a row from the payload it is given — a partial one would
+blank `parent_id` and silently promote a subtask. The bottom sheet survives for one job, creating a
+task.
+
+**The due date is optional.** Forcing one forces a wrong one: during entry the date is exactly
+what is not yet known, and an invented date lands straight in the overdue count and in the
+on-schedule mark. A dateless task collects in its own group at the foot of the list and asks
+nothing of anybody. For the same reason the create sheet leaves the date blank rather than
+defaulting to today, which would make everything typed in a hurry overdue tomorrow.
+
+**A subtask is a title and a tick, in the parent's open row.** No date, so nothing draws it in a
+sequence of dates: what a checklist contributes upward is the parent's `3/5` tally, and it is
+never coloured — `5/5` in the done colour would claim a `done_at` the sheet does not have. **The
+whole subtask row is the tick target**, not the circle at its end.
+
+**Colour is never the only channel, and there is exactly one coloured mark per row.** How near the
+date is reads as words — `3 days ago`, `Today`, `in 5 days` — with a dot beside them taking the
+state's hue from one table. Nothing is drawn past the fortnight, so a mark on a row means "this
+one, this fortnight"; a finished row is a filled tick and a strikethrough. The day column is never
+tinted: a column a third of whose entries are red stops being a column.
 
 There is no Gantt chart. It earned its keep on a large monitor and cost a zoom ladder, a pinned
 axis, a pinned label gutter and ~950 lines of CSS and component code to be usable on the phone
-this app is actually read on; the accordion answers "what is coming up, and how far along is it"
-in one screen without any of that.
+this app is actually read on.
 
 ## Data model
 
@@ -118,32 +146,41 @@ One spreadsheet, two tabs — `tasks` and `config` — laid out in exactly one p
 | Col | Field | Example | Notes |
 | --- | --- | --- | --- |
 | A | `id` | `9f1c…` | UUID generated in the browser |
-| B | `title` | `Book the venue` | Required |
+| B | `title` | `Book the venue` | Required, and the only required field |
 | C | `category` | `Venue` | Free text. A known value is translated for display; anything else renders exactly as typed |
-| D | `start` | `2027-01-04T00:00` | **Wall clock**, no zone — see below. Empty on a subtask |
-| E | `end` | `2027-02-01T23:59` | Same. `23:59`, not the next midnight |
-| F | `all_day` | `TRUE` | Display only: hides the clock times |
-| G | `done_at` | `2026-06-01T18:02:11.004Z` | A timestamp here means done, and pins the task to 100% |
-| H | `notes` | `call first` | Free text, stored literally |
-| I | `owner` | `Ren` | Free text |
-| J | `created_at` | `2026-08-07T…Z` | Stamped by the script, never by the browser |
-| K | `updated_at` | `2026-08-07T…Z` | Same |
-| L | `deleted_at` | *(empty)* | A timestamp here soft-deletes the row |
-| M | `parent_id` | *(empty)* | The id of this row's parent. Empty for a task, set for a subtask; see the promotion rule above |
+| D | `due` | `2027-02-01` | The day it is due. No time — see below. Optional; empty on a subtask |
+| E | `done_at` | `2026-06-01T18:02:11.004Z` | A timestamp here means done, and is 100% |
+| F | `created_at` | `2026-08-07T…Z` | Stamped by the script, never by the browser |
+| G | `updated_at` | `2026-08-07T…Z` | Same |
+| H | `deleted_at` | *(empty)* | A timestamp here soft-deletes the row |
+| I | `parent_id` | *(empty)* | The id of this row's parent. Empty for a task, set for a subtask; see the promotion rule above |
 
-**`start` and `end` are wall-clock strings with no offset and no `Z`.** They mean that reading of
-a clock *at the wedding*, resolved against the board's configured `timezone`. This is the one
-non-obvious modelling decision and it is load-bearing: "the ceremony is at 14:00" has to say
-14:00 to a planner working from another country, which a UTC instant rendered in the device's own
-zone would not. The device's zone is never consulted for a task time. All the arithmetic, DST
-included, is in [`src/lib/time.js`](src/lib/time.js).
+There used to be a `start`, an `end`, an `all_day` flag, an `owner` and a `notes` column. Every one
+of them was optional in practice and left empty on almost every row, and between them they made a
+task something you filled in rather than something you wrote down — seven controls on a 393pt
+screen, and a percentage that could read 100% for work nobody had done.
+
+**Moving an existing board onto this layout is automatic and happens once.** The read resolves
+columns by NAME rather than position, so a board still on the old thirteen-column layout is read
+correctly by anyone — including an anonymous planner, whose request must not cause a write. The
+first *write* after that rewrites the grid in the new order under the script's lock, taking each
+value by name, mapping the old `end` (the closing end of the window, which is what "due by" meant)
+to `due`, and clearing the columns past the new width. `test/script.test.js` executes both halves.
+
+**`due` is a calendar day with no zone and no time.** It means that date on a calendar *at the
+wedding*, and whether it has passed is decided against the board's configured `timezone` — never
+the device's. That is the one non-obvious modelling decision left and it is still load-bearing:
+"due on the 18th" has to stop being due on the 19th at the venue, not at midnight wherever a
+planner happens to be. Because everything downstream compares two day strings, the zone is used
+for exactly one thing — deciding today's date — and there is no DST arithmetic left anywhere.
+[`src/lib/time.js`](src/lib/time.js).
 
 Every write goes through the script with the cell forced to plain-text format, so a note of
 `=SUM(A:A)` stays literal text and a date is never reformatted to the sheet's locale.
 
 Deletes are soft — `deleted_at` is stamped and the row filtered out client-side — because a hard
 delete shifts every row below it. Deleting asks for confirmation and is reversible from the
-collapsed **Deleted** list. **Deleting a task cascades to its checklist**, in the script, under
+collapsed **Deleted** list in Settings › Maintenance, beside the purge that empties it. **Deleting a task cascades to its checklist**, in the script, under
 one lock and in one reply: from the browser it would be N requests that can half-fail, leaving
 some items tombstoned and some not. Restore is the exact inverse. The manual **purge** in
 Settings is the only hard delete.
@@ -157,9 +194,8 @@ default in [`src/config.js`](src/config.js).
 | --- | --- | --- |
 | `partner1_name` / `partner2_name` | `Aoi` / `Ren` | Shown over the hero photograph |
 | `wedding_date` | `2027-04-18` | Drives the countdown, and every template offset counts back from it |
-| `wedding_time` | `14:00` | Optional |
 | `venue` | `Meguro Gajoen` | Free text |
-| `timezone` | `Asia/Tokyo` | IANA name. The zone every wall-clock time on the board is read in |
+| `timezone` | `Asia/Tokyo` | IANA name. The zone today's date is resolved in, which is what decides whether a due date has passed |
 | `categories` | `Venue, Attire, Guests` | Comma-separated; an empty list never shadows the default |
 
 Everything in this tab is shared. The interface **language** and the **accent colour** are
@@ -307,9 +343,14 @@ npm run contrast                      # every colour pair, measured
 ```
 
 Load those through `scripts/harness.html`, which takes files, widths and a scroll-to selector on
-the query string and documents its own options. Anything behind a click — switching tabs, opening
-a card, a field committing on blur, the keyboard's effect on a sheet — is invisible to a static
-render and has to be verified by driving the built app in a browser.
+the query string and documents its own options.
+
+Anything behind a click — opening a row, a field committing on blur, a native date picker, the
+keyboard's effect on a sheet — is invisible to a static render, so `scripts/drive.mjs` drives the
+running app over the Chrome DevTools Protocol and reports what it finds. It needs no new
+dependency and it is what measures the one thing this redesign was asked to fix: whether the date
+control stays inside the row it is drawn in. Its own header records the two ways it silently
+verified nothing at all before it worked.
 
 The hero is a derived crop; the camera original is gitignored. To replace it, drop a new photo in
 and re-run the two `sips` passes recorded in [CLAUDE.md](CLAUDE.md).
@@ -322,11 +363,11 @@ and re-run the two `sips` passes recorded in [CLAUDE.md](CLAUDE.md).
 | `apps-script/` | the whole backend: `Code.gs` and its manifest, deployed by hand |
 | `src/schema.js` | the sheet contract: columns, row ↔ task mapping, validation |
 | `src/config.js` | build-time values, storage keys, the `config` tab's field list, defaults |
-| `src/App.jsx` | the shell: access, which tab is on screen, and every mutation's toast |
+| `src/App.jsx` | the shell: access, the ticking clock, the filter, and every mutation's toast |
 | `src/lib/` | `api` (every network call and the failure taxonomy), `access` (the capability URL), `time` and `progress` (both pure), `templates`, `snapshot`, `serviceWorker`, `theme` |
 | `src/state/` | `useBoard` — one `run()` primitive behind optimistic CRUD, the serialised write chain, the out-of-date-script guard, throttled refresh — plus `useNow` and `useToasts` |
 | `src/components/` | one file per view, with inline-SVG icons in `icons.jsx` |
 | `src/i18n/` | the engine, the `en`/`ja` catalogs and the registry |
 | `src/styles/` | `tokens`, `base`, `primitives`, `app`, loaded in that order |
 | `test/` | vitest specs. Two cross the boundary to the backend: `schema.test.js` pins the column lists against each other, and `script.test.js` *executes* `Code.gs` against a fake Sheets service |
-| `scripts/` | `preview.jsx` + `harness.html` (the visual harness), `check-contrast.js`, `build-sw.js` (importable, so its silent failure modes are tested), `make-icons.js` (a hand-rolled PNG encoder, so there is no native image dependency) |
+| `scripts/` | `preview.jsx` + `harness.html` (the static visual harness), `drive.mjs` (drives the running app over CDP), `check-contrast.js`, `build-sw.js` (importable, so its silent failure modes are tested), `make-icons.js` (a hand-rolled PNG encoder, so there is no native image dependency) |

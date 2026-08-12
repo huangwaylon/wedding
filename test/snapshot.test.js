@@ -14,7 +14,7 @@ import {
   mergeConfig,
   parseConfig,
   serializeConfig,
-  weddingWall,
+  weddingDay,
 } from '../src/config.js'
 
 let store
@@ -29,7 +29,7 @@ beforeEach(() => {
   clearSnapshot()
 })
 
-const TASKS = [{ id: 'a', title: 'Book the venue', start: '2027-01-01T00:00' }]
+const TASKS = [{ id: 'a', title: 'Book the venue', due: '2027-01-01' }]
 const CONFIG = { weddingDate: '2027-04-18', timezone: 'Asia/Tokyo' }
 
 describe('snapshot', () => {
@@ -125,7 +125,6 @@ describe('parseConfig', () => {
       partner1_name: 'Aoi',
       partner2_name: 'Ren',
       wedding_date: '2027-04-18',
-      wedding_time: '14:00',
       venue: 'Meguro',
       timezone: 'Asia/Tokyo',
       categories: 'Venue, Attire , Guests',
@@ -134,7 +133,6 @@ describe('parseConfig', () => {
       partner1Name: 'Aoi',
       partner2Name: 'Ren',
       weddingDate: '2027-04-18',
-      weddingTime: '14:00',
       venue: 'Meguro',
       timezone: 'Asia/Tokyo',
       categories: ['Venue', 'Attire', 'Guests'],
@@ -189,22 +187,20 @@ describe('mergeConfig', () => {
   })
 })
 
-describe('weddingWall', () => {
-  it('combines the date and time', () => {
-    expect(weddingWall({ weddingDate: '2027-04-18', weddingTime: '14:00' })).toBe(
-      '2027-04-18T14:00',
-    )
+describe('weddingDay', () => {
+  it('is the stored date, trimmed', () => {
+    expect(weddingDay({ weddingDate: ' 2027-04-18 ' })).toBe('2027-04-18')
   })
 
-  it('defaults a missing or malformed time to midnight', () => {
-    expect(weddingWall({ weddingDate: '2027-04-18', weddingTime: '' })).toBe('2027-04-18T00:00')
-    expect(weddingWall({ weddingDate: '2027-04-18', weddingTime: 'noon' })).toBe(
-      '2027-04-18T00:00',
-    )
+  it('is empty with no date', () => {
+    // '' rather than today: a placeholder date on a wedding hero is worse than a gap, and
+    // the templates count backwards from this.
+    expect(weddingDay({ weddingDate: '' })).toBe('')
+    expect(weddingDay({})).toBe('')
+    expect(weddingDay(null)).toBe('')
   })
 
-  it('is empty with no date, whatever the time says', () => {
-    expect(weddingWall({ weddingDate: '', weddingTime: '14:00' })).toBe('')
-    expect(weddingWall(null)).toBe('')
+  it('declares no ceremony TIME, because nothing on the board is timed', () => {
+    expect(DEFAULT_CONFIG).not.toHaveProperty('weddingTime')
   })
 })

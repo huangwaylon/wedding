@@ -22,7 +22,7 @@ import { useT } from '../i18n/index.js'
 import DoneToggle from './DoneToggle.jsx'
 import { PlusIcon, TrashIcon } from './icons.jsx'
 
-function SubtaskRow({ subtask, canEdit, onToggle, onDelete }) {
+function SubtaskRow({ subtask, canEdit, canRemove, onToggle, onDelete }) {
   const { t } = useT()
   const done = isDone(subtask)
 
@@ -41,7 +41,7 @@ function SubtaskRow({ subtask, canEdit, onToggle, onDelete }) {
       >
         <span className="subtask__title">{subtask.title}</span>
       </DoneToggle>
-      {canEdit ? (
+      {canEdit && canRemove ? (
         <button
           type="button"
           className="btn btn--icon"
@@ -127,11 +127,15 @@ function AddSubtask({ onAdd, onFocusChange }) {
  *   subtask cannot be stored at all. The existing items stay live — they can still be ticked and
  *   deleted, which the old script handles fine — but there is no field, because offering one would
  *   invite somebody to type a checklist that gets thrown away. The banner says why.
+ * @param {boolean} [props.canRemove] false on the read path. Ticking and adding are doing the
+ *   work; removing is destructive, so it lives with the task's own delete behind the Edit toggle
+ *   rather than putting three trash icons under every ordinary tap.
  */
 export default function SubtaskList({
   subtasks,
   canEdit,
   canAdd = true,
+  canRemove = true,
   onToggle,
   onDelete,
   onAdd,
@@ -144,6 +148,7 @@ export default function SubtaskList({
           key={subtask.id}
           subtask={subtask}
           canEdit={canEdit}
+          canRemove={canRemove}
           onToggle={onToggle}
           onDelete={onDelete}
         />

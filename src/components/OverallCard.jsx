@@ -1,51 +1,46 @@
 /**
- * The overall tracker: one hero figure, one meter with an on-schedule mark, and four
- * counts. No heading, no legend, no method note — the number is 44px tall and the
- * verdict is written directly beneath it, so a title saying "Overall progress" only
- * names what is already unmistakable. That label survives as the section's accessible
- * name, where it is the only thing that has to say what this is.
+ * The tracker: one hero figure, the count behind it, one meter with an on-schedule mark,
+ * and — only when there is one — the one thing worth acting on.
  *
- * WHY THE MARK IS NOT OPTIONAL. The headline percentage counts a task as 100% once
- * its window has run out, whether or not anybody finished it — that is what "time
- * elapsed" means, and it is what was asked for. On its own that number would read as
- * progress when it is really just the calendar advancing. The mark says where the fill
- * would sit if everything were exactly on schedule, the pace line says which side of
- * it we are on, and the overdue count sits beneath: between the three, a board that is
- * 78% "complete" with nine overdue tasks cannot be mistaken for one that is 78% done.
+ * NO HEADING, NO LEGEND, NO METHOD NOTE. The number is 44px tall and the count is written
+ * directly beneath it, so a title saying "Overall progress" only names what is already
+ * unmistakable. That label survives as the section's accessible name, where it is the only
+ * thing that has to say what this is.
  *
- * ONE HERO FIGURE PER VIEW, and this is it. Proportional figures, not tabular — a
+ * "9 of 14 done" RATHER THAN A VERDICT. This replaced a sentence that said "On schedule",
+ * "3% ahead" or "Behind: 2 tasks are past their date" — and the sentence could be wrong: two
+ * tasks late plus two future tasks finished early sums to a pace of exactly zero. A count
+ * cannot be wrong, it makes the percentage above it checkable by arithmetic, and it is four
+ * words in either language.
+ *
+ * THE MARK IS THE PACE SIGNAL AND IT COSTS NO WORDS. It sits where the fill would be if
+ * everything had been finished on its date, so ahead of it is ahead of schedule. That is a
+ * comparison a graphic makes better than prose, and unlike prose it declines to pick a side.
+ *
+ * THE FOUR STATE COUNTS ARE NOT HERE. They are on the filter chips below, where the same
+ * numbers are also the control that acts on them — a read-only copy of a tappable figure is a
+ * second place to keep the same fact correct. What survives of them is the overdue button:
+ * the one count that is a call to action rather than a statistic.
+ *
+ * ONE HERO FIGURE PER SCREEN, and this is it. Proportional figures, not tabular — a
  * standalone number at 44px+ looks loose in tabular digits.
  */
 
-import { paceLabel, toPercent } from '../lib/progress.js'
+import { toPercent } from '../lib/progress.js'
 import { useT } from '../i18n/index.js'
 import Meter from './Meter.jsx'
+import { ChevronRightIcon } from './icons.jsx'
 
-/** The four counts, in the order somebody scans them: problems first. */
-const STATS = ['overdue', 'active', 'upcoming', 'done']
-
-export default function OverallCard({ overall }) {
+export default function OverallCard({ overall, onShowOverdue }) {
   const { t } = useT()
   const percent = toPercent(overall.percent)
-  const expected = toPercent(overall.expected)
 
-  if (!overall.total) {
-    return (
-      <section className="card overall" aria-label={t('overall.title')}>
-        <p className="hint">{t('overall.empty')}</p>
-      </section>
-    )
-  }
-
-  const pace = paceLabel(overall.pace, overall.overdue)
-  // The magnitude, not the signed value: the direction is already in the wording.
-  const gap = Math.round(Math.abs(overall.pace) * 100)
-  const paceText =
-    pace === 'ontrack'
-      ? t('overall.pace.ontrack')
-      : pace === 'behind'
-        ? t('overall.pace.behind', { count: overall.overdue })
-        : t('overall.pace.ahead', { percent: gap })
+  /**
+   * Nothing rather than a 0% card. An empty board renders `EmptyBoard` instead — a tracker
+   * above it would be a hero figure measuring nothing, and "0 of 0 done" is not a fact
+   * anybody needs stated.
+   */
+  if (!overall.total) return null
 
   return (
     <section className="card overall" aria-label={t('overall.title')}>
@@ -54,32 +49,31 @@ export default function OverallCard({ overall }) {
         <span className="overall__unit">%</span>
       </p>
 
-      <p className="overall__pace">{paceText}</p>
+      <p className="overall__count tnum">
+        {t('overall.summary', { done: overall.done, count: overall.total })}
+      </p>
 
-      <div className="overall__meter">
-        <Meter
-          value={overall.percent}
-          mark={overall.expected}
-          large
-          label={t('overall.title')}
-          valueText={`${percent}% — ${t('overall.expected', { percent: expected })}`}
-        />
-      </div>
+      <Meter
+        value={overall.percent}
+        mark={overall.expected}
+        large
+        label={t('overall.title')}
+        /* The mark has no visible label, so its meaning has to be in here — it is the only
+           channel a screen reader has for the whole pace signal. */
+        valueText={`${t('overall.summary', { done: overall.done, count: overall.total })} — ${t(
+          'overall.expected',
+          { count: overall.passed, total: overall.total },
+        )}`}
+      />
 
-      {/* dt BEFORE dd inside each group: the other order is invalid in a `dl` and pairs the
-          four counts wrongly for a screen reader. `.stat` reverses them visually with
-          `column-reverse`, so the number still reads above its label. */}
-      <dl className="overall__stats">
-        {STATS.map((state) => (
-          <div key={state} className={`stat${overall[state] ? '' : ' stat--zero'}`}>
-            <dt className="stat__label">{t(`state.${state}`)}</dt>
-            <dd className="stat__value tnum">
-              <span className={`dot dot--${state}`} aria-hidden="true" />
-              {overall[state]}
-            </dd>
-          </div>
-        ))}
-      </dl>
+      {/* Nothing at all when nothing is late, which is the state a board should mostly be in.
+          A button rather than a figure: the useful response to "3 overdue" is to look at them. */}
+      {overall.overdue > 0 ? (
+        <button type="button" className="btn btn--secondary btn--block overall__alert" onClick={onShowOverdue}>
+          {t('overall.overdue', { count: overall.overdue })}
+          <ChevronRightIcon style={{ width: '1em', height: '1em' }} />
+        </button>
+      ) : null}
     </section>
   )
 }
