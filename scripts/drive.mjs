@@ -19,6 +19,11 @@
  * after the stale reply has already rolled the tick back. The row STAYING is the real assertion in
  * the first; the second is pinned as a CSS fact in `test/ui.test.jsx` instead.
  *
+ * EVERY POST COUNT HERE ASSUMES A HEALTHY ENDPOINT. `send` retries a non-terminal failure, so one
+ * app-level write against a flaky one is legitimately two or three requests — a count of 2 read as
+ * "the unmount flush fired twice" when the endpoint had simply blinked would be a hunt for a defect
+ * that is not there. The fixture never fails, which is what keeps these numbers meaningful.
+ *
  * No new dependency: `WebSocket` and `fetch` are built into node.
  *
  *   1. npx vite --port 5199 --strictPort --host 127.0.0.1

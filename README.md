@@ -335,7 +335,11 @@ returns, plus script startup. The request is ~280 bytes and the reply about a ki
 **how many round trips a burst of edits costs**, and that is where the work has gone.
 
 Nothing waits for a save: writes are optimistic and the sheet closes at once, a failure rolling the row
-back out and saying so in a toast. Settings is the exception, having no optimistic half. Writes serialise
+back out and saying so in a toast. Settings is the exception, having no optimistic half. **A failure worth
+retrying is retried before it becomes that toast** — the endpoint's first request after an idle spell
+fails often enough that the alternative was the person holding the phone tapping Save twice, and every op
+is written to be replay-safe so that is sound: `create` resolves the id the browser generated and rewrites
+that row instead of appending a duplicate. Writes serialise
 and **only the last one in flight may replace the board**, since every reply carries the whole board as of
 that write — but an undispatched write is folded into the one behind it, so three ticks in a burst cost two
 requests rather than three and five subtasks typed in a row cost three rather than five. Folding never

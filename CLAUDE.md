@@ -133,6 +133,21 @@ and **the reply is always HTTP 200**, so the BODY is the only signal. `api.js`'s
 retryability — only `busy` and `transient` may be retried. Never read `e.parameter` for the key; a
 query string reaches Google's logs.
 
+- **`send` RETRIES A NON-TERMINAL FAILURE, and something has to.** The endpoint's first request after
+  an idle spell comes back as a Sheets service error, an HTML error page or nothing at all often
+  enough that leaving the retry to the person holding the phone *was* the app's most visible defect:
+  the first save said "Nothing was saved. Try again.", and tapping Save again worked because the
+  container was warm by then. **What makes it safe is that EVERY op is idempotent**, not that a retry
+  only follows a failure proving nothing was written — a write abandoned at its deadline may be
+  committing as it is abandoned, which is exactly why that deadline exceeds `LOCK_WAIT_MS`.
+  `ATTEMPTS` and `RETRY_BUDGET_MS` bound it, because a save that never resolves is worse than one
+  that admits it failed.
+- **`create` IS AN UPSERT ON THE CLIENT'S ID, and that is what buys the retry.** The id is generated
+  in the browser, so the same create twice is one row twice; `createTasks` resolves it and rewrites
+  that row through `writeRows` rather than appending a twin nothing could distinguish from a real
+  second task. `keepCreated` is the one home for "created_at belongs to the row", shared with
+  `resolveRow`. Every other op already rewrote by id.
+
 - **`doGet` never writes** — it is anonymous, so an anonymous request must not cause a write. An
   unbuilt spreadsheet answers `needsSetup` WITH its `schema`, or a brand-new board warns about itself;
   an editor's first write builds the tabs. **Every mutation holds a script lock**, or two simultaneous
@@ -222,7 +237,8 @@ query string reaches Google's logs.
   attached to the controls that went missing.
 - **Every failed write says so**, `saveConfig`, `compact` and the template seed included. `toast.failed`
   must stand alone and may not point at a notice: only TERMINAL codes get one, and `busy`/`transient`
-  are deliberately excluded from that set.
+  are deliberately excluded from that set — and by the time either reaches a toast, `send` has already
+  spent its retries on it.
 - **`canEdit` is what renders; `hasKey` is what this device can do.** The read-only view toggle moves
   only the first, so an editor previewing the guest view keeps their key, keeps Settings' revoke
   control rather than being shown a paste field, and gets back with one tap. Enabling or revoking a

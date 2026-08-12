@@ -446,7 +446,17 @@ describe('updateMany', () => {
     const many = makeBook(FAMILY)
     post(load(many), 'updateMany', { tasks: [task({ id: 's2', title: 'Visited', parent_id: 'p1' })] })
     expect(many.tasks.writes).toBe(single.tasks.writes)
-    expect(stored(many)[2]).toEqual(stored(single)[2])
+    // The two posts are stamped a moment apart, so the timestamps are asserted as SHAPE and
+    // everything else as value — comparing whole rows failed whenever the clock crossed a
+    // millisecond between them, which is a flake rather than a finding.
+    const stamps = ['created_at', 'updated_at']
+    const row = (book) => {
+      const rest = { ...stored(book)[2] }
+      for (const name of stamps) rest[name] = typeof rest[name]
+      return rest
+    }
+    expect(row(many)).toEqual(row(single))
+    for (const name of stamps) expect(stored(many)[2][name]).toMatch(/^\d{4}-\d\d-\d\dT/)
   })
 })
 
@@ -601,6 +611,46 @@ describe('create', () => {
     expect(book.tasks.reads).toBe(1)
     expect(book.tasks.writes).toBe(1)
     expect(body.tasks).toHaveLength(FAMILY.length + 52)
+  })
+
+  /**
+   * REPLAYING A CREATE MUST NOT DUPLICATE THE ROW, and this is the pin under `api.js`'s retry.
+   *
+   * The id comes from the client, so the same create arriving twice is one row twice — a reply lost
+   * to a timeout, or the retry that now follows any transient failure. Appending unconditionally
+   * made this the one op a replay could corrupt, and the duplicate was indistinguishable from a real
+   * second task with the same title.
+   */
+  it('rewrites the row an id already names rather than appending a duplicate', () => {
+    const sent = task({ id: 'new', title: 'Order flowers' })
+    post(script, 'create', { task: sent })
+    const first = stored(book)[5].created_at
+
+    post(script, 'create', { task: { ...sent, title: 'Order the flowers' } })
+    const rows = stored(book)
+    expect(rows).toHaveLength(6)
+    expect(rows[5].title).toBe('Order the flowers')
+    // created_at belongs to the row, exactly as it does on an update: the replay may carry a
+    // different one, and the sheet's is the truth.
+    expect(rows[5].created_at).toBe(first)
+  })
+
+  it('replays a batch without duplicating the half that landed', () => {
+    const tasks = [task({ id: 'm1', title: 'One' }), task({ id: 'm2', title: 'Two' })]
+    post(script, 'createMany', { tasks })
+    const body = post(script, 'createMany', { tasks })
+    expect(stored(book)).toHaveLength(7)
+    expect(body.tasks.map((row) => row.id)).toEqual([...FAMILY.map((row) => row.id), 'm1', 'm2'])
+  })
+
+  it('appends only what is new when a replay is half a batch', () => {
+    post(script, 'create', { task: task({ id: 'm1', title: 'One' }) })
+    post(script, 'createMany', {
+      tasks: [task({ id: 'm1', title: 'One again' }), task({ id: 'm2', title: 'Two' })],
+    })
+    const rows = stored(book)
+    expect(rows.map((row) => row.id)).toEqual([...FAMILY.map((row) => row.id), 'm1', 'm2'])
+    expect(rows[5].title).toBe('One again')
   })
 })
 

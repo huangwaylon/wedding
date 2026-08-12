@@ -18,6 +18,11 @@
  * and it is genuinely transient (quota, a cold script), which is why the default
  * has to fall that way.
  *
+ * AND THE TAXONOMY IS ACTED ON HERE: a non-terminal failure is retried, a few times, within a
+ * budget. It has to be, because the endpoint's first request after an idle spell fails often enough
+ * to be the app's most visible defect — see `ATTEMPTS`. Everything above the network therefore sees
+ * a failure only once retrying it has been tried and has not helped.
+ *
  * The POST is `Content-Type: text/plain` and its method is never forced through
  * the redirect. `text/plain` keeps it a CORS *simple* request; a preflight would
  * be answered with the 302 that `/exec` returns and die — which is also why the
@@ -56,6 +61,43 @@ const READ_TIMEOUT_MS = 20_000
 const WRITE_TIMEOUT_MS = 35_000
 
 /**
+ * ATTEMPTS PER REQUEST, INCLUDING THE FIRST — and this is the difference between "saving is
+ * unreliable" and "saving works".
+ *
+ * The failure this exists for: the first request after the board has been idle a while goes to a
+ * cold Apps Script container, and Google answers it with a Sheets service error, an HTML error page
+ * or nothing at all. Every one of those is genuinely transient, recovers on the spot, and used to be
+ * reported to the person holding the phone as *"Nothing was saved. Try again."* — so the retry loop
+ * this file's whole taxonomy was built for was a human, tapping Save twice. The second tap always
+ * worked, because by then the container was warm.
+ *
+ * WHAT MAKES IT SAFE IS THAT EVERY OP IS IDEMPOTENT, not that a retry only follows a failure that
+ * proves nothing was written. A write abandoned at the deadline may well be committing as it is
+ * abandoned — that is exactly why the deadline is longer than the script's lock wait — so a replay
+ * has to be harmless even then. `update`, `delete`, `restore` and `setConfig` rewrite by id and
+ * always were; `create` was the one exception, and `createTasks` in `Code.gs` now resolves the
+ * client's id and rewrites that row instead of appending beside it.
+ */
+const ATTEMPTS = 3
+
+/**
+ * Between attempts. Short because the condition being waited out is a cold start or a blip, not
+ * congestion — there are two editors on this board, so nothing here is a thundering herd.
+ */
+const BACKOFF_MS = [700, 2_000]
+
+/**
+ * NO ATTEMPT STARTS PAST THIS, so the worst case is one timeout on top of it rather than three.
+ *
+ * The cases worth spending a retry on announce themselves fast: an HTML error page, a rejected
+ * connection, a script that threw. A request that has already burned twenty seconds is a slow
+ * endpoint rather than a broken one, and stacking another full deadline behind it turns a save into
+ * a minute and a half of a spinner — by which time somebody has reloaded the page, which is the one
+ * thing that actually loses a write.
+ */
+const RETRY_BUDGET_MS = 20_000
+
+/**
  * Thrown by everything here. `code` is what the UI branches on, and it never leaves
  * this module: `useBoard` reads `error.code`, so nothing outside needs the class.
  */
@@ -91,7 +133,7 @@ export const API_ERROR = {
   TRANSIENT: 'transient',
 }
 
-/** Terminal codes. Anything not in here is worth retrying. */
+/** Terminal codes. Anything not in here is retried by `send` before it is reported. */
 const TERMINAL = new Set([
   API_ERROR.UNCONFIGURED,
   API_ERROR.UNAUTHORIZED,
@@ -131,6 +173,30 @@ function codeFor(serverError) {
 async function send(url, init, timeout) {
   if (!SCRIPT_URL) throw new ApiError(API_ERROR.UNCONFIGURED)
 
+  const started = Date.now()
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await attemptOnce(url, init, timeout)
+    } catch (error) {
+      // A rotated key, a row somebody deleted, a script that cannot store a column: none of them
+      // becomes true a second later, and retrying one hides it behind a longer wait. `TERMINAL` is
+      // the single place that judgement lives.
+      if (isTerminal(error.code)) throw error
+      if (attempt >= ATTEMPTS || Date.now() - started >= RETRY_BUDGET_MS) throw error
+      await wait(BACKOFF_MS[attempt - 1])
+    }
+  }
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * One request. A fresh `AbortSignal.timeout` per attempt, because a signal that has already fired
+ * aborts the next request before it is sent.
+ */
+async function attemptOnce(url, init, timeout) {
   let response
   try {
     response = await fetch(url, {

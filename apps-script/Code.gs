@@ -443,31 +443,57 @@ function apply(session, op, payload) {
   return 'bad_op'
 }
 
+/**
+ * Append — or REWRITE THE ROW THE ID ALREADY NAMES, which is what makes a create REPLAYABLE.
+ *
+ * THE ID COMES FROM THE CLIENT, so a create that arrives twice is the same row twice, not two
+ * tasks. Appending unconditionally made this the one op that could not be retried: a reply lost to
+ * a timeout or a redirect hiccup left the caller unable to tell "nothing was written" from "written,
+ * and the answer went missing", and re-sending appended a duplicate nothing could distinguish from
+ * a real second task. Resolving the id first costs nothing — the grid is already in hand — and it is
+ * what lets `api.js` retry a write at all, since every other op was already idempotent by id.
+ *
+ * A batch splits the same way: the rows a replay already landed are rewritten in place, and only
+ * genuinely new ones are appended. The ordinary case is all-new and still one format and one write.
+ */
 function createTasks(session, tasks) {
   if (!tasks || !tasks.length) return 'bad_payload'
 
+  var known = []
   var rows = []
   var cells = []
   for (var i = 0; i < tasks.length; i++) {
     var row = toRow(tasks[i])
     if (!row) return 'bad_payload'
-    rows.push(row)
-    cells.push(writable(row))
+    var at = rowOfId(session.block, tasks[i].id)
+    if (at) {
+      keepCreated(session, at, row)
+      known.push({ at: at, row: row })
+    } else {
+      rows.push(row)
+      cells.push(writable(row))
+    }
   }
 
-  // `readBlock` returns exactly the used rows, so its length IS the last row.
-  var first = session.block.length + 1
-  var range = session.tasks.getRange(first, 1, cells.length, TASK_COLUMNS.length)
-  // Format BEFORE values, and never the other way round: with the default
-  // format, `setValues` parses "2026-08-07T10:00" into a Date and the sheet's
-  // own locale then decides what comes back out. Plain text ('@') is what keeps
-  // a stored string identical on every device forever.
-  range.setNumberFormat('@')
-  range.setValues(cells)
+  // Through the same path an update takes, so a replay writes exactly what re-sending the edit
+  // would have — one format and one write per run of consecutive rows.
+  if (known.length) writeRows(session, known)
 
-  // The seed's whole batch is one append and one growth of the block, so the reply describes the
-  // board including every new row with nothing read back.
-  for (var j = 0; j < rows.length; j++) session.block.push(rows[j])
+  if (cells.length) {
+    // `readBlock` returns exactly the used rows, so its length IS the last row.
+    var first = session.block.length + 1
+    var range = session.tasks.getRange(first, 1, cells.length, TASK_COLUMNS.length)
+    // Format BEFORE values, and never the other way round: with the default
+    // format, `setValues` parses "2026-08-07T10:00" into a Date and the sheet's
+    // own locale then decides what comes back out. Plain text ('@') is what keeps
+    // a stored string identical on every device forever.
+    range.setNumberFormat('@')
+    range.setValues(cells)
+
+    // The seed's whole batch is one append and one growth of the block, so the reply describes the
+    // board including every new row with nothing read back.
+    for (var j = 0; j < rows.length; j++) session.block.push(rows[j])
+  }
   return null
 }
 
@@ -512,11 +538,22 @@ function resolveRow(session, task) {
   var found = rowOfId(session.block, task.id)
   if (!found) return { error: 'not_found' }
 
-  // created_at belongs to the row, not to whatever the client is holding. Normalised on the way
-  // through, so a cell the Sheets UI coerced to a Date is written back as a string.
-  var created = readCell(session.block[found - 1][indexOf('created_at')], session.timeZone)
-  if (created) row[indexOf('created_at')] = created
+  keepCreated(session, found, row)
   return { at: found, row: row }
+}
+
+/**
+ * created_at BELONGS TO THE ROW, not to whatever the client is holding — one home for that rule,
+ * because a replayed create rewrites an existing row and has to honour it exactly as an update does.
+ *
+ * Normalised on the way through, so a cell the Sheets UI coerced to a Date is written back as a
+ * string rather than as "Fri Aug 07 2026 …".
+ *
+ * @param {number} at 1-based grid row
+ */
+function keepCreated(session, at, row) {
+  var created = readCell(session.block[at - 1][indexOf('created_at')], session.timeZone)
+  if (created) row[indexOf('created_at')] = created
 }
 
 /**

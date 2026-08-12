@@ -19,7 +19,23 @@ function reply(body, { asText } = {}) {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
+
+/**
+ * A rejection, once the retries behind it have run.
+ *
+ * EVERY NON-TERMINAL FAILURE IS RETRIED NOW, with a backoff between attempts, so asserting on one
+ * means letting those attempts happen — on fake timers, or the suite pays the real backoff for each
+ * case below. `runAllTimersAsync` has to interleave with the awaits inside `send`, which is why the
+ * promise is started first and settled last.
+ */
+async function refuses(start, code) {
+  vi.useFakeTimers()
+  const settled = expect(start()).rejects.toMatchObject({ code })
+  await vi.runAllTimersAsync()
+  await settled
+}
 
 const BOARD = {
   ok: true,
@@ -151,7 +167,7 @@ describe('classification', () => {
     // or a cold script, both of which recover. Classifying it as terminal would log
     // somebody out over a hiccup.
     vi.stubGlobal('fetch', reply('<!DOCTYPE html><title>Error</title>', { asText: true }))
-    await expect(readBoard(1)).rejects.toMatchObject({ code: API_ERROR.TRANSIENT })
+    await refuses(() => readBoard(1), API_ERROR.TRANSIENT)
     expect(isTerminal(API_ERROR.TRANSIENT)).toBe(false)
   })
 
@@ -162,7 +178,7 @@ describe('classification', () => {
         throw new TypeError('Failed to fetch')
       }),
     )
-    await expect(readBoard(1)).rejects.toMatchObject({ code: API_ERROR.TRANSIENT })
+    await refuses(() => readBoard(1), API_ERROR.TRANSIENT)
   })
 
   it('maps every code the script can send', async () => {
@@ -174,7 +190,7 @@ describe('classification', () => {
     }
     for (const [sent, expected] of Object.entries(cases)) {
       vi.stubGlobal('fetch', reply({ ok: false, error: sent }))
-      await expect(readBoard(1)).rejects.toMatchObject({ code: expected })
+      await refuses(() => readBoard(1), expected)
     }
   })
 
@@ -182,19 +198,19 @@ describe('classification', () => {
     // A newer script is likelier than a permanent refusal, and retrying is recoverable
     // where locking somebody out is not.
     vi.stubGlobal('fetch', reply({ ok: false, error: 'something_new' }))
-    await expect(readBoard(1)).rejects.toMatchObject({ code: API_ERROR.TRANSIENT })
+    await refuses(() => readBoard(1), API_ERROR.TRANSIENT)
   })
 
   it('does not accept a reply that forgot to say ok', async () => {
     vi.stubGlobal('fetch', reply({ tasks: [] }))
-    await expect(readBoard(1)).rejects.toMatchObject({ code: API_ERROR.TRANSIENT })
+    await refuses(() => readBoard(1), API_ERROR.TRANSIENT)
   })
 
   it('does not accept a bare JSON null', async () => {
     // `JSON.parse('null')` succeeds, so the try/catch does not fire and the next
     // property access would throw a TypeError instead of a classified error.
     vi.stubGlobal('fetch', reply('null', { asText: true }))
-    await expect(readBoard(1)).rejects.toMatchObject({ code: API_ERROR.TRANSIENT })
+    await refuses(() => readBoard(1), API_ERROR.TRANSIENT)
   })
 
   it('marks the terminal codes and nothing else', () => {
@@ -206,11 +222,89 @@ describe('classification', () => {
   })
 
   it('names the ONLY two codes a retry may ever be spent on', () => {
-    // The whole vocabulary partitioned, rather than a spot check: nothing retries today, and the
-    // day something does, a `create` replayed after a timeout is a duplicate row. `busy` is the
-    // one code that says for certain nothing was written — the lock was never taken.
+    // The whole vocabulary partitioned, rather than a spot check: `send` retries precisely what is
+    // not in `TERMINAL`, so a code landing on the wrong side of this line either hides a rotated
+    // key behind three attempts or reports a cold script as a permanent refusal.
     const retryable = Object.values(API_ERROR).filter((code) => !isTerminal(code))
     expect(retryable.sort()).toEqual([API_ERROR.BUSY, API_ERROR.TRANSIENT].sort())
+  })
+})
+
+/**
+ * THE RETRY, which is what the taxonomy above is FOR.
+ *
+ * The defect it fixes was the app's most visible one: the first save after the board had been idle
+ * came back as "Nothing was saved. Try again.", and tapping Save a second time worked. The endpoint's
+ * first request after a cold start fails often enough that the person holding the phone was the
+ * retry loop. These pin that the loop is in the code, that it stops where it must, and that it is
+ * bounded — a retry that never gives up is a spinner that never ends.
+ */
+describe('retrying', () => {
+  /** A fetch that fails `times` times and then answers. */
+  function flaky(times, body) {
+    let calls = 0
+    return vi.fn(async () => {
+      calls += 1
+      return {
+        ok: true,
+        text: async () => JSON.stringify(calls <= times ? { ok: false, error: 'server' } : body),
+      }
+    })
+  }
+
+  async function settle(start) {
+    vi.useFakeTimers()
+    const running = start()
+    await vi.runAllTimersAsync()
+    return running
+  }
+
+  it('rides out a transient failure instead of reporting it', async () => {
+    const fetcher = flaky(1, BOARD)
+    vi.stubGlobal('fetch', fetcher)
+    const board = await settle(() => mutate('update', { task: { id: 'a' } }, 'k'))
+    expect(board.tasks).toHaveLength(1)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries a read too, since a failed one leaves a stale board on screen', async () => {
+    const fetcher = flaky(2, BOARD)
+    vi.stubGlobal('fetch', fetcher)
+    const board = await settle(() => readBoard(1))
+    expect(board.tasks).toHaveLength(1)
+    expect(fetcher).toHaveBeenCalledTimes(3)
+  })
+
+  it('gives up rather than hammering the endpoint forever', async () => {
+    // Every read spends the owner's Apps Script quota, and a save that never resolves is worse than
+    // one that says it failed.
+    const fetcher = reply({ ok: false, error: 'server' })
+    vi.stubGlobal('fetch', fetcher)
+    await refuses(() => readBoard(1), API_ERROR.TRANSIENT)
+    expect(fetcher).toHaveBeenCalledTimes(3)
+  })
+
+  it('never spends a second attempt on a terminal failure', async () => {
+    // A rotated key does not become valid a second later, and three attempts only delay saying so.
+    for (const error of ['unauthorized', 'not_found', 'misconfigured', 'not_empty']) {
+      const fetcher = reply({ ok: false, error })
+      vi.stubGlobal('fetch', fetcher)
+      await refuses(() => mutate('update', {}, 'k'), API_ERROR[error.toUpperCase()])
+      expect(fetcher, error).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('is only safe because every op is idempotent, `create` included', () => {
+    /**
+     * The one op a replay could corrupt, pinned where the retry is defined rather than only in the
+     * script's own suite: a write abandoned at its deadline may be committing as it is abandoned —
+     * that is why the deadline exceeds the lock wait — so a retried `create` can be a second copy
+     * of a row that landed. `createTasks` resolves the client's id and rewrites that row, and
+     * `test/script.test.js` posts the same create twice to prove it.
+     */
+    const script = readFileSync('apps-script/Code.gs', 'utf8')
+    const create = /function createTasks\(session, tasks\) \{[\s\S]*?\n\}/.exec(script)[0]
+    expect(create).toMatch(/rowOfId\(session\.block, tasks\[i\]\.id\)/)
   })
 })
 
