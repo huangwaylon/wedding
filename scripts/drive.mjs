@@ -248,6 +248,71 @@ await wait(1800)
 report.tickWrites = posts.length - postsBeforeTick
 report.tallyAfterTick = await evaluate(`document.querySelector('.tcard--open .tcard__tally')?.textContent`)
 
+/**
+ * THE REPORTED BUG, end to end: an UNDATED task given a date.
+ *
+ * It has to leave the "No date" group at the foot of the list, land in a dated month, and still
+ * be there after a fresh read. Every part of that was broken at once — the deployed script had
+ * never heard of `due` so the write dropped it, and its reads carried no `due` either, so the
+ * whole board came back undated and the row appeared to revert.
+ */
+await evaluate(`
+  (() => {
+    // COLLAPSE EVERYTHING FIRST. \`.tcard--open\` picks the first match in document order, so
+    // with an earlier row still open every selector below silently addressed the WRONG task —
+    // and this check reported the app losing a date it had in fact stored on another row.
+    for (const open of document.querySelectorAll('.tcard--open .tcard__head')) open.click()
+    return true
+  })()
+`)
+await wait(400)
+const undatedRow = await evaluate(`
+  (() => {
+    const groups = [...document.querySelectorAll('.plan__group')]
+    const last = groups[groups.length - 1]
+    const heading = last.querySelector('.plan__month').textContent
+    const row = last.querySelector('.tcard')
+    row.querySelector('.tcard__head').click()
+    return { heading, title: row.querySelector('.tcard__title').textContent, open: document.querySelectorAll('.tcard--open').length }
+  })()
+`)
+await wait(500)
+await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
+await wait(400)
+await setField('.tcard--open .editor input[type=date]', '2027-03-09')
+const postsBeforeDating = posts.length
+await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
+await wait(2200)
+report.dating = {
+  from: undatedRow,
+  writes: posts.length - postsBeforeDating,
+  // Where the row is NOW: its group heading, and the day its column prints.
+  group: await evaluate(
+    `document.querySelector('.tcard--open')?.closest('.plan__group')?.querySelector('.plan__month')?.textContent`,
+  ),
+  day: await evaluate(`document.querySelector('.tcard--open .tcard__day')?.textContent`),
+}
+// And after a real re-read, which is where it reverted before.
+await evaluate(`document.querySelector('.tcard--open .tcard__head').click()`)
+await wait(200)
+await send('Page.reload', { ignoreCache: true })
+await wait(4000)
+report.dating.afterReload = await evaluate(`
+  (() => {
+    const row = [...document.querySelectorAll('.tcard')].find(
+      (c) => c.querySelector('.tcard__title')?.textContent === ${JSON.stringify(undatedRow.title)},
+    )
+    return {
+      group: row?.closest('.plan__group')?.querySelector('.plan__month')?.textContent,
+      day: row?.querySelector('.tcard__day')?.textContent,
+    }
+  })()
+`)
+report.datedRowsAfterReload = await evaluate(
+  `[...document.querySelectorAll('.tcard__day')].filter(n => n.textContent !== '\u2013').length`,
+)
+await shot('06-dated')
+
 // The FAB's create sheet.
 await evaluate(`document.querySelector('.fab').click()`)
 await wait(700)

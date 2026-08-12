@@ -127,6 +127,17 @@ export default function TaskDetail({
       setCodes(outcome.failures)
       return
     }
+    /**
+     * THE FLUSH IS DISARMED BEFORE THE WRITE, and this line is the whole reason the unmount
+     * path is safe. Saving a new DATE re-sorts the plan, so the row moves to a different month
+     * — a different `<section>` — and React deletes the subtree and mounts a fresh one rather
+     * than moving it. That deletion runs this component's cleanup, whose closure still held the
+     * pre-save task and the full draft, so it resolved the same difference a second time and
+     * sent the identical write again: two round trips and two "Saved." toasts for one Done.
+     * Measured over CDP; a ref assignment is immediate, so nulling it here is what the deleted
+     * fiber's cleanup sees.
+     */
+    flush.current = null
     setCodes([])
     setDraft(null)
     if (outcome.next) onSave(outcome.next)
@@ -137,7 +148,7 @@ export default function TaskDetail({
    *
    * A ref rather than an effect dependency: the cleanup must run exactly once, when the row
    * closes, and it has to see the LAST draft rather than the one from the render that installed
-   * it.
+   * it. `done` disarms it — see there for what that costs if it does not.
    */
   const flush = useRef(null)
   flush.current = editing

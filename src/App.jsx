@@ -197,13 +197,7 @@ export default function App() {
   )
 
   const save = useCallback(
-    (task) => {
-      if (typeof window !== 'undefined') {
-        window.__saves = window.__saves ?? []
-        window.__saves.push(new Error('save').stack)
-      }
-      return report(task.id ? board.editTask(task) : board.addTask(task), t('toast.saved'))
-    },
+    (task) => report(task.id ? board.editTask(task) : board.addTask(task), t('toast.saved')),
     [board, report, t],
   )
 
