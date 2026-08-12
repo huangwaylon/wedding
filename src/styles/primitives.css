@@ -1,6 +1,5 @@
 /* primitives.css — generic, reusable pieces: card, button, input, chip, badge,
-   meter, segmented control, sheet, toast. Nothing app-specific; layout lives in
-   app.css.
+   meter, sheet, toast. Nothing app-specific; layout lives in app.css.
 
    Single-class selectors throughout, no IDs, no !important. */
 
@@ -150,14 +149,14 @@
 }
 
 /* ---- FAB ---------------------------------------------------------------
-   The one coloured element that floats, and the one coloured shadow. Every layout
-   reserves --fab-size of clearance below its content so this never covers the last
-   row — dropping that reservation is exactly how it once landed on top of a task's
-   delete button. */
+   The one coloured element that floats, and the one coloured shadow. It sits above
+   the tab bar and the views reserve --fab-size of clearance below their content, so
+   it never covers the last card — dropping either half is exactly how it once landed
+   on top of a row's delete button. */
 .fab {
   position: fixed;
   right: max(var(--space-4), var(--safe-right));
-  bottom: calc(var(--space-4) + var(--safe-bottom));
+  bottom: calc(var(--tabbar-height) + var(--space-3) + var(--safe-bottom));
   z-index: var(--z-fab);
   display: flex;
   align-items: center;
@@ -197,10 +196,23 @@
   outline: none;
 }
 
-.input--textarea {
+.select {
+  /* Room for the platform's own disclosure arrow, which is deliberately left in place: an
+     `appearance: none` select needs a chevron drawn as a background image, and one drawn in a
+     token colour cannot follow the platform's own control metrics or a right-to-left flip.
+     Without the reserve, a long category name runs under the arrow. */
+  padding-right: var(--space-6);
+}
+
+.textarea {
+  /* ~3 lines. Enough that notes read as a place for a sentence rather than a name, and short
+     enough that the field below it is still on screen on a phone. */
   min-height: 5.5rem;
   padding: var(--space-3);
+  /* 1.65 rather than --lh-tight: this is the one control that holds wrapped prose, and
+     nothing below 1.5 can hold Japanese at all. */
   line-height: var(--lh-body);
+  /* Vertical only. Horizontal resizing escapes the card it sits in. */
   resize: vertical;
 }
 
@@ -286,9 +298,9 @@
 }
 
 .chip--static {
-  /* Not a control — a category tag on a task row. It opts out of the target and the boundary. */
+  /* Not a control — a category or owner tag on a card. It opts out of the target and the
+     boundary that identifies one. */
   min-height: 0;
-  border-color: transparent;
   padding: 0.0625rem var(--space-2);
   background-color: var(--sunken);
   border-color: transparent;
@@ -311,7 +323,7 @@
 }
 
 /* A disabled chip was pixel-identical to a live one, because `opacity: 0.5` was scoped to
-   `.btn[disabled]`. Controls.jsx disables every zero-count filter. */
+   `.btn[disabled]`. `FilterChips` disables every zero-count filter. */
 .chip[disabled] {
   opacity: 0.5;
   cursor: default;
@@ -339,19 +351,18 @@
 
 /* ---- The state table -------------------------------------------------
    ONE table for every mark that carries state. Four families — the badge's wash, its dot, the
-   standalone dot, a meter fill — plus the timeline bar in app.css used to restate the same
-   five-row mapping in nineteen separate blocks across two files, and it had already produced
-   two defects: `.badge--unscheduled` is rendered by StateBadge for every state and had no rule
-   at all, so its dot fell back to currentColor while every other grey dot was --ink-4; and
-   `.dot--upcoming` was a no-op restating the base.
+   standalone dot, a meter fill — plus the task card, which reads the same two properties from
+   its own root. This mapping used to be restated in nineteen separate blocks across two files,
+   and it had already produced two defects: `.badge--unscheduled` is rendered for every state and
+   had no rule at all, so its dot fell back to currentColor while every other grey dot was
+   --ink-4; and `.dot--upcoming` was a no-op restating the base.
 
-   The class names are unchanged, so components and tests are untouched. What changed is that a
-   state now sets two custom properties in one place and every mark reads them. A new mark type
+   A state sets two custom properties in one place and every mark reads them. A new mark type
    costs one line instead of an edit in six families. */
 .badge--done,
 .dot--done,
 .meter--done,
-.timeline__row--done {
+.tcard--done {
   --state-fill: var(--good);
   --state-wash: var(--good-wash);
 }
@@ -359,7 +370,7 @@
 .badge--overdue,
 .dot--overdue,
 .meter--overdue,
-.timeline__row--overdue {
+.tcard--overdue {
   --state-fill: var(--critical);
   --state-wash: var(--critical-wash);
 }
@@ -367,7 +378,7 @@
 .badge--active,
 .dot--active,
 .meter--active,
-.timeline__row--active {
+.tcard--active {
   --state-fill: var(--accent);
   --state-wash: var(--accent-wash);
 }
@@ -375,7 +386,7 @@
 .badge--upcoming,
 .dot--upcoming,
 .meter--upcoming,
-.timeline__row--upcoming {
+.tcard--upcoming {
   --state-fill: var(--ink-4);
   --state-wash: var(--neutral-wash);
 }
@@ -384,7 +395,7 @@
 .badge--unscheduled,
 .dot--unscheduled,
 .meter--unscheduled,
-.timeline__row--unscheduled {
+.tcard--unscheduled {
   --state-fill: var(--ink-4);
   --state-wash: var(--neutral-wash);
 }
@@ -466,32 +477,6 @@
   border-radius: var(--radius-full);
 }
 
-/* ---- Segmented control ------------------------------------------------ */
-.segmented {
-  display: inline-flex;
-  padding: 2px;
-  background-color: var(--sunken);
-  border-radius: var(--radius-md);
-}
-
-.segmented__option {
-  min-height: var(--tap-target-sm);
-  padding: 0 var(--space-4);
-  border-radius: calc(var(--radius-md) - 2px);
-  font-size: var(--fs-label);
-  font-weight: 500;
-  color: var(--ink-2);
-  transition:
-    background-color var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.segmented__option[aria-pressed="true"] {
-  background-color: var(--surface);
-  color: var(--ink);
-  box-shadow: var(--shadow-raised);
-}
-
 /* ---- Sheet -------------------------------------------------------------
    A bottom sheet on a phone, a centred dialog from 48rem. One of the four places
    a shadow appears. */
@@ -552,8 +537,6 @@
   /* `document.body.style.overflow = 'hidden'` does not reliably stop iOS chaining once the
      panel's own content hits its end; this is what does. */
   overscroll-behavior: contain;
-  /* So `.detail` can ask about the sheet's width rather than the viewport's. */
-  container-type: inline-size;
   padding: var(--space-4);
 }
 
@@ -653,13 +636,13 @@
 .toasts {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--space-5) + var(--safe-bottom));
+  bottom: calc(var(--tabbar-height) + var(--space-5) + var(--safe-bottom));
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  /* Kept clear of the FAB, which is 56px in the bottom-right corner. --z-toast is above
-     --z-fab, so a full-width toast hid the button behind every "Saved". */
+  /* Kept clear of the FAB, which is 56px in the bottom-right corner above the tab bar.
+     --z-toast is above --z-fab, so a full-width toast hid the button behind every "Saved". */
   width: min(24rem, calc(100vw - var(--fab-size) - 3 * var(--space-4)));
   transform: translateX(-50%);
   pointer-events: none;

@@ -14,6 +14,7 @@ import { getLocale, interpolate, setLocale, t, translate } from '../src/i18n/ind
 import { STATE, STATE_ORDER } from '../src/lib/progress.js'
 import { CATEGORIES, TEMPLATE_IDS } from '../src/lib/templates.js'
 import { ACCENTS } from '../src/lib/theme.js'
+import { TABS } from '../src/components/TabBar.jsx'
 
 /** A test that changes the locale must put it back, or the state leaks across files. */
 afterEach(() => {
@@ -40,8 +41,9 @@ const ALL_SOURCE = FILES.map((file) => file.text).join('\n')
 const RUNTIME_FAMILIES = [
   ...Object.values(STATE).map((state) => `state.${state}`),
   ...CATEGORIES.map((category) => `category.${category.toLowerCase()}`),
-  ...TEMPLATE_IDS.flatMap((id) => [`template.${id}`, `template.${id}.about`]),
+  ...TEMPLATE_IDS.map((id) => `template.${id}`),
   ...ACCENTS.map((accent) => `accent.${accent}`),
+  ...Object.values(TABS).map((tab) => `tab.${tab}`),
   ...['ahead', 'behind', 'ontrack'].map((pace) => `overall.pace.${pace}`),
   ...[
     'MISSING_TITLE',
@@ -161,17 +163,28 @@ describe('runtime key families', () => {
     }
   })
 
-  it('has a name and a description for every template', () => {
+  /* A name and nothing else. The description paragraph is gone: the name plus the task
+     count plus the button is the whole decision, and the blurb was the longest string in
+     the app. */
+  it('has a name for every template', () => {
     for (const id of TEMPLATE_IDS) {
       for (const locale of SUPPORTED) {
         expect(CATALOGS[locale][`template.${id}`]).toBeTruthy()
-        expect(CATALOGS[locale][`template.${id}.about`]).toBeTruthy()
       }
     }
   })
 
-  it('has a name for every accent preset', () => {
-    for (const accent of ACCENTS) {
+  /* The tab bar builds `tab.${id}` from TABS, so the literal scan cannot see either
+     label — which is exactly the case CLAUDE.md requires a coverage test for. */
+  it('has a label for every tab', () => {
+    for (const tab of Object.values(TABS)) {
+      for (const locale of SUPPORTED) {
+        expect(CATALOGS[locale][`tab.${tab}`], `${locale}: ${tab}`).toBeTruthy()
+      }
+    }
+  })
+
+  it('has a name for every accent preset', () => {    for (const accent of ACCENTS) {
       for (const locale of SUPPORTED) {
         expect(CATALOGS[locale][`accent.${accent}`], `${locale}: ${accent}`).toBeTruthy()
       }

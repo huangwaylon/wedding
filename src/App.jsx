@@ -1,6 +1,5 @@
 /**
- * The app shell: access, board state, the ticking clock, and which surface is on
- * screen.
+ * The app shell: access, board state, the ticking clock, and which tab is on screen.
  *
  * ACCESS IS RESOLVED ONCE, AT BOOT, from the URL fragment (see `lib/access.js`), and
  * the fragment is only cleared once running as an installed app — in Safari it has to
@@ -10,6 +9,12 @@
  * `canEdit` decides what renders, but it is NOT the security boundary. The endpoint
  * refuses any write without the key, so a planner who reaches into the DOM gains
  * nothing — which is why nothing here needs to be defensive beyond hiding controls.
+ *
+ * TWO TABS, AND ONLY ONE IS MOUNTED. Home is the photograph and the one number that
+ * answers "how are we doing"; Timeline is the work. Keeping both mounted to preserve
+ * two scroll positions does not work anyway — there is one document scroller — so the
+ * switch resets it deliberately rather than landing somebody halfway down a list they
+ * have not seen yet.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -23,15 +28,15 @@ import { STATUS, useBoard } from './state/useBoard.js'
 import { useNow } from './state/useNow.js'
 import { useToasts } from './state/useToasts.js'
 import { useT } from './i18n/index.js'
-import Controls, { FILTER_ALL, VIEWS } from './components/Controls.jsx'
 import { ConfirmDeleteSheet, DeletedList } from './components/Deleted.jsx'
 import EmptyBoard from './components/EmptyBoard.jsx'
-import Header from './components/Header.jsx'
+import FilterChips, { FILTER_ALL } from './components/FilterChips.jsx'
+import Hero from './components/Hero.jsx'
 import Notice from './components/Notice.jsx'
 import OverallCard from './components/OverallCard.jsx'
 import SettingsSheet from './components/SettingsSheet.jsx'
+import TabBar, { TABS } from './components/TabBar.jsx'
 import TaskFormSheet from './components/TaskFormSheet.jsx'
-import TaskList from './components/TaskList.jsx'
 import Timeline from './components/Timeline.jsx'
 import Toasts from './components/Toasts.jsx'
 import { PlusIcon, RefreshIcon } from './components/icons.jsx'
@@ -57,6 +62,15 @@ if (boot.strip && typeof window !== 'undefined') {
  * problem in their title, and a hint that repeats the title is noise.
  */
 const HINTED = new Set([API_ERROR.UNCONFIGURED, API_ERROR.NOT_EMPTY, API_ERROR.MISCONFIGURED])
+
+/**
+ * Terminal codes that already have a better notice of their own.
+ *
+ * A rejected key sets `error` to `unauthorized` AND calls `onUnauthorized`, so both
+ * branches fired and the screen carried "This edit link was rejected" stacked on top of
+ * "The edit link was refused". The `access.*` pair wins because it names the recovery.
+ */
+const SILENCED = new Set([API_ERROR.UNAUTHORIZED])
 
 /** The retry inside a notice. Two of them, identical, so it is one thing. */
 function RetryButton({ onRetry, label }) {
@@ -87,18 +101,24 @@ export default function App() {
   const board = useBoard({ editKey, onUnauthorized })
   const now = useNow()
 
+  const [tab, setTab] = useState(TABS.HOME)
   const [filter, setFilter] = useState(() => readStored(STORAGE_KEYS.filter) || FILTER_ALL)
-  const [view, setView] = useState(VIEWS.LIST)
   /**
-   * Which parents are open. Session-only, never `localStorage`: relaunching into twelve
-   * expanded parents is the same failure as relaunching into an 8x timeline. It lives here
-   * rather than in `TaskList` because that unmounts on a view switch, and it cannot ride on the
-   * task because `withProgress` allocates fresh objects every minute.
+   * Which cards are open. Session-only, never `localStorage`: relaunching into twelve
+   * expanded cards is a board nobody can read. It lives here rather than in `Timeline`
+   * so a tab switch does not collapse what somebody was working in, and it cannot ride
+   * on the task because `withProgress` allocates fresh objects every minute.
    */
   const [expanded, setExpanded] = useState(() => new Set())
-  /** True while a subtask field has focus, so the fixed FAB stops covering it. */
-  const [addingSubtask, setAddingSubtask] = useState(false)
-  const [editing, setEditing] = useState(null)
+  /**
+   * True while a field inside an open card has focus — an editor field or the add-a-subtask
+   * field. Two things ride on it: the fixed FAB gets out of the way (it does not move with
+   * the keyboard, and it sat over the trailing end of the add field, where a tap opened the
+   * new-task sheet and discarded what was typed), and a reload is held off, because in-place
+   * editing commits on blur and the text in a focused field exists nowhere else yet.
+   */
+  const [typing, setTyping] = useState(false)
+  const [adding, setAdding] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -129,10 +149,17 @@ export default function App() {
     writeStored(STORAGE_KEYS.filter, next)
   }, [])
 
-  // A reload must not land between a keystroke and a save. Both halves matter: an
-  // open form holds text that exists nowhere else, and `saving` covers the window
-  // where a write has left the device but not yet reached the sheet.
-  const busy = Boolean(editing || pendingDelete || settingsOpen) || board.saving > 0
+  const chooseTab = useCallback((next) => {
+    setTab(next)
+    // The two tabs share the document scroller, so without this a switch lands wherever
+    // the other tab happened to be.
+    if (typeof window !== 'undefined') window.scrollTo(0, 0)
+  }, [])
+
+  // A reload must not land between a keystroke and a save. Every half matters: an open
+  // sheet and a focused inline field both hold text that exists nowhere else, and `saving`
+  // covers the window where a write has left the device but not yet reached the sheet.
+  const busy = Boolean(adding || pendingDelete || settingsOpen || typing) || board.saving > 0
   useEffect(() => {
     setSafeToReload(() => !busy)
   }, [busy])
@@ -140,10 +167,10 @@ export default function App() {
   /**
    * Every optimistic mutation reports through here.
    *
-   * A FAILURE NEEDS A TOAST OF ITS OWN, and it did not have one. The sheets close before the
-   * write lands now, so a failure is a row that quietly rolls back OUT of a list somebody is
-   * no longer looking at — invisible unless it is said out loud. `run` restores the previous
-   * tasks, so "nothing was saved" is literally true.
+   * A FAILURE NEEDS A TOAST OF ITS OWN. Mutations are optimistic and the sheets close
+   * before the write lands, so a failure is a row that quietly rolls back OUT of a list
+   * somebody is no longer looking at — invisible unless it is said out loud. `run` restores
+   * the previous tasks, so "nothing was saved" is literally true.
    */
   const report = useCallback(
     async (work, message) => {
@@ -162,7 +189,6 @@ export default function App() {
   const confirmDelete = useCallback(
     (task) => {
       setPendingDelete(null)
-      setEditing(null)
       return report(board.removeTask(task.id), t('toast.deleted'))
     },
     [board, report, t],
@@ -219,167 +245,159 @@ export default function App() {
   if (!isConfigured()) {
     return (
       <div className="app">
-        <main className="shell">
-          <Notice tone="warn" title={t('api.unconfigured')} body={t('api.unconfiguredHint')} />
-        </main>
+        <div className="views">
+          <div className="view stack">
+            <Notice tone="warn" title={t('api.unconfigured')} body={t('api.unconfiguredHint')} />
+          </div>
+        </div>
       </div>
     )
   }
 
   const weddingDay = wallDay(weddingWall(board.config))
-  const wide = view === VIEWS.TIMELINE
 
   /**
-   * The task being edited, re-read from the live list every render rather than kept as the
-   * snapshot `setEditing` captured. Subtasks added from inside the form are immediate writes, so
-   * a snapshot meant they did not appear until the sheet was closed and reopened — and the same
-   * staleness would hide any change the other person made while the form was open.
+   * The board's own standing problems. Rendered on whichever tab is up rather than on Home
+   * alone: the out-of-date script is the reason the add-a-subtask field is missing from a
+   * card, and a notice explaining that on another tab explains nothing.
    */
-  const editingTask = editing?.id ? (tasks.find((row) => row.id === editing.id) ?? editing) : null
+  const notices = (
+    <>
+      {rejected ? (
+        <Notice tone="warn" title={t('access.rejected')} body={t('access.rejectedHint')} />
+      ) : null}
+
+      {/* A deployment is pinned to a version, so the script can be older than this bundle —
+          and an older one drops a column it has never heard of without erroring. */}
+      {board.outdatedScript ? (
+        <Notice tone="warn" title={t('api.outdated')} body={t('api.outdatedHint')} />
+      ) : null}
+
+      {/* A failed read never blanks a board that is already on screen: the cached copy is
+          stale, not wrong, and saying so beats an error page. */}
+      {board.stale && board.error ? (
+        <Notice title={t('status.stale')} body={t('status.staleHint')}>
+          <RetryButton onRetry={board.refresh} label={t('status.refresh')} />
+        </Notice>
+      ) : null}
+
+      {/* Only a TERMINAL failure earns a persistent notice. A transient one — or a held
+          lock — is a thing to retry, and the stale banner above already covers the case
+          where there is cached data to fall back on. */}
+      {board.error && !board.stale && isTerminal(board.error) && !SILENCED.has(board.error) ? (
+        <Notice
+          tone="warn"
+          title={t(`api.${board.error}`)}
+          /* Only these two have a hint worth the extra line; the rest say it all in the
+             title. `HINTED` keeps that list out of the markup. */
+          body={HINTED.has(board.error) ? t(`api.${board.error}Hint`) : null}
+        />
+      ) : null}
+    </>
+  )
 
   return (
     <div className="app">
-      <Header
-        config={board.config}
-        nowMs={now}
-        canEdit={canEdit}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
-
-      <main className={`shell${wide ? ' shell--wide' : ''}`}>
-        <div className="shell__aside stack">
-          {rejected ? (
-            <Notice tone="warn" title={t('access.rejected')} body={t('access.rejectedHint')} />
-          ) : null}
-
-          {/* A deployment is pinned to a version, so the script can be older than this bundle —
-              and an older one drops a column it has never heard of without erroring. */}
-          {board.outdatedScript ? (
-            <Notice tone="warn" title={t('api.outdated')} body={t('api.outdatedHint')} />
-          ) : null}
-
-          {/* A failed read never blanks a board that is already on screen: the cached
-              copy is stale, not wrong, and saying so beats an error page. */}
-          {board.stale && board.error ? (
-            <Notice title={t('status.stale')} body={t('status.staleHint')}>
-              <RetryButton onRetry={board.refresh} label={t('status.refresh')} />
-            </Notice>
-          ) : null}
-
-          {/* Only a TERMINAL failure earns a persistent notice. A transient one — or a
-              held lock — is a thing to retry, and the stale banner above already covers
-              the case where there is cached data to fall back on. */}
-          {board.error && !board.stale && isTerminal(board.error) ? (
-            <Notice
-              tone="warn"
-              title={t(`api.${board.error}`)}
-              /* Only these two have a hint worth the extra line; the rest say it all in
-                 the title. `HINTED` keeps that list out of the markup. */
-              body={HINTED.has(board.error) ? t(`api.${board.error}Hint`) : null}
-            />
-          ) : null}
-
-          {/* Compact in timeline view: there the chart is the subject and the summary is
-              context, and the full card pushed the Gantt off the screen. */}
-          <OverallCard overall={overall} compact={wide} />
-
-          {canEdit ? (
-            <DeletedList tasks={board.deletedTasks} onRestore={restore} />
-          ) : null}
-        </div>
-
-        <div className="shell__main stack">
-          {board.status === STATUS.LOADING ? (
-            <p className="hint">{t('common.loading')}</p>
-          ) : board.status === STATUS.ERROR && !board.tasks.length ? (
-            /* A first load that never landed. This must NOT fall through to the empty
-               board: "the couple has not added anything yet" is a statement about the
-               data, and there is no data — only a failed request. Saying the wrong one
-               sends a planner away thinking the board is empty. */
-            <Notice tone="warn" title={t(`api.${board.error ?? API_ERROR.TRANSIENT}`)}>
-              <RetryButton onRetry={board.refresh} label={t('status.refresh')} />
-            </Notice>
-          ) : !tasks.length ? (
-            <EmptyBoard
+      <div className="views">
+        {tab === TABS.HOME ? (
+          <>
+            <Hero
+              config={board.config}
+              nowMs={now}
               canEdit={canEdit}
-              weddingDay={weddingDay}
-              seeding={board.saving > 0}
-              onSeed={seed}
               onOpenSettings={() => setSettingsOpen(true)}
             />
-          ) : (
-            <>
-              <Controls
-                counts={overall}
-                total={overall.total}
-                filter={filter}
-                onFilter={chooseFilter}
-                view={view}
-                onView={setView}
+            <div className="view stack">
+              {notices}
+              <OverallCard overall={overall} />
+              {canEdit ? <DeletedList tasks={board.deletedTasks} onRestore={restore} /> : null}
+            </div>
+          </>
+        ) : (
+          <div className="view view--plan stack">
+            {notices}
+
+            {board.status === STATUS.LOADING ? (
+              <p className="hint">{t('common.loading')}</p>
+            ) : board.status === STATUS.ERROR && !board.tasks.length ? (
+              /* A first load that never landed. This must NOT fall through to the empty
+                 board: "the couple has not added anything yet" is a statement about the
+                 data, and there is no data — only a failed request. Saying the wrong one
+                 sends a planner away thinking the board is empty. */
+              <Notice tone="warn" title={t(`api.${board.error ?? API_ERROR.TRANSIENT}`)}>
+                <RetryButton onRetry={board.refresh} label={t('status.refresh')} />
+              </Notice>
+            ) : !tasks.length ? (
+              <EmptyBoard
+                canEdit={canEdit}
+                weddingDay={weddingDay}
+                seeding={board.saving > 0}
+                onSeed={seed}
+                onOpenSettings={() => setSettingsOpen(true)}
               />
-
-              {!shown.length ? (
-                <section className="card empty">
-                  <p className="empty__body">{t('list.emptyFiltered')}</p>
-                  <button
-                    type="button"
-                    className="btn btn--secondary"
-                    onClick={() => chooseFilter(FILTER_ALL)}
-                  >
-                    {t('list.showAll')}
-                  </button>
-                </section>
-              ) : view === VIEWS.TIMELINE ? (
-                <Timeline tasks={shown} nowMs={now} timeZone={timeZone} />
-              ) : (
-                <TaskList
-                  tasks={shown}
-                  nowWall={nowWall}
-                  canEdit={canEdit}
-                  expanded={expanded}
-                  onToggle={toggleDone}
-                  onEdit={setEditing}
-                  onDelete={setPendingDelete}
-                  onExpand={toggleExpanded}
-                  canAddSubtask={!board.outdatedScript}
-                  onAddSubtask={addSubtask}
-                  onSubtaskFocus={setAddingSubtask}
+            ) : (
+              <>
+                <FilterChips
+                  counts={overall}
+                  total={overall.total}
+                  filter={filter}
+                  onFilter={chooseFilter}
                 />
-              )}
-            </>
-          )}
-        </div>
-      </main>
 
-      {/* Not in timeline view: the FAB is a 56px disc fixed over the bottom-right of the
-          chart, which is where the newest months and often the today rule are. The chart's own
-          toolbar is its action surface, and adding a task is a list-view job. */}
-      {/* Also hidden while a subtask field has focus: the FAB is fixed bottom-right, does not
-          move with the keyboard, and would sit over the trailing end of the add field — where a
-          tap opens the new-task sheet and discards what was typed. */}
-      {canEdit && !wide && !addingSubtask ? (
+                {!shown.length ? (
+                  <section className="card empty">
+                    <p className="empty__body">{t('list.emptyFiltered')}</p>
+                    <button
+                      type="button"
+                      className="btn btn--secondary"
+                      onClick={() => chooseFilter(FILTER_ALL)}
+                    >
+                      {t('list.showAll')}
+                    </button>
+                  </section>
+                ) : (
+                  <Timeline
+                    tasks={shown}
+                    nowWall={nowWall}
+                    canEdit={canEdit}
+                    categories={board.config.categories}
+                    expanded={expanded}
+                    onExpand={toggleExpanded}
+                    onToggle={toggleDone}
+                    onSave={save}
+                    onDelete={setPendingDelete}
+                    canAddSubtask={!board.outdatedScript}
+                    onAddSubtask={addSubtask}
+                    onFieldFocus={setTyping}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Adding a task is a Timeline job, and the FAB is hidden while a field has focus —
+          see `typing`. */}
+      {canEdit && tab === TABS.TIMELINE && !typing ? (
         <button
           type="button"
           className="fab"
-          onClick={() => setEditing({})}
+          onClick={() => setAdding(true)}
           aria-label={t('form.newTitle')}
         >
           <PlusIcon style={{ width: '1.5em', height: '1.5em' }} />
         </button>
       ) : null}
 
-      {editing ? (
+      <TabBar tab={tab} onTab={chooseTab} />
+
+      {adding ? (
         <TaskFormSheet
-          task={editingTask}
           categories={board.config.categories}
           defaultDay={nowWall.slice(0, 10)}
           onSave={save}
-          onDelete={(task) => setPendingDelete(task)}
-          canAddSubtask={!board.outdatedScript}
-          onAddSubtask={addSubtask}
-          onToggleSubtask={toggleDone}
-          onDeleteSubtask={setPendingDelete}
-          onClose={() => setEditing(null)}
+          onClose={() => setAdding(false)}
         />
       ) : null}
 

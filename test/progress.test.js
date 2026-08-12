@@ -11,7 +11,6 @@ import {
   overallProgress,
   paceLabel,
   partitionSubtasks,
-  planWindow,
   taskProgress,
   toPercent,
   withProgress,
@@ -270,31 +269,6 @@ describe('overallProgress', () => {
     expect(overall.percent).toBe(1)
     expect(overall.done).toBe(0)
     expect(overall.overdue).toBe(2)
-  })
-})
-
-describe('planWindow', () => {
-  it('always contains now, so the today line is never off the edge', () => {
-    const rows = withProgress(
-      [task({ start: '2027-01-01T00:00', end: '2027-02-01T00:00' })],
-      at('2028-01-01T00:00'),
-      TOKYO,
-    )
-    const window = planWindow(rows, at('2028-01-01T00:00'))
-    expect(window.min).toBeLessThanOrEqual(at('2027-01-01T00:00'))
-    expect(window.max).toBeGreaterThanOrEqual(at('2028-01-01T00:00'))
-  })
-
-  it('never has a zero span', () => {
-    const now = at('2027-01-01T00:00')
-    const window = planWindow([], now)
-    expect(window.span).toBeGreaterThan(0)
-  })
-
-  it('ignores unscheduled tasks', () => {
-    const now = at('2027-01-01T00:00')
-    const rows = withProgress([task({ start: '', end: '' })], now, TOKYO)
-    expect(planWindow(rows, now).span).toBeGreaterThan(0)
   })
 })
 

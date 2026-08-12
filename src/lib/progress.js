@@ -188,10 +188,22 @@ export function withProgress(tasks, nowMs, timeZone) {
   const { parents, children } = partitionSubtasks(tasks)
   return parents
     .map((task) => {
-      // A superset of the old element shape: `subtasks` is added and nothing is removed, so
-      // grouping, the timeline's bars and the roll-up all keep working untouched.
+      // A superset of the old element shape: nothing is removed, so grouping, the cards and
+      // the roll-up all keep working untouched.
       const subtasks = (children.get(task.id) ?? []).slice().sort(byCreated)
-      return { ...task, subtasks, progress: taskProgress(task, nowMs, timeZone, subtasks) }
+      return {
+        ...task,
+        subtasks,
+        /**
+         * A row that NAMES a parent and is on this list anyway: `partitionSubtasks` could not
+         * place it — dangling, cyclic, or a parent that is tombstoned — and promoted it rather
+         * than hide it. The UI has to be able to ask, because "has a `parentId`" and "is a
+         * subtask" stop being the same question here, and the client's answer is this one: it
+         * is being drawn, counted and rolled up as a task.
+         */
+        promoted: Boolean(task.parentId),
+        progress: taskProgress(task, nowMs, timeZone, subtasks),
+      }
     })
     .sort(compareForDisplay)
 }
@@ -250,7 +262,13 @@ export function overallProgress(tasks) {
   }
 }
 
-/** Anything past this reads as genuinely ahead or behind rather than rounding. Symmetric. */
+/**
+ * Anything past this reads as genuinely ahead or behind rather than rounding. Symmetric.
+ *
+ * Exported because it is part of the pace CONTRACT rather than a component's constant: the
+ * band is what "on schedule" means here, so anything asserting that meaning has to read the
+ * same number rather than restate it.
+ */
 export const PACE_DEAD_BAND = 0.02
 
 /**
@@ -273,27 +291,6 @@ export function paceLabel(pace, overdue = 0) {
   if (pace < -PACE_DEAD_BAND) return 'behind'
   if (pace > PACE_DEAD_BAND) return 'ahead'
   return 'ontrack'
-}
-
-/**
- * The span the timeline draws, as instants. Derived from the tasks themselves
- * rather than from the wedding date, because a plan legitimately runs past the
- * wedding (thank-you notes, the honeymoon) and a fixed window would clip them.
- *
- * `now` is included so the "today" line is always inside the drawn range — a
- * timeline whose marker sits off the edge reads as broken.
- */
-export function planWindow(tasks, nowMs) {
-  let min = nowMs
-  let max = nowMs
-  for (const task of tasks) {
-    if (!task.progress.scheduled) continue
-    if (task.progress.startMs < min) min = task.progress.startMs
-    if (task.progress.endMs > max) max = task.progress.endMs
-  }
-  // A plan entirely inside one day would otherwise divide by zero downstream.
-  if (max - min < 3_600_000) max = min + 3_600_000
-  return { min, max, span: max - min }
 }
 
 /** 0–1 -> a whole percent, for both display and aria values. */

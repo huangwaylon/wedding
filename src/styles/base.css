@@ -163,7 +163,7 @@ pre {
 
 /* ---- Numerals ----------------------------------------------------------
    Carried by every figure that sits in a column and must not jitter: the per-task
-   percentages down the list, the timeline's axis ticks, the countdown. Tabular
+   percentages down the plan, a card's date chip and its range, the countdown. Tabular
    figures line up while keeping the proportional letterforms of the UI sans.
 
    Deliberately NOT on the hero percentage. `tabular-nums` gives every digit the

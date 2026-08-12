@@ -2,17 +2,15 @@
 <!--
   The screenshot harness. One page; everything is driven by the query string.
 
-    harness.html?f=en&w=390,430,768
-    harness.html?f=en-timeline&w=1440&h=930&scroll=0.35
-    harness.html?f=en&w=393&to=.task__subs                  scrolled to the first checklist
-    harness.html?f=en,en-sage,en-gold&w=330&h=480
+    harness.html?f=en-home&w=390,430,768
+    harness.html?f=en&w=1440&h=930
+    harness.html?f=en&w=393&to=.tcard--open            scrolled to the opened card
+    harness.html?f=en-home,en-sage,en-gold&w=330&h=480
 
   f       comma-separated preview files. The `preview-` prefix and `.html` are optional.
   w       comma-separated iframe widths in px, applied to every file
   h       iframe height in px (default 900)
-  scroll  0-1: how far to scroll the timeline's OWN container. The timeline owns its
-          vertical scroll, so scrolling the page does not move it — and a sticky element
-          overlapping those rows is a bug that only appears once they have moved.
+  to      a CSS selector to scroll the frame's document to, centred
 
   IFRAMES, NOT A RESIZED WINDOW. Each frame gets its own viewport, so container and media
   queries resolve honestly; headless Chrome quietly reports a different width than you
@@ -20,8 +18,8 @@
 
   Regenerate the preview files first: `npx vite-node scripts/preview.jsx`.
 
-  This replaced three near-identical harness pages that had accreted one screenshot at a
-  time, each hardcoding its own file list and scroll behaviour.
+  Everything scrolls with the DOCUMENT now — no surface owns a nested scroller — so `to` is
+  the only positioning control this page needs.
 -->
 <html>
   <head>
@@ -64,9 +62,7 @@
         })
       const widths = (params.get('w') || '390,430,768').split(',').map(Number)
       const height = Number(params.get('h') || 900)
-      const scroll = Number(params.get('scroll') || 0)
-      /** A CSS selector to scroll the iframe's own page to. The timeline owns its vertical
-          scroll, but a list row is reached by scrolling the DOCUMENT. */
+      /** A CSS selector to scroll the iframe's own document to. */
       const to = params.get('to') || ''
       const row = document.getElementById('row')
 
@@ -85,9 +81,6 @@
           frame.onload = () => {
             const doc = frame.contentDocument
             if (to) doc?.querySelector(to)?.scrollIntoView({ block: 'center' })
-            if (!scroll) return
-            const timeline = doc?.querySelector('.timeline')
-            if (timeline) timeline.scrollTop = Math.round(timeline.scrollHeight * scroll)
           }
           col.appendChild(frame)
           row.appendChild(col)

@@ -7,9 +7,8 @@ React 19, plain ESM JavaScript, vitest, no runtime dependency but `react`/`react
 backend is one container-bound Apps Script web app over one spreadsheet, where `doGet` is anonymous
 and read-only and `doPost` needs `APP_KEY` in the body.
 
-`npm test` must pass before any commit; also `npm run dev|build|preview`,
-`node scripts/check-contrast.js` after any colour change, `npx vite-node scripts/preview.jsx` for the
-visual harness.
+`npm test` must pass before any commit; also `npm run dev|build|preview`, `npm run contrast` after
+any colour change, `npx vite-node scripts/preview.jsx` for the visual harness.
 
 ## Invariants
 
@@ -55,6 +54,15 @@ their spreadsheet.
   names a LIVE row whose own `parent_id` is empty (`partitionSubtasks`) — depth-1 by construction,
   so it cannot recurse or cycle. Anything unplaceable (grandchild, cycle, orphan) is **promoted,
   never hidden**: a silently hidden task is the worst thing this app could do.
+- **A PROMOTED row is where "has a `parentId`" and "is a subtask" stop being the same question,
+  and only one of them is fixed.** `withProgress` marks such a row `promoted`, and the client
+  draws, counts and rolls it up as a task — but `validateTask` and `taskFromDraft` both still
+  read the raw `parentId`, so the editor offers it no window (dates written there would be
+  neither validated nor stored) and the card withholds the add-subtask field (a child of it
+  would be a grandchild, promoted again on the next read). **A promoted row can therefore be
+  retitled but not scheduled from the UI; fixing that means teaching the schema layer the
+  difference, not widening the component's guard.** It is reachable only by hand-editing
+  `parent_id` in the spreadsheet.
 - **Precedence is `done_at` > tally > clock, and nothing is blended** — "3 of 5 = 60%" is checkable
   by counting; `0.5 × elapsed + 0.5 × tally` is not. No live subtasks falls back to the clock.
 - **All subtasks done does NOT make a parent done**, or a task would sit in the done count with an
@@ -62,8 +70,11 @@ their spreadsheet.
   either: a 5/5 parent reads 100% and stays open until a person closes it.
 - **A subtask is a title and a tick, no dates** — `validateTask` returns early for anything with a
   `parentId`, because two date wheels per item would make entering five unusable on a phone and then
-  no parent's progress would advance. No meter, no badge, and the whole row is the toggle. **Deleting
-  a parent cascades in the Apps Script**, one lock and one reply; `restore` is its exact inverse.
+  no parent's progress would advance. No meter, no badge, and the whole row is the toggle. **The inline
+  editor therefore renders no date fields and no all-day switch for a subtask, and never writes its
+  `start`/`end` cells** — the early return means dates offered there would be saved unvalidated, and
+  it did save an end before a start. **Deleting a parent cascades in the Apps Script**, one lock and
+  one reply; `restore` is its exact inverse.
 
 ### The endpoint
 
@@ -101,6 +112,16 @@ the key; a query string reaches Google's logs.
   is ~3s and those mutations are optimistic, so waiting buys nothing — but with the panel gone, a
   rolled-back row is invisible unless said out loud. Settings still waits: `saveConfig` has no
   optimistic half, so closing early would show a stale zone and countdown for three seconds.
+- **Editing commits per FIELD, on blur, and every commit sends the WHOLE task.** `update` rewrites
+  the row from its payload, so a partial one blanks a cell — `parent_id` above all. Nothing is sent
+  when the value did not change, compared as the ROW each would write, so a trailing space
+  `taskToRow` trims costs no round trip.
+- **A focused field is the only evidence that unsaved text exists**, which is why `TaskEditor` and
+  the add-a-subtask field both report focus up to `App` as `typing`: it holds off a service-worker
+  reload (there is no open sheet to infer it from any more) and moves the fixed FAB out from over
+  the field. **Which tab is on screen and which cards are open are session state, never
+  `localStorage`** — relaunching into twelve expanded cards is a board nobody can read — and the
+  two tabs share one document scroller, so a switch resets it deliberately.
 - **A rejected key is FLAGGED, not deleted**, or the device drops to view-only in silence. And
   **`canEdit` decides what renders; it is not the security boundary** — the endpoint refuses every
   keyless write, so never add a client check as enforcement or drop the server one.
@@ -119,7 +140,9 @@ the key; a query string reaches Google's logs.
 - **One helper, one home.** `readStored`/`writeStored` are the only `localStorage` touches;
   `schema.js` owns column names, `templates.js` owns `CATEGORIES`, `time.js` is the only file that
   resolves a zone, `run()` the only mutation wrapper, `DoneToggle` the only done control, `Notice` the
-  only title/body/action block. **Export only what something outside the file uses.**
+  only title/body/action block, and `TaskFields` the only task field markup — the inline editor and
+  the create sheet render the same controls through it, differing by a `skin` prop and by when they
+  commit. **Export only what something outside the file uses.**
 - **No new npm dependencies** without a clear reason — one is also a CSP decision, and
   `test/lockfile.test.js` pins the list. **Add a host, update the CSP** in `index.html`, and never
   put a real secret in a `VITE_` variable: Vite inlines them into the shipped bundle.
@@ -138,35 +161,53 @@ modules need the same `t`.
   the singleton, and a test that calls `setLocale` must restore it. **An unknown category renders
   exactly as typed** — the sheet is the source of truth, the catalog a courtesy on top.
 
-### CSS and charts
+### CSS
 
 Four stylesheets, in order: `tokens.css`, `base.css`, `primitives.css`, `app.css`. Single classes,
-no IDs, no `!important`. Light theme only, mobile first, and **exactly two breakpoints** (48rem,
-62rem) — `test/ui.test.jsx` pins that across every sheet, so prefer a `clamp()` or a query. Use
-the tokens: `var(--transition-fast|base)` collapse to ~0ms under `prefers-reduced-motion`, so a
-hardcoded duration opts out of that silently. Meter and Gantt are hand-rolled — flex plus
-percentages, no library. Every rule carries its constraint as a comment and `test/ui.test.jsx` pins
-the load-bearing ones: state colour is one table and never the only channel, the meter's hairline is
-`--track-line`, its mark is ink with a surface ring, a row is a `<button>` so its children are spans.
-What reaches beyond CSS:
+no IDs, no `!important`. Light theme only, mobile first, and **exactly ONE breakpoint** (48rem) —
+`test/ui.test.jsx` pins that as an exact set across every sheet, so prefer a `clamp()`, a container
+query or `auto-fit` to a second one. The layout is one centred column at every width, capped at
+`--column-max`: a planner's large monitor gets a bigger photograph and more air, not a second
+column. Use the tokens: `var(--transition-fast|base)` collapse to ~0ms under
+`prefers-reduced-motion`, so a hardcoded duration opts out of that silently. Meters are hand-rolled
+— flex plus percentages, no library. Every rule carries its constraint as a comment and
+`test/ui.test.jsx` pins the load-bearing ones: state colour is one table and never the only channel,
+the meter's hairline is `--track-line`, its mark is ink with a surface ring, a row is a `<button>` so
+its children are spans. What reaches beyond CSS:
 
 - **Japanese is a first-class language here.** `letter-spacing: 0`, no `text-transform`, and no
-  `line-height` below 1.5 wherever text can be Japanese. Nothing below 13px; weights `400|500|600`.
+  `line-height` below 1.5 wherever text can be Japanese — which is everywhere but the hero
+  percentage, including the couple's names and a `4月` date chip. A month abbreviation is uppercased
+  in `formatWallChip` with `toLocaleUpperCase`, never in CSS, because `text-transform` is a no-op on
+  kana and would apply to the Latin half alone. **The chip's day does NOT go through `Intl`**: `{ day:
+  'numeric' }` in `ja` returns `18日`, which wraps inside a 36px chip. Nothing below 13px; weights
+  `400|500|600`.
 - **Never a form control below 16px** (mobile Safari zooms on focus and will not zoom back), and
   **`--tap-target` (44px), not `--tap-target-sm`, for anything a thumb aims at.**
   **`role="progressbar"`, never `role="meter"`**: ARIA reserves `meter` for a gauge rather than a
   value advancing toward completion, and VoiceOver maps it patchily enough to lose the label and the
   value with it. **`interactive-widget=resizes-content` is load-bearing** with a sticky
   `.sheet__foot`, or Save sits under the keyboard.
-- **The timeline's rows and axis are FLEX, not grid**, because the sticky gutter must travel and a
-  grid item's containing block is its own grid area. Rows are `align-items: stretch` so the opaque
-  label covers the full row height, and the height cap is NOT width-gated — without it nothing
-  scrolls inside the chart and the axis never sticks.
-- **A subtask is never drawn as a bar**: no dates means no position and no extent. It gets a 1px rail
-  spanning the parent's window, and the parent a `3/5` tally, never coloured — `5/5` in `--good`
-  would claim a `done_at` the sheet does not have. **Colour follows STATE, not category**, or one mark
-  carries two palettes, and **no `-webkit-overflow-scrolling: touch` anywhere**: a no-op since iOS 13
-  that broke `position: sticky` inside the same scroller.
+- **The hero's scrim IS the contrast mechanism**, not decoration. Its ink cannot be measured against
+  a token because its backdrop is a photograph, so it is measured against the worst case the scrim
+  allows — the dense end composited over a blown-out white sky. `scripts/check-contrast.js` computes
+  it; lightening `--photo-scrim`'s end stop takes white type from 9.08:1 to 4.07:1 and fails.
+- **The card accordion is NOT animated.** `height` and `max-height` are layout properties, a mount
+  is not a transition, and `max-height` slips past the "never transition width/height" test while
+  being exactly the thrash that test forbids. The chevron carries the motion.
+- **The spine is `--track-line`, not `--line`.** Same defect as the meter's hairline: `--line`
+  measures 1.2:1 against the card it is drawn on, so the spine was invisible at 390px and the nodes
+  read as unrelated dots. It is drawn per card and stitched across the group's gap rather than once
+  per group, because one line spanning the group runs behind the month heading.
+- **The tab bar is fixed and must stay reachable-around**: `.views` reserves the bar plus the FAB
+  below its content, once, and the bar is opaque when `backdrop-filter` is unsupported or the list
+  reads straight through it. The selected tab is never colour alone — it also carries a rule on the
+  bar's top edge and `aria-current`.
+- **A subtask is never drawn on a time axis**: no dates means no position and no extent. It is a row
+  in its parent's checklist, and what reaches the parent is a `3/5` tally, never coloured — `5/5` in
+  `--good` would claim a `done_at` the sheet does not have. **Colour follows STATE, not category**, or
+  one mark carries two palettes, and **no `-webkit-overflow-scrolling: touch` anywhere**: a no-op
+  since iOS 13 that broke `position: sticky` inside the same scroller.
 
 ## Testing
 
@@ -174,10 +215,11 @@ What reaches beyond CSS:
 brace-count media blocks — each of those mistakes makes a test that always passes. `script.test.js`
 EXECUTES `Code.gs` against a fake Sheets service, because the write path is exactly the kind that
 answers `ok: true` while writing the wrong cell.
-- **A static render never runs an effect**, so the measured plot width, the scroll position and an
-  opened outline are invisible to `render.test.jsx` and to the harness. Every default must be correct
-  alone, and zoom, panning, the detail sheet and the outline were each verified by driving the built
-  app in a real browser.
+- **A static render never runs an effect and never fires a blur**, so switching tabs, opening a card
+  and every commit-on-blur path are invisible to `render.test.jsx` and to the harness. Every default
+  must be correct alone — which is why `expanded` is a prop the harness can set — and the tab switch,
+  the accordion, each commit path, the validation refusals and the keyboard's effect on a sheet were
+  each verified by driving the built app in a real browser.
 - **When fixing a bug, add the regression test** — for progress arithmetic, the misleading case: all
   overdue and nothing done must report 100% *and* say it is behind.
 - **A passing suite does not mean it looks right.** Screenshot through `scripts/harness.html`'s
@@ -198,3 +240,17 @@ answers `ok: true` while writing the wrong cell.
 - **`vite.config.js` defaults `base` to `/wedding/`** because project Pages sites serve from
   `/<repo>/`, and sets `test.env.VITE_SCRIPT_URL`, which `config.js` captures at module load.
 - **The board is world-readable and that is the design.** Do not put anything private in it.
+- **The hero is a derived crop and the camera original is gitignored.** `public/hero.jpg` is
+  1280x1600 at ~290KB; regenerate it from a new photo with two `sips` passes, not one — combining
+  `-c` with `--resampleHeightWidth` silently produces the wrong dimensions:
+
+  ```sh
+  sips -c 4190 3352 --cropOffset 427 111 IMG_0509.JPG --out /tmp/hero-crop.jpg
+  sips --resampleHeightWidth 1600 1280 --setProperty formatOptions 20 /tmp/hero-crop.jpg \
+    --out public/hero.jpg
+  ```
+
+  `--cropOffset` is measured from the top-left when non-zero but means "centred" at `0 0`, and an
+  offset whose rect ends exactly on the image edge silently produces no crop at all. The faces must
+  land at 40-45% of the frame's height, because `object-position: 50% 42%` is what keeps them in the
+  band at every viewport. Bump nothing else — the service worker precaches whatever is in `dist/`.

@@ -69,47 +69,46 @@ Subtasks never enter the overall percentage. A parent with ten of them would oth
 eleven twentieths of a ten-task board, so writing more detail about one task would deflate every
 other. They move their parent's single share and nothing else.
 
-## Views
+## The two tabs
 
-**List**, grouped by the month a task starts in — a plan is read forwards, and grouping by state
-reshuffles the whole list every time something is ticked, which loses the reader's place. State
-slicing lives in the filter chips instead.
+**Home** is the photograph, the countdown and one number. A full-bleed hero (`public/hero.jpg`)
+carries the wedding date, the couple's names and the days left; below it the overall tracker gives
+the headline percentage, the on-schedule mark, the verdict line and the four counts. Nothing else,
+and no explanatory prose — a board that opens on a progress bar reads like a project tracker.
 
-A task with a checklist grows one disclosure row showing `3 of 5 subtasks`, which expands the
-list in place; a task without one adds no height at all, so a freshly seeded 52-task board looks
-exactly as it did before the feature existed. **The whole subtask row is the tick target**, not
-the circle at its end. The first item is added from the edit form, because a permanent add row on
-every task would be three screens of height for a rare action.
+**Timeline** is the work: every task as a card on one vertical spine, grouped by the month it
+starts in. A plan is read forwards, and grouping by state reshuffles the whole board every time
+something is ticked, which loses the reader's place — state slicing lives in the filter chips
+instead.
 
-**Timeline**, a Gantt. This is the view that earns its keep on a planner's large monitor: a list
-cannot show whether two things overlap or where the gaps are. Bars are coloured by state with a
-partial fill for progress, month gridlines let a bar's date be read off without looking back up
-at the axis, and the axis stays put while the rows scroll. "Today" is the one place this chart
-raises its voice — an accent rule with a label, because in a countdown-driven app that is the
-most important thing on it.
+A collapsed card is a check, a `18 / APR` date chip on the spine, the title, the dates, its
+category, and a meter with the percentage beside it. **Tapping the card opens it in place**, and
+that is where everything else lives: the fields, the checklist, and the delete. Opening in place
+rather than pushing a screen or a sheet keeps the neighbouring cards, the month heading and the
+card's own progress visible while its dates are being changed — and a tap closes it again with
+nothing to save and nothing to lose.
 
-**A subtask is never drawn as a bar.** It has no dates, so on a time axis it has neither a
-position nor an extent, and a bar would assert a window the data does not contain. Two honest
-marks instead:
+**Editing is the open card.** There is no Save button: each field commits when focus leaves it,
+and nothing is sent when the value did not change. Every commit writes the *whole* row, because
+the script rewrites a row from the payload it is given — a partial one would blank `parent_id` and
+silently promote a subtask. The bottom sheet survives for one job, creating a task.
 
-- A parent with a checklist carries `3/5` under its title in the frozen gutter. This is what
-  makes the bar readable: for a task with no checklist the fill ends exactly on the today rule by
-  construction, so a parent whose fill stops short of that rule is genuinely behind — and the
-  tally is what tells you the fill is a count rather than a clock reading.
-- One **Subtasks** toggle in the axis corner reveals the items as their own rows, each drawing a
-  1px rail spanning the parent's window — the only date fact the model holds about it. Tapping
-  one opens the *parent's* detail sheet, where every title is listed in full.
+**A subtask is a title and a tick, in the parent's open card.** No dates, so nothing draws it on a
+time axis and nothing needs to: what a checklist contributes upward is the parent's `3/5` tally
+beside its fill, which is what tells the reader that fill is a count rather than a clock reading.
+The tally is never coloured — `5/5` in the done colour would claim a `done_at` the sheet does not
+have. **The whole subtask row is the tick target**, not the circle at its end.
 
-**On a phone the timeline is built around three things a desktop Gantt gets for free.** The label
-gutter is pinned, so panning to a later month does not take the task names with it. The axis is
-pinned, so row thirty still has dates above it. And there is a **zoom** — at 1x a year compresses
-into ~240px of visible plot, where a one-week task is 8px and bar length stops encoding anything,
-so −/+ scale the plot from 1x to 8x while holding the date at the centre of the screen. Explicit
-buttons rather than pinch: pinch inside an element means fighting Safari's own page zoom with a
-non-passive listener, and it would collide with the tap that opens a task.
+**State is read from three places and only one of them is colour**: the node on the spine carries
+the hue, the percentage carries the amount, the date chip says when the window was, and every
+card's accessible name states the state in words. Overdue is the one state that also gets a
+written word on screen, because it is the one whose figure reads as its own opposite — an expired
+unfinished window is 100% and nowhere near done.
 
-In timeline view the summary above collapses to a single band — there the chart is the subject,
-and the full card pushed the Gantt off the screen.
+There is no Gantt chart. It earned its keep on a large monitor and cost a zoom ladder, a pinned
+axis, a pinned label gutter and ~950 lines of CSS and component code to be usable on the phone
+this app is actually read on; the accordion answers "what is coming up, and how far along is it"
+in one screen without any of that.
 
 ## Data model
 
@@ -156,7 +155,7 @@ default in [`src/config.js`](src/config.js).
 
 | Key | Example | Notes |
 | --- | --- | --- |
-| `partner1_name` / `partner2_name` | `Aoi` / `Ren` | Shown in the header |
+| `partner1_name` / `partner2_name` | `Aoi` / `Ren` | Shown over the hero photograph |
 | `wedding_date` | `2027-04-18` | Drives the countdown, and every template offset counts back from it |
 | `wedding_time` | `14:00` | Optional |
 | `venue` | `Meguro Gajoen` | Free text |
@@ -296,7 +295,7 @@ npm run dev
 ```
 
 Scripts: `dev`, `build` (bundle into `dist/`, then generate `dist/sw.js`), `preview` (serve the
-built `dist/`), `test` (vitest, single run), `test:watch`, `icons`. The service worker only exists
+built `dist/`), `test` (vitest, single run), `test:watch`, `icons`, `contrast`. The service worker only exists
 in a build, so testing it means `npm run build && npm run preview`.
 
 **A green suite says nothing about whether the page looks right.** This app shipped an overall
@@ -304,13 +303,16 @@ tracker that said "On schedule" with eight tasks overdue, and only a screenshot 
 
 ```sh
 npx vite-node scripts/preview.jsx     # writes scripts/preview-*.html (gitignored)
-node scripts/check-contrast.js        # every colour pair, measured
+npm run contrast                      # every colour pair, measured
 ```
 
-Load those through `scripts/harness.html`, which takes files, widths, a scroll position and a
-scroll-to selector on the query string and documents its own options. Anything behind a click or
-a layout effect — the zoom, the pinned gutter, the subtask outline — is invisible to a static
+Load those through `scripts/harness.html`, which takes files, widths and a scroll-to selector on
+the query string and documents its own options. Anything behind a click — switching tabs, opening
+a card, a field committing on blur, the keyboard's effect on a sheet — is invisible to a static
 render and has to be verified by driving the built app in a browser.
+
+The hero is a derived crop; the camera original is gitignored. To replace it, drop a new photo in
+and re-run the two `sips` passes recorded in [CLAUDE.md](CLAUDE.md).
 
 ## Layout
 
@@ -320,7 +322,7 @@ render and has to be verified by driving the built app in a browser.
 | `apps-script/` | the whole backend: `Code.gs` and its manifest, deployed by hand |
 | `src/schema.js` | the sheet contract: columns, row ↔ task mapping, validation |
 | `src/config.js` | build-time values, storage keys, the `config` tab's field list, defaults |
-| `src/App.jsx` | the shell: access, which surface is on screen, and every mutation's toast |
+| `src/App.jsx` | the shell: access, which tab is on screen, and every mutation's toast |
 | `src/lib/` | `api` (every network call and the failure taxonomy), `access` (the capability URL), `time` and `progress` (both pure), `templates`, `snapshot`, `serviceWorker`, `theme` |
 | `src/state/` | `useBoard` — one `run()` primitive behind optimistic CRUD, the serialised write chain, the out-of-date-script guard, throttled refresh — plus `useNow` and `useToasts` |
 | `src/components/` | one file per view, with inline-SVG icons in `icons.jsx` |

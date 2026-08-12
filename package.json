@@ -9,6 +9,7 @@
     "build": "vite build && node scripts/build-sw.js",
     "preview": "vite preview",
     "icons": "node scripts/make-icons.js",
+    "contrast": "node scripts/check-contrast.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },

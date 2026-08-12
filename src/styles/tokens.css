@@ -37,6 +37,32 @@
 
   --scrim: rgba(28, 26, 23, 0.34);
 
+  /* ---- Over the photograph ---------------------------------------------
+     The hero is the one surface whose background is unknown, so the ink there
+     cannot be measured against a token — it is measured against the WORST CASE
+     the scrim allows. --photo-scrim ends at 0.78 alpha over a #181410 base, and
+     white on that composite is 9.08:1 even over a blown-out white sky;
+     --photo-ink-2 is 7.99:1 (scripts/check-contrast.js computes both). Lightening
+     the end stop is what would break it: at 0.55 the same worst case measures
+     4.07:1 and fails.
+
+     The shadow is belt and braces for the sliver of type that sits above the
+     gradient's dense end, not the mechanism. */
+  --photo-ink: #ffffff;
+  --photo-ink-2: rgba(255, 255, 255, 0.92);
+  --photo-scrim: linear-gradient(
+    to bottom,
+    rgba(24, 20, 16, 0) 28%,
+    rgba(24, 20, 16, 0.38) 62%,
+    rgba(24, 20, 16, 0.78) 100%
+  );
+  --photo-shadow: 0 1px 12px rgba(24, 20, 16, 0.55);
+  /* A control ON the photograph: a dark disc, so the glyph inside it stays white
+     whatever it happens to sit over. 0.55, not 0.42 — at 0.42 a white glyph over a
+     blown-out sky measures 2.73:1 and misses the 3:1 graphic floor. */
+  --photo-control: rgba(24, 20, 16, 0.55);
+  --photo-control-hover: rgba(24, 20, 16, 0.68);
+
   /* ---- Accent ----------------------------------------------------------
      One hue, swappable. `[data-accent]` at the foot of this file redefines the
      three properties below and NOTHING else, so a preset cannot reach the
@@ -139,7 +165,7 @@
   --fs-lg: 1.125rem; /* 18 */
   --fs-xl: 1.5rem; /* 24 */
   /* The hero percentage, container-relative so the same component fits a 288px
-     phone and a 352px aside. The only step above --fs-xl. */
+     phone and the full 40rem column. The only step above --fs-xl. */
   --fs-display: clamp(2.75rem, 15cqi, 4.25rem);
 
   /* Nothing below 1.5 can hold Japanese: CJK glyphs fill the em box, and a tighter
@@ -150,11 +176,11 @@
   --lh-body: 1.65;
 
   /* ---- Elevation -------------------------------------------------------
-     Shadows appear in exactly four places: the sheet panel, the toast, the FAB,
-     and the segmented control's selected thumb. Nowhere else — not on cards, not
-     on inputs, not on buttons — and never added on hover. The focus ring is also
-     drawn with box-shadow, which is a ring rather than an elevation. */
-  --shadow-raised: 0 1px 2px rgba(28, 26, 23, 0.05);
+     Shadows appear in exactly three places: the sheet panel, the toast, and the
+     FAB. Nowhere else — not on cards, not on inputs, not on buttons, not on the
+     tab bar — and never added on hover. The focus ring is also drawn with
+     box-shadow, which is a ring rather than an elevation, and so is the text
+     shadow over the photograph. */
   --shadow-overlay: 0 2px 8px rgba(28, 26, 23, 0.06),
     0 16px 48px -12px rgba(28, 26, 23, 0.22);
   /* The one coloured element casts the one coloured shadow. */
@@ -162,22 +188,22 @@
     0 8px 24px -6px var(--accent-shadow);
 
   /* ---- Metrics ---------------------------------------------------------
-     --shell-max = --aside-w + gap + --main-max. Planners work on large monitors,
-     so the wide layout matters more here than in most phone-first apps — but the
-     main column still caps, because past ~48rem a task row's title and its dates
+     ONE column, capped, centred — the same shape on a phone and on a monitor. A
+     planner's 27" screen gets a wider hero and more air, not a second column: the
+     board is a list of tasks with dates, and at 60rem a row's title and its dates
      drift apart into a thin strip with a canyon between them. */
   --tap-target: 44px;
-  /* Secondary controls: chips, the segmented thumb, a row's icon buttons. Still
-     clears WCAG 2.5.8's 24px floor with room to spare. */
+  /* Secondary controls: chips, a row's icon buttons. Still clears WCAG 2.5.8's 24px
+     floor with room to spare. */
   --tap-target-sm: 36px;
-  --header-height: 56px;
-  --shell-max: 78rem;
-  --column-max: 36rem;
-  --main-max: 48rem;
+  --column-max: 40rem;
   --sheet-max: 32rem;
-  --aside-w: 23rem;
-  /* The FAB, and therefore the clearance every layout must keep beneath its
-     content so the button never covers the last row. */
+  /* The bottom tab bar's own height, WITHOUT the safe-area inset it pads itself
+     with. Every fixed thing above it — the FAB, the toasts — and every view's
+     bottom padding compose from this, so the bar can never cover the last row. */
+  --tabbar-height: 3.5rem;
+  /* The FAB, and therefore the clearance the views keep beneath their content so
+     the button never covers the last card. */
   --fab-size: 3.5rem;
 
   /* ---- Motion ----------------------------------------------------------
@@ -195,7 +221,7 @@
   --transition-base: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* ---- Stacking order --------------------------------------------------- */
-  --z-header: 100;
+  --z-tabbar: 100;
   --z-fab: 200;
   --z-sheet: 300;
   --z-toast: 400;

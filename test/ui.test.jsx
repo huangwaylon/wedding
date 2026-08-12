@@ -41,8 +41,9 @@ const csp = /http-equiv="Content-Security-Policy"\s*\n?\s*content="([^"]*)"/.exe
 /**
  * The declarations of one rule, matched on a WHOLE selector at the start of a line.
  *
- * An unanchored `.timeline__label {` also matches `.timeline__row:hover .timeline__label {`,
- * so three of these assertions were reading a hover rule and passing for the wrong reason.
+ * An unanchored `.subtask__title {` also matches `.subtask--done .subtask__title {`, and an
+ * unanchored `.meter {` matches `.tcard__bar > .meter {` — so an assertion about the base
+ * rule reads a descendant's body instead and passes for the wrong reason.
  */
 function ruleFor(css, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -52,9 +53,14 @@ function ruleFor(css, selector) {
   return found ? found[1] : null
 }
 
-/** The bodies of every `@media (min-width: Nrem)` block, brace-counted rather than lazily. */
-function blocksOf(css, rem) {
-  const opener = `@media (min-width: ${rem}rem) {`
+/**
+ * Every block opened by `opener`, brace-counted rather than matched lazily.
+ *
+ * A `[\s\S]*?` inside a conditional group escapes the group and matches the base rule
+ * hundreds of lines further down, which turns a scoped assertion into one that always
+ * passes. Both `@media` and `@supports` scopes here are read through this.
+ */
+function blocksAfter(css, opener) {
   const blocks = []
   let from = 0
   for (;;) {
@@ -71,6 +77,11 @@ function blocksOf(css, rem) {
     from = index
   }
   return blocks
+}
+
+/** The bodies of every `@media (min-width: Nrem)` block. */
+function blocksOf(css, rem) {
+  return blocksAfter(css, `@media (min-width: ${rem}rem) {`)
 }
 
 describe('accent presets', () => {
@@ -122,15 +133,13 @@ describe('the meter', () => {
 
   it('draws that hairline in --track-line, never --line', () => {
     // --line on --track measures 1.035:1: the outline it was supposed to draw is invisible,
-    // which left an empty bar held up by the fill step alone. Both the meter and the
-    // timeline bar shipped with this.
+    // which left an empty bar held up by the fill step alone. There is exactly one bar in the
+    // app now — a task card's is a `Meter` too, rendered as spans — so this is a
+    // primitives-only assertion and `.meter` is the only rule that can regress it.
     expect(tokens).toMatch(/--track-line:/)
-    expect(/\.meter \{([^}]*)\}/.exec(primitives)[1]).toMatch(
-      /border: 1px solid var\(--track-line\)/,
-    )
-    expect(/\.timeline__bar \{([^}]*)\}/.exec(app)[1]).toMatch(
-      /border: 1px solid var\(--track-line\)/,
-    )
+    expect(ruleFor(primitives, '.meter')).toMatch(/border: 1px solid var\(--track-line\)/)
+    // And nothing may outline a track in --line behind its back.
+    expect(ruleFor(primitives, '.meter')).not.toMatch(/border: 1px solid var\(--line\)/)
   })
 
   it('gives the on-schedule mark a surface ring rather than a colour of its own', () => {
@@ -155,21 +164,50 @@ describe('the meter', () => {
   })
 })
 
+/**
+ * One state's row in the one table: the rest of its selector list, and its body.
+ *
+ * Matched from the END of the previous rule, so `.badge--<state>` has to come FIRST in the
+ * list. That pins the table's shape as well as its contents: anchoring on a line start
+ * instead lets a family be inserted in front of the badge, and then the badge is reading a
+ * list it no longer heads.
+ */
+function stateRow(state) {
+  const found = new RegExp(`(?:^|\\})\\s*(\\.badge--${state},[^{}]*)\\{([^}]*)\\}`).exec(
+    code(primitives),
+  )
+  return found ? { selectors: found[1], body: found[2] } : null
+}
+
 /** Every state's entry in the one table, keyed on the state name. */
 function stateEntry(state) {
-  const found = new RegExp(`\\.badge--${state},[\\s\\S]*?\\{([^}]*)\\}`).exec(code(primitives))
-  return found ? found[1] : null
+  const row = stateRow(state)
+  return row ? row.body : null
 }
+
+const STATES = ['done', 'overdue', 'active', 'upcoming', 'unscheduled']
 
 describe('the state table', () => {
   it('maps every state exactly once, in one place', () => {
     // Four families — the badge's wash, its dot, the standalone dot, a meter fill — plus the
-    // timeline bar used to restate this same mapping in nineteen blocks across two files.
-    for (const state of ['done', 'overdue', 'active', 'upcoming', 'unscheduled']) {
+    // task card, which used to restate this same mapping in nineteen blocks across two files.
+    for (const state of STATES) {
       const entry = stateEntry(state)
       expect(entry, `${state} has no entry`).toBeTruthy()
       expect(entry, `${state} sets no fill`).toMatch(/--state-fill:/)
       expect(entry, `${state} sets no wash`).toMatch(/--state-wash:/)
+    }
+  })
+
+  it('lists the card alongside the other families, from the same row', () => {
+    // A card is a mark that carries state: `.tcard--<state>` sets the two properties at the
+    // card's root so anything inside it — the node on the spine, the meter in the head —
+    // resolves them without a second mapping. A family with its own block is how the two
+    // copies drift.
+    for (const state of STATES) {
+      expect(stateRow(state).selectors, `${state} does not reach the card`).toContain(
+        `.tcard--${state}`,
+      )
     }
   })
 
@@ -185,7 +223,13 @@ describe('the state table', () => {
     expect(ruleFor(primitives, '.badge__dot')).toMatch(/background-color: var\(--state-fill,/)
     expect(ruleFor(primitives, '.dot')).toMatch(/background-color: var\(--state-fill,/)
     expect(ruleFor(primitives, '.meter__fill')).toMatch(/background-color: var\(--state-fill,/)
-    expect(ruleFor(app, '.timeline__bar-fill')).toMatch(/background-color: var\(--state-fill,/)
+    // Every one of them is a primitive, which is the point: app.css paints no state colour of
+    // its own. A hue hardcoded onto a card mark would be a second palette for the same claim.
+    for (const state of STATES) {
+      expect(app, `${state} is painted outside the table`).not.toMatch(
+        new RegExp(`\\.tcard--${state}[^{]*\\{[^}]*--state-(fill|wash):`),
+      )
+    }
   })
 
   it('falls back rather than painting nothing for a state it has never heard of', () => {
@@ -199,7 +243,7 @@ describe('the state table', () => {
     // The wash carries the tint; the label stays ink. One of the state colours cannot clear
     // 4.5:1 on white, which is the whole reason the badge pattern exists.
     expect(ruleFor(primitives, '.badge')).toMatch(/color: var\(--ink-2\)/)
-    for (const state of ['done', 'overdue', 'active', 'upcoming', 'unscheduled']) {
+    for (const state of STATES) {
       expect(stateEntry(state), state).not.toMatch(/[^-]color:/)
     }
   })
@@ -279,16 +323,41 @@ describe('form controls', () => {
     expect(tokens).toMatch(/--tap-target: 44px/)
     expect(tokens).toMatch(/--tap-target-sm: 36px/)
   })
+
+  it('lets the select and the notes field inherit that floor rather than restating it', () => {
+    // Both are worn WITH `.input`, so the 16px comes from one place. A font-size of their own
+    // is how one control ends up under the floor and zooms the viewport on focus: browsers
+    // default a textarea to 13px monospace, which is the value somebody would be "restoring".
+    for (const selector of ['.select', '.textarea']) {
+      const rule = ruleFor(primitives, selector)
+      expect(rule, `${selector} rule missing`).toBeTruthy()
+      expect(rule, `${selector} must not set its own font-size`).not.toContain('font-size')
+      expect(rule, `${selector} must not set its own family`).not.toContain('font-family')
+    }
+    // Wrapped prose is the one thing in the app that has to hold Japanese across lines.
+    expect(ruleFor(primitives, '.textarea')).toMatch(/line-height: var\(--lh-body\)/)
+  })
 })
 
 describe('elevation', () => {
-  it('uses a shadow in exactly the four places it is allowed', () => {
+  it('uses a shadow in exactly the three places it is allowed', () => {
+    // Exact-set equality, not a subset: a shadow added to a fourth thing has to fail here,
+    // and `toContain` on a set is an assertion that can only ever pass.
     const users = [...all.matchAll(/([.#][\w-]+)[^{}]*\{[^}]*box-shadow: var\(--shadow-/g)].map(
       (match) => match[1],
     )
-    expect(new Set(users)).toEqual(
-      new Set(['.fab', '.sheet__panel', '.toast', '.segmented__option']),
-    )
+    expect(new Set(users)).toEqual(new Set(['.fab', '.sheet__panel', '.toast']))
+  })
+
+  it('holds the tab bar up with a hairline and a blur, not a shadow', () => {
+    // A fixed bar over scrolling content is the obvious place to reach for elevation. The
+    // separation here is the top hairline plus the blur behind it — a shadow under a
+    // translucent bar reads as a second, darker bar.
+    const tabbar = ruleFor(app, '.tabbar')
+    expect(tabbar, '.tabbar rule missing').toBeTruthy()
+    expect(tabbar).toMatch(/border-top: 1px solid var\(--line\)/)
+    expect(tabbar).toMatch(/backdrop-filter: blur\(/)
+    expect(tabbar).not.toContain('box-shadow')
   })
 
   it('adds no shadow on hover', () => {
@@ -300,18 +369,29 @@ describe('elevation', () => {
     expect(card).toMatch(/border: 1px solid var\(--line\)/)
     expect(card).not.toContain('box-shadow')
   })
+
+  it('gives a task card the same hairline, since it is a card without the class', () => {
+    // `.tcard` is its own surface rather than `.card` — it has a grid, a spine and a
+    // two-token asymmetric padding — so the no-shadow rule has to be pinned twice.
+    const tcard = ruleFor(app, '.tcard')
+    expect(tcard, '.tcard rule missing').toBeTruthy()
+    expect(tcard).toMatch(/border: 1px solid var\(--line\)/)
+    expect(tcard).not.toContain('box-shadow')
+  })
 })
 
 describe('touch ergonomics', () => {
-  it('separates the two stacks below the two-column breakpoint', () => {
-    // THE reported bug. `.stack`'s gap applies inside each stack only, and `.shell` was a plain
-    // block below 62rem, so the summary card's bottom hairline and the first filter chip's top
-    // edge touched at 0px — which is what made the chips read as welded to the card. It was
-    // never the chips' own padding.
-    const shell = ruleFor(app, '.shell')
-    expect(shell).toMatch(/display: flex/)
-    expect(shell).toMatch(/flex-direction: column/)
-    expect(shell).toMatch(/gap: var\(--space-4\)/)
+  it('separates everything in a view from everything else in it', () => {
+    // THE reported bug. The one column is a stack of unrelated blocks — hero, summary, chips,
+    // cards — and the gap between them is the only thing holding them apart: with the view a
+    // plain block, the summary card's bottom hairline and the first filter chip's top edge
+    // touched at 0px, which is what made the chips read as welded to the card. It was never
+    // the chips' own padding.
+    const stack = ruleFor(app, '.stack')
+    expect(stack, '.stack rule missing').toBeTruthy()
+    expect(stack).toMatch(/display: flex/)
+    expect(stack).toMatch(/flex-direction: column/)
+    expect(stack).toMatch(/gap: var\(--space-4\)/)
   })
 
   it('gives the filter chips the full tap target', () => {
@@ -340,15 +420,27 @@ describe('touch ergonomics', () => {
   })
 
   it('keeps the two row icon buttons apart, one of them being destructive', () => {
-    // 4px was the tightest interactive adjacency in the app, between Edit and Delete.
-    expect(ruleFor(app, '.task__actions')).toMatch(/gap: var\(--space-2\)/)
+    // The tightest interactive adjacency left in the app, between a checklist item's toggle
+    // and its delete button — and 4px between "tick it" and "delete it" is how the wrong one
+    // gets pressed on a moving bus.
+    expect(ruleFor(app, '.subtask')).toMatch(/gap: var\(--space-2\)/)
   })
 
   it('gives the check toggle the full target', () => {
-    // The primary interaction of the app was a 36px square in the corner of a ~110px card.
-    const check = ruleFor(app, '.task__check')
+    // The primary interaction of the app was a 36px square in the corner of a ~110px card. It
+    // is a SIBLING of the head button, not a child — a button inside a button is dropped by
+    // the parser — so it carries its own target.
+    const check = ruleFor(app, '.tcard__check')
+    expect(check, '.tcard__check rule missing').toBeTruthy()
     expect(check).toMatch(/width: var\(--tap-target\)/)
     expect(check).toMatch(/min-height: var\(--tap-target\)/)
+  })
+
+  it('gives the whole collapsed row a target too', () => {
+    // The head is one control for the entire row, so it cannot be shorter than the check
+    // beside it: a 28px band of card between two 44px targets is a dead strip in the middle
+    // of the one thing on screen worth tapping.
+    expect(ruleFor(app, '.tcard__head')).toMatch(/min-height: var\(--tap-target\)/)
   })
 
   it('keeps the sheet footer reachable with the keyboard up', () => {
@@ -369,167 +461,89 @@ describe('touch ergonomics', () => {
 })
 
 describe('layout', () => {
-  it('reserves clearance for the FAB so it cannot cover the last row', () => {
-    // Dropping this reservation in the two-column block is exactly how the button once
-    // landed on a row's delete control in the sibling app.
-    expect(/\.shell \{([^}]*)\}/.exec(app)[1]).toMatch(/padding-bottom:.*--fab-size/)
+  it('reserves clearance for the tab bar and the FAB so neither covers the last card', () => {
+    // The two fixed things at the bottom of the screen are reserved ONCE, by the views
+    // wrapper, and every tab inherits it. Dropping the reservation is exactly how the button
+    // once landed on top of a row's delete control in the sibling app.
+    const views = ruleFor(app, '.views')
+    expect(views, '.views rule missing').toBeTruthy()
+    // [\s\S], not `.`: the calc wraps across three lines, and a `.`-based regex silently
+    // stops at the first newline and reports the reservation as missing.
+    const clearance = /padding-bottom:([\s\S]*?);/.exec(views)
+    expect(clearance, '.views reserves no bottom clearance').toBeTruthy()
+    expect(clearance[1]).toContain('--tabbar-height')
+    expect(clearance[1]).toContain('--fab-size')
+    expect(clearance[1]).toContain('--safe-bottom')
+
+    // And no width may take it away again. Scoped to the media block's own body, brace
+    // counted: a lazy [\s\S]*? escapes the block and matches the base rule, which is a test
+    // that always passes.
+    for (const block of blocksOf(app, 48)) {
+      expect(block, 'the FAB clearance must not be width-gated').not.toMatch(
+        /\.views \{[^}]*padding-bottom/,
+      )
+    }
   })
 
-  it('has only the two documented breakpoints, across EVERY stylesheet', () => {
-    // `app` alone was scanned, and `primitives.css` has a 48rem block of its own — so a third
-    // breakpoint added anywhere but `app.css` would not have failed the build, while CLAUDE.md
-    // claimed this pinned it. `all` is every sheet with comments stripped.
+  it('keeps the one column capped and centred, at every width', () => {
+    // A planner's 27" screen gets more paper on either side, never a second column: at 60rem
+    // a card's title and its dates drift apart into a thin strip with a canyon between them.
+    expect(tokens).toMatch(/--column-max: 40rem/)
+    expect(ruleFor(app, '.views')).toMatch(/max-width: var\(--column-max\)/)
+    expect(ruleFor(app, '.views')).toMatch(/margin: 0 auto/)
+    // The fixed bar is not inside `.views`, so it has to repeat the cap or its two tabs
+    // stretch across a monitor while the content they switch sits in a 40rem column.
+    expect(ruleFor(app, '.tabbar__inner')).toMatch(/max-width: var\(--column-max\)/)
+  })
+
+  it('has only the ONE documented breakpoint, across EVERY stylesheet', () => {
+    // Exact-set equality. `app` alone was scanned once, and `primitives.css` has a 48rem block
+    // of its own — so a second breakpoint added anywhere but `app.css` would not have failed
+    // the build. A subset check here is an assertion that always passes. `all` is every sheet
+    // with comments stripped.
     const widths = new Set([...all.matchAll(/@media \(min-width: ([\d.]+rem)\)/g)].map((m) => m[1]))
-    expect([...widths].sort()).toEqual(['48rem', '62rem'])
+    expect([...widths].sort()).toEqual(['48rem'])
   })
 
-  it('makes the sheet a centred dialog at the same breakpoint', () => {
+  it('makes the sheet a centred dialog at that same breakpoint', () => {
     expect(primitives).toMatch(/@media \(min-width: 48rem\)/)
   })
 
-  it('opts the timeline out of the two-column grid', () => {
-    // A Gantt wants the full width; a 23rem aside beside it leaves the bars unreadable.
-    expect(app).toContain('.shell--wide')
-  })
-
-  it('un-stickies the aside in one-column mode', () => {
-    // THE bug this app shipped. `--wide` is one column, so the aside and the main are
-    // stacked ROWS — and a sticky element in a stack does not sit beside the content, it
-    // floats over it. Scrolling the timeline dragged the summary card down across the rows
-    // and drew it on top of them, text over text.
-    const wide = /\.shell--wide \.shell__aside \{([^}]*)\}/.exec(app)
-    expect(wide, '.shell--wide .shell__aside rule is missing').toBeTruthy()
-    expect(wide[1]).toMatch(/position: static/)
-    // And it must come after the sticky rule, or it loses the cascade.
-    expect(app.indexOf('.shell--wide .shell__aside')).toBeGreaterThan(
-      app.indexOf('.shell__aside {'),
-    )
-  })
-
-  it('sizes the timeline gutter fluidly rather than adding a breakpoint', () => {
-    // A stepped gutter wanted a third breakpoint; clamp() gets the same result — narrow on
-    // a phone where the bars matter more than the labels, wide on a monitor where the
-    // labels are read — without one.
-    const timeline = ruleFor(app, '.timeline')
-    expect(timeline).toMatch(/--timeline-gutter: clamp\(/)
-    expect(timeline).toMatch(/overflow: auto/)
-  })
-
-  it('never fades the chart edge', () => {
-    // A mask was added as a "more to the right" hint and it misrepresented the data: a bar
-    // ending near the edge faded out, so its end read as further right than it is. And at 1x the
-    // plot now fits the container exactly, so a fade would promise content that is not there.
-    expect(all).not.toMatch(/mask-image/)
-  })
-
-  it('caps the timeline height at every width, so its axis always sticks', () => {
-    // Sticky resolves against the nearest scrollport. Without a height cap the timeline IS
-    // its own content's height, nothing ever scrolls inside it, and the axis never sticks —
-    // which left row thirty with no axis in sight.
-    //
-    // And the cap must NOT be behind a width breakpoint. 48rem is 768px; an iPhone 15 in
-    // landscape is 852px wide, so a width-gated rule gave the phone a 384px nested scroller
-    // inside a 393px viewport — the exact trap it was written to avoid — while portrait got
-    // no cap at all.
-    const timeline = /\n\.timeline \{([^}]*)\}/.exec(app)[1]
-    expect(timeline).toMatch(/overflow: auto/)
-    expect(timeline).toMatch(/max-height: max\(20rem, 70dvh\)/)
-
-    // Scoped to the media block's own body. A lazy [\s\S]*? here escapes the block and
-    // matches the base rule hundreds of lines later, which is a test that always passes.
-    for (const block of blocksOf(app, 48)) {
-      expect(block, 'the timeline height cap must not be width-gated').not.toMatch(
-        /\.timeline \{[^}]*max-height/,
-      )
-    }
-
-    const axis = /\.timeline__axis \{([^}]*)\}/.exec(app)[1]
-    expect(axis).toMatch(/position: sticky/)
-    expect(axis).toMatch(/top: 0/)
-    // Opaque, or rows show through it as they pass behind.
-    expect(axis).toMatch(/background-color: var\(--surface\)/)
-  })
-
-  it('pins the label gutter so names survive a horizontal pan', () => {
-    // Pan right without this and you are reading fifty anonymous bars.
-    for (const selector of ['.timeline__label', '.timeline__axis-gutter']) {
-      const rule = ruleFor(app, selector)
-      expect(rule, `${selector} rule missing`).toBeTruthy()
-      expect(rule, `${selector} is not pinned`).toMatch(/position: sticky/)
-      expect(rule, `${selector} has no left edge`).toMatch(/left: 0/)
-      // Transparent would let the panning bars show straight through the names.
-      expect(rule, `${selector} is not opaque`).toMatch(/background-color: var\(--surface\)/)
-    }
-  })
-
-  it('uses flex rows, not grid, so the sticky gutter can travel', () => {
-    // A sticky element is clamped to its containing block, and a GRID item's containing block
-    // is its own grid area — exactly the gutter's width, so nothing to travel within. A flex
-    // item's containing block is the flex container's content box.
-    for (const selector of ['.timeline__axis', '.timeline__row']) {
-      const rule = ruleFor(app, selector)
-      expect(rule, `${selector} should be flex`).toMatch(/display: flex/)
-      expect(rule, `${selector} must not be grid`).not.toMatch(/grid-template-columns/)
-    }
-    // The gutter is now a flex-basis, and both sides still resolve the same custom property.
-    expect(ruleFor(app, '.timeline__label')).toMatch(/flex: 0 0 var\(--timeline-gutter\)/)
-    expect(ruleFor(app, '.timeline__axis-gutter')).toMatch(/flex: 0 0 var\(--timeline-gutter\)/)
+  it('sizes the hero with a clamp rather than a second breakpoint', () => {
+    // The photograph is the one thing whose height depends on the viewport, and a stepped
+    // height wanted breakpoints of its own. A clamp gets the same result — a band on a phone,
+    // a plate on a monitor — with the single 48rem query doing nothing but the corners.
+    expect(ruleFor(app, '.hero')).toMatch(/height: clamp\(/)
+    expect(tokens).toMatch(/--fs-display: clamp\(/)
   })
 
   it('drops -webkit-overflow-scrolling, which breaks sticky in the same scroller', () => {
     // A no-op for momentum since iOS 13, and the legacy implementation created its own
-    // stacking context and broke `position: sticky` inside the scroller — now load-bearing
-    // twice over, for the axis and for the gutter.
+    // stacking context and broke `position: sticky` inside the scroller — still load-bearing
+    // for the sheet's own sticky footer.
     expect(all).not.toContain('-webkit-overflow-scrolling')
   })
 
-  it('contains only the horizontal overscroll on the timeline', () => {
-    // A horizontal pan that chains becomes an iOS back-swipe. But `contain` on BOTH axes can
-    // swallow a vertical drag that begins on the chart.
-    const timeline = /\n\.timeline \{([^}]*)\}/.exec(app)[1]
-    expect(timeline).toMatch(/overscroll-behavior-x: contain/)
-    expect(timeline).not.toMatch(/overscroll-behavior: contain/)
+  it('stitches the spine across exactly the gap it has to cross', () => {
+    // The spine is drawn per CARD and reaches into the gap below it, because one line spanning
+    // the group would run behind the month heading. The reach and the group's gap are therefore
+    // the same token by necessity: shorter and the segments visibly do not meet, longer and the
+    // line crosses the heading it was drawn this way to avoid.
+    expect(ruleFor(app, '.plan__group')).toMatch(/gap: var\(--space-3\)/)
+    expect(ruleFor(app, '.tcard::before')).toMatch(/bottom: calc\(var\(--space-3\) \* -1\)/)
+    // And nothing hangs off the last card: a line running past the last node reads as a plan
+    // that continues somewhere off screen.
+    expect(ruleFor(app, '.tcard:last-of-type::before')).toMatch(/bottom: 0/)
   })
 
-  it('scales the plot by a zoom multiplier and nothing else', () => {
-    // Zoom must change the plot's WIDTH, never the plan window: narrowing the window would
-    // clamp out-of-range bars to the edges, so a task running past the edge would look like it
-    // ends there, and `min-width: 4px` would render every out-of-window task as a phantom stub.
-    expect(ruleFor(app, '.timeline__inner')).toMatch(
-      /width: calc\(100% \* var\(--timeline-zoom\)\)/,
-    )
-    expect(ruleFor(app, '.timeline')).toMatch(/--timeline-zoom: 1/)
-  })
-
-  it('scales WIDTH, not just min-width, or the low zoom steps do nothing', () => {
-    // A `min-width` floor below the container's own width has no effect, so on a ~1200px window
-    // 1x, 1.5x and 2x all rendered identically and 3x was the first step that bound. The floor
-    // stays for the narrow case, but the width is what makes each step change.
-    const inner = ruleFor(app, '.timeline__inner')
-    expect(inner).toMatch(/^\s*width: calc\(100% \* var\(--timeline-zoom\)\);$/m)
-    expect(inner).toMatch(/min-width: calc\(34rem \* var\(--timeline-zoom\)\)/)
-  })
-
-  it('keeps the zoom toolbar outside the scroller', () => {
-    // Inside it, the controls would scroll away with the chart.
-    expect(app).toContain('.timeline__toolbar')
-    const toolbar = /\.timeline__toolbar \{([^}]*)\}/.exec(app)[1]
-    expect(toolbar).not.toMatch(/position: sticky/)
-  })
-
-  it('draws month gridlines, solid and one step off the surface', () => {
-    // Without these a bar's position is unreadable: the axis is at the top and the row
-    // somebody cares about is hundreds of pixels below it.
-    const gridline = /\.timeline__gridline \{([^}]*)\}/.exec(app)[1]
-    expect(gridline).toMatch(/width: 1px/)
-    expect(gridline).toMatch(/background-color: var\(--line\)/)
-    expect(gridline).not.toMatch(/dashed/)
-  })
-
-  it('gives the today rule the accent, and the gridlines do not compete with it', () => {
-    const now = /\.timeline__now \{([^}]*)\}/.exec(app)[1]
-    expect(now).toMatch(/background-color: var\(--accent\)/)
-    expect(now).toMatch(/width: 2px/)
+  it('contains only the horizontal overscroll on the chip row', () => {
+    // The chips are the one horizontal scroller left, and a horizontal pan that chains becomes
+    // an iOS back-swipe. But `contain` on BOTH axes swallows the vertical drag that begins on
+    // the row — which is the top of the list, where a thumb lands first.
+    const chips = ruleFor(app, '.chips')
+    expect(chips, '.chips rule missing').toBeTruthy()
+    expect(chips).toMatch(/overscroll-behavior-x: contain/)
+    expect(chips).not.toMatch(/overscroll-behavior: contain/)
   })
 })
 
@@ -542,23 +556,50 @@ describe('motion', () => {
   })
 
   it('guards every keyframe animation behind no-preference', () => {
-    for (const match of primitives.matchAll(/@keyframes\s+([\w-]+)/g)) {
-      const before = primitives.slice(0, match.index)
-      expect(
-        before.lastIndexOf('prefers-reduced-motion: no-preference'),
-        `@keyframes ${match[1]} is not guarded`,
-      ).toBeGreaterThan(-1)
+    // Per sheet, never over the joined text: `all` is four files concatenated, so a guard in
+    // primitives.css would vouch for an unguarded @keyframes in app.css.
+    for (const [name, css] of Object.entries({ tokens, base, primitives, app })) {
+      const source = code(css)
+      for (const match of source.matchAll(/@keyframes\s+([\w-]+)/g)) {
+        const before = source.slice(0, match.index)
+        expect(
+          before.lastIndexOf('prefers-reduced-motion: no-preference'),
+          `@keyframes ${match[1]} in ${name}.css is not guarded`,
+        ).toBeGreaterThan(-1)
+      }
     }
   })
 
   it('transitions only cheap, non-layout properties', () => {
-    for (const match of all.matchAll(/transition:\s*([^;]+);/g)) {
-      const declaration = match[1]
-      if (declaration.includes('var(--transition')) continue
-      expect(declaration, 'never transition all/width/height/box-shadow').not.toMatch(
-        /\ball\b|\bwidth\b|\bheight\b|box-shadow/,
+    // Every transition in the app names its duration with a token, so a scan that skips those
+    // declarations checks nothing at all: `transition: max-height var(--transition-base)` — the
+    // exact thrash this forbids — sails straight through it. The PROPERTY is what is being
+    // tested, not the timing, so every declaration is read whatever its duration says. The
+    // count is the guard against the whole scan finding nothing to look at.
+    const declarations = [...all.matchAll(/transition(?:-property)?:\s*([^;]+);/g)]
+    expect(declarations.length, 'the transition scan found nothing to scan').toBeGreaterThan(5)
+    for (const match of declarations) {
+      expect(match[1], 'never transition all/width/height/max-height/box-shadow').not.toMatch(
+        /\ball\b|\bwidth\b|\bmax-height\b|\bheight\b|box-shadow/,
       )
     }
+  })
+
+  it('does not animate the accordion open on a layout property', () => {
+    // An open card mounts its fields; a `height` or `max-height` transition on that is a
+    // reflow per frame of every card below it, and it cannot animate to `auto` anyway, so the
+    // measured version reads as a jump followed by a slide. The chevron carries the motion.
+    // `\bheight\b` matches inside `max-height`, but naming both is what makes the failure
+    // message say which one somebody reached for. [^;{}] so the scan cannot run out of the
+    // declaration and read the next rule's.
+    expect(all, 'no card may transition its own height').not.toMatch(
+      /transition[^;{}]*\b(max-)?height\b/,
+    )
+    expect(ruleFor(app, '.tcard__content')).not.toContain('transition')
+    // A keyframe on the same property would be the same reflow with the test looking the
+    // other way.
+    expect(ruleFor(app, '.tcard__content')).not.toContain('animation')
+    expect(ruleFor(app, '.tcard__chev')).toMatch(/transition: transform var\(--transition-fast\)/)
   })
 
   it('uses the tokens rather than hardcoding a duration', () => {
@@ -630,65 +671,133 @@ describe('the manifest', () => {
   })
 })
 
-describe('the header', () => {
+describe('the hero', () => {
   it('never lets the countdown wrap or shrink', () => {
     // With a long venue name and the View only badge sharing the row, "427 days to go" broke
-    // across two lines and grew the header an entire row on a 393px phone. The countdown is the
-    // one number up there; the venue is what gives way.
-    const count = ruleFor(app, '.header__count')
-    expect(count, '.header__count rule missing').toBeTruthy()
+    // across two lines and pushed the names up on a 393px phone. The countdown is the one
+    // number up here; the venue is what gives way.
+    const count = ruleFor(app, '.hero__count')
+    expect(count, '.hero__count rule missing').toBeTruthy()
     expect(count).toMatch(/flex: none/)
     expect(count).toMatch(/white-space: nowrap/)
 
-    const venue = ruleFor(app, '.header__sub-text')
+    const venue = ruleFor(app, '.hero__venue')
+    expect(venue, '.hero__venue rule missing').toBeTruthy()
     expect(venue).toMatch(/min-width: 0/)
     expect(venue).toMatch(/text-overflow: ellipsis/)
     // A flex item cannot shrink past its content without this on the container.
-    expect(ruleFor(app, '.header__sub')).toMatch(/min-width: 0/)
+    expect(ruleFor(app, '.hero__sub')).toMatch(/min-width: 0/)
+  })
+
+  it('keeps the scrim a gradient whose dense end is dark enough to read white on', () => {
+    // THE contrast mechanism for every word over the photograph. The background there is
+    // unknown, so the type is measured against the worst case the scrim allows — its end stop
+    // composited over a blown-out white sky. Lighten that stop and the countdown fails AA over
+    // a bright photo with nothing on screen saying so: at 0.55 the same case measures 4.07:1.
+    const scrim = /--photo-scrim:([^;]*);/.exec(code(tokens))
+    expect(scrim, '--photo-scrim missing').toBeTruthy()
+    expect(scrim[1], 'a flat fill would darken the faces as much as the type').toContain(
+      'linear-gradient',
+    )
+    expect(scrim[1], 'the dense end must be at the bottom, under the type').toMatch(/to bottom/)
+
+    // The last stop is the one the type sits on, and it is the one the contrast script models.
+    const stops = [...scrim[1].matchAll(/rgba\((\d+), (\d+), (\d+), ([\d.]+)\)\s*([\d.]+)%/g)]
+    expect(stops.length, 'the scrim is not a stop list this can read').toBeGreaterThan(1)
+    const dense = stops[stops.length - 1]
+    expect(Number(dense[5]), 'the dense end must land where the type is').toBe(100)
+    expect(Number(dense[4]), 'below 0.7 the measured worst case fails AA').toBeGreaterThanOrEqual(
+      0.7,
+    )
+    // Dark, not a tint: the ink over it is white.
+    for (const channel of [1, 2, 3]) {
+      expect(Number(dense[channel]), 'the scrim must be dark').toBeLessThan(64)
+    }
+    expect(tokens).toMatch(/--photo-ink: #ffffff/)
+
+    // And scripts/check-contrast.js must be modelling THIS alpha. The measurement and the
+    // token drifting apart is how the paragraph above stays true while the app is not.
+    const script = readFileSync('scripts/check-contrast.js', 'utf8')
+    expect(script).toContain(`const SCRIM_ALPHA = ${dense[4]}`)
+
+    // And it has to cover the whole photograph. A scrim that loses its `inset: 0` collapses to
+    // nothing and takes every measurement above with it, silently: the type is still white and
+    // the photo is still there.
+    const scrimRule = ruleFor(app, '.hero__scrim')
+    expect(scrimRule, '.hero__scrim rule missing').toBeTruthy()
+    expect(scrimRule).toMatch(/background: var\(--photo-scrim\)/)
+    expect(scrimRule).toMatch(/position: absolute/)
+    expect(scrimRule).toMatch(/inset: 0/)
+    // The shadow on the type is belt and braces for the sliver above the gradient's dense end,
+    // never the mechanism — a text-shadow behind display type is a smudge, not contrast.
+    expect(ruleFor(app, '.hero__title')).toMatch(/text-shadow: var\(--photo-shadow\)/)
+  })
+
+  it('carries no tracking and no tight line on the names', () => {
+    // A name here can be Japanese: tracking inserts a gap between every kana, and anything
+    // under 1.5 turns a wrapped 名前 into a solid block. The SIZE is what makes it read as
+    // display type — a clamp, so neither of the other two is ever reached for.
+    const title = ruleFor(app, '.hero__title')
+    expect(title, '.hero__title rule missing').toBeTruthy()
+    expect(title).not.toContain('letter-spacing')
+    expect(title).not.toContain('text-transform')
+    expect(title).toMatch(/line-height: var\(--lh-tight\)/)
+    expect(title).toMatch(/font-size: clamp\(/)
+
+    // No rule anywhere may spell a line-height as a bare number, which is how something under
+    // 1.5 gets in without touching the tokens the assertions above read.
+    const raw = [...all.matchAll(/line-height:\s*([\d.]+)\s*;/g)].map((m) => m[1])
+    expect(raw, 'line-height must come from a --lh-* token').toEqual([])
   })
 })
 
-describe('subtasks on the timeline', () => {
-  it('draws a subtask as a 1px rail, never as a bar', () => {
-    // A subtask has no dates, so it has no extent of its own to draw. The rail says the one
-    // thing the model does hold — that it happens inside its parent's window — and it has to be
-    // impossible to mistake for a bar: 1px against the bar's 8px, square against its pill, and
-    // no fill at all.
-    const rail = ruleFor(app, '.timeline__sub-rail')
-    expect(rail, '.timeline__sub-rail rule missing').toBeTruthy()
-    expect(rail).toMatch(/height: 1px/)
-    expect(rail).not.toMatch(/border-radius/)
-    expect(rail).not.toMatch(/--state-fill/)
+describe('the tab bar', () => {
+  it('is opaque where the blur is unsupported', () => {
+    // The bar is a translucent 82% wash of --bg, which over a scrolling white card is not
+    // legible on its own: without this fallback the list reads straight through the two tabs.
+    const fallback = blocksAfter(
+      code(app),
+      '@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {',
+    )
+    expect(fallback.length, 'no @supports not fallback for the blur').toBe(1)
+    expect(fallback[0]).toMatch(/\.tabbar \{[^}]*background-color: var\(--bg\);/)
+    // Both spellings in the query, or Safari — the one platform that needs the prefix — is
+    // told it has no blur and gets the opaque bar it did not need.
+    expect(app).toContain('-webkit-backdrop-filter')
   })
 
-  it('draws that rail in --track-line, not --line', () => {
-    // It is the child row's ONLY mark, and --line measures 1.2:1 on the surface — the same
-    // defect that made the meter's hairline draw nothing whatsoever.
-    expect(ruleFor(app, '.timeline__sub-rail')).toMatch(/background-color: var\(--track-line\)/)
+  it('does not mark the selected tab with colour alone', () => {
+    // The accent on the label is one channel; a rule on the bar's own top edge is the second,
+    // and `aria-current` in TabBar.jsx is the third. Colour alone fails 1.4.1.
+    const marker = ruleFor(app, '.tabbtn--on::before')
+    expect(marker, '.tabbtn--on::before rule missing').toBeTruthy()
+    expect(marker).toMatch(/content: ""/)
+    expect(marker).toMatch(/height: 2px/)
+    expect(marker).toMatch(/background-color: var\(--accent\)/)
+    expect(ruleFor(app, '.tabbtn--on')).toMatch(/color: var\(--accent\)/)
   })
 
+  it('gives each tab the full bar height and a 13px label', () => {
+    // Two controls across the whole width, so the height is the only dimension that can be
+    // short — and --tabbar-height is what every fixed thing above the bar composes from.
+    expect(tokens).toMatch(/--tabbar-height: 3\.5rem/)
+    expect(ruleFor(app, '.tabbtn')).toMatch(/min-height: var\(--tabbar-height\)/)
+    expect(ruleFor(app, '.tabbtn__label')).toMatch(/font-size: var\(--fs-caption\)/)
+    // The bar pads ITSELF with the inset rather than sitting above it, or the blur stops
+    // short of the bottom edge of the glass and a strip of list shows under it.
+    expect(ruleFor(app, '.tabbar')).toMatch(/padding-bottom: var\(--safe-bottom\)/)
+    expect(ruleFor(app, '.tabbar')).toMatch(/z-index: var\(--z-tabbar\)/)
+  })
+})
+
+describe('the checklist and the tally', () => {
   it('never colours the tally', () => {
     // A 5/5 in the done colour would claim a `done_at` the sheet does not have: all subtasks
     // done deliberately does not make a parent done.
-    const tally = ruleFor(app, '.timeline__label-tally')
-    expect(tally, '.timeline__label-tally rule missing').toBeTruthy()
+    const tally = ruleFor(app, '.tcard__tally')
+    expect(tally, '.tcard__tally rule missing').toBeTruthy()
     expect(tally).toMatch(/color: var\(--ink-3\)/)
     expect(tally).not.toMatch(/--good|--critical|--accent/)
-  })
-
-  it('keeps the label stack free of block padding', () => {
-    // The gutter grows by CONTENT. Block padding there reintroduces the band the plot shows
-    // through behind the sticky label, which is the row-gap defect.
-    expect(ruleFor(app, '.timeline__label-stack')).not.toMatch(/padding/)
-  })
-
-  it('widens the gutter from the same variable rather than a third breakpoint', () => {
-    // The titles are the content while the outline is open, so the column holding them earns
-    // more room — but as one variable, not a media query. There are exactly two breakpoints.
-    expect(ruleFor(app, '.timeline--outline')).toMatch(
-      /--timeline-gutter: var\(--timeline-gutter-open\)/,
-    )
-    expect(ruleFor(app, '.timeline')).toMatch(/--timeline-gutter-open: clamp\(/)
   })
 
   it('gives the whole subtask row a target in the list', () => {
@@ -702,7 +811,15 @@ describe('subtasks on the timeline', () => {
 
   it('ties the checklist to its parent with one vertical rule and no horizontal ones', () => {
     const list = ruleFor(app, '.subtasks')
+    expect(list, '.subtasks rule missing').toBeTruthy()
     expect(list).toMatch(/border-inline-start: 1px solid var\(--line\)/)
     expect(list).not.toMatch(/border-block|border-top|border-bottom/)
+  })
+
+  it('keeps a subtask off the meter and off the badge', () => {
+    // A subtask is a title and a tick: no dates, so no extent to draw and no state to badge.
+    // A meter in a checklist row would be a bar with nothing behind it.
+    expect(code(app)).not.toMatch(/\.subtask[\w-]*[^{]*\{[^}]*(--state-fill|\.meter)/)
+    expect(ruleFor(app, '.subtask__title')).toMatch(/font-size: var\(--fs-body\)/)
   })
 })

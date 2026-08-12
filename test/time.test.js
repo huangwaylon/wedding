@@ -12,6 +12,7 @@ import {
   daysUntil,
   endOfDay,
   formatWall,
+  formatWallChip,
   formatWallMonth,
   formatWallRange,
   instantToWall,
@@ -260,5 +261,45 @@ describe('formatting', () => {
   it('survives a half-open range', () => {
     expect(formatWallRange('', '', {})).toBe('')
     expect(formatWallRange('2027-04-18T00:00', '', { allDay: true, locale: 'en' })).toContain('18')
+  })
+})
+
+describe('formatWallChip', () => {
+  it('splits a card chip into the day and the month above it', () => {
+    // Two values rather than one string, because the card sets them at completely different
+    // sizes — the day is what somebody scans a month of cards for.
+    expect(formatWallChip('2027-04-18T00:00', { locale: 'en' })).toEqual({
+      day: '18',
+      month: 'APR',
+    })
+  })
+
+  it('uppercases the month in JS, not with `text-transform`', () => {
+    // CSS `text-transform` is forbidden anywhere Japanese can pass through: it is a no-op on
+    // kanji, so a stylesheet holding both languages would silently uppercase the Latin half
+    // only. `toLocaleUpperCase` is the locale-aware form and leaves '4月' exactly as it is.
+    expect(formatWallChip('2027-04-18T00:00', { locale: 'ja' }).month).toBe('4月')
+    expect(formatWallChip('2027-04-18T00:00', { locale: 'en' }).month).toBe('APR')
+  })
+
+  it('keeps the day a bare numeral in Japanese', () => {
+    // The one deliberate exception to routing numbers through Intl. `{ day: 'numeric' }` in
+    // `ja` returns '18日', which does not fit a 36px chip at --fs-xl and printed the day as
+    // '18' / '日' on two rows with '4月' under it. A day is 1–31, so there is no grouping
+    // separator for Intl to add and the suffix repeats the month directly beneath.
+    expect(formatWallChip('2027-04-18T00:00', { locale: 'ja' })).toEqual({
+      day: '18',
+      month: '4月',
+    })
+  })
+
+  it('is null rather than a plausible-looking wrong chip', () => {
+    // A task with no dates has to render no chip at all. Inventing today, or the created-on
+    // date, would put a date on the card that is nowhere in the sheet.
+    expect(formatWallChip('', { locale: 'en' })).toBeNull()
+    expect(formatWallChip('nonsense', { locale: 'en' })).toBeNull()
+    // Calendar-invalid, not merely malformed — the same validation as `parseWall`, or this
+    // chip would say "31" for a task that silently landed in March.
+    expect(formatWallChip('2027-02-31T00:00', { locale: 'en' })).toBeNull()
   })
 })

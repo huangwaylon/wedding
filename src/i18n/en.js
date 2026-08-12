@@ -17,14 +17,10 @@ export default {
   'common.dash': '–',
   'common.saving': 'Saving…',
   'common.loading': 'Loading the board…',
-  'common.optional': 'optional',
 
   'access.viewOnly': 'View only',
-  'access.viewOnlyHint':
-    'You are viewing this board. Only the couple can change it.',
   'access.rejected': 'This edit link was rejected',
-  'access.rejectedHint':
-    'It has probably been rotated. Ask for the current link, or paste it in Settings.',
+  'access.rejectedHint': 'Ask for the current link, or paste it in Settings.',
   'access.pasteLabel': 'Paste your edit link',
   'access.pasteHint':
     'Only needed if the link did not carry over — an installed app has its own storage.',
@@ -43,16 +39,12 @@ export default {
   'overall.title': 'Overall progress',
   'overall.empty': 'Nothing to measure yet',
   'overall.expected': 'On schedule: {percent}%',
-  'overall.expectedHint': 'The mark shows where this would sit if everything were on schedule.',
   'overall.pace.ahead': '{percent}% ahead of schedule',
   'overall.pace.behind': {
     one: 'Behind: {count} task is past its date',
     other: 'Behind: {count} tasks are past their date',
   },
   'overall.pace.ontrack': 'On schedule',
-  'overall.tasks': { one: '{count} task', other: '{count} tasks' },
-  'overall.method':
-    'Every task counts equally, however many subtasks it has. A task with subtasks is measured by how many are ticked; the rest by how much of their window has passed.',
 
   'state.done': 'Done',
   'state.overdue': 'Overdue',
@@ -62,14 +54,19 @@ export default {
 
   'filter.all': 'All',
   'filter.label': 'Show',
-  'view.label': 'View',
-  'view.list': 'List',
-  'view.timeline': 'Timeline',
+  'tab.label': 'Sections',
+  'tab.home': 'Home',
+  'tab.timeline': 'Timeline',
 
   'list.unscheduled': 'No dates set',
-  'list.emptyFiltered': 'Nothing matches this filter.',
+  'list.emptyFiltered': 'Nothing matches.',
   'list.showAll': 'Show everything',
   'list.percentLabel': '{percent}% complete',
+  /* The collapsed card's accessible name. It states the state in WORDS, which is what
+     keeps the node's colour from being the only channel — and the tallied variant carries
+     the count, because a tallied card's fill IS a count rather than a clock reading. */
+  'plan.cardLabel': '{title}: {when}, {percent}% complete, {state}',
+  'plan.cardLabelSubs': '{title}: {when}, {percent}% complete, {state}, {subs}',
   'list.subtasks': {
     one: '{done} of {count} subtask',
     other: '{done} of {count} subtasks',
@@ -82,46 +79,33 @@ export default {
      way to tell a ticked item from an open one, since the glyph is decorative. */
   'list.isDone': 'Done: {title}',
   'list.isNotDone': 'Not done: {title}',
-  'list.editTask': 'Edit {title}',
   'list.deleteTask': 'Delete {title}',
 
   'empty.title': 'The board is empty',
-  'empty.viewer': 'The couple has not added anything yet.',
-  'empty.editor': 'Add tasks one at a time, or start from a checklist.',
-  'empty.needsDate': 'Set the wedding date in Settings first — a checklist is built backwards from it.',
+  'empty.viewer': 'Nothing added yet.',
+  'empty.needsDate': 'A checklist counts back from the wedding date.',
   'empty.setDate': 'Set the wedding date',
-  'empty.seedTitle': 'Start from a checklist',
   'empty.seeding': 'Building the checklist…',
   'empty.seeded': { one: 'Added {count} task.', other: 'Added {count} tasks.' },
 
   'template.classic12': 'Twelve-month plan',
-  'template.classic12.about':
-    'The long Anglophone countdown: venue and guest list first, then vendors, stationery, and the run-up.',
   'template.japan8': 'Japanese eight-month plan',
-  'template.japan8.about':
-    '結婚式準備 order: 両家挨拶 and 会場 first, then 打ち合わせ, 招待状, 引き出物 and 席次表.',
   'template.count': { one: '{count} task', other: '{count} tasks' },
   'template.use': 'Use this checklist',
 
   'form.newTitle': 'New task',
-  'form.editTitle': 'Edit task',
-  'form.title': 'What has to happen',
+  'form.title': 'Title',
   'form.titlePlaceholder': 'Book the venue',
   'form.category': 'Category',
   'form.categoryNone': 'No category',
   'form.allDay': 'All day',
-  'form.allDayHint': 'A window of whole days, with no clock time.',
   'form.start': 'Starts',
   'form.end': 'Due by',
   'form.startTime': 'Start time',
   'form.endTime': 'End time',
-  'form.owner': 'Who is on it',
+  'form.owner': 'Owner',
   'form.ownerPlaceholder': 'Either of us',
   'form.notes': 'Notes',
-  'form.notesPlaceholder': 'Anything worth remembering',
-  'form.subtasks': 'Subtasks',
-  'form.subtasksHint': 'Subtasks save as you add them, not when you press Save.',
-  'form.done': 'Already done',
   'form.deleteThis': 'Delete this task',
 
   'error.MISSING_TITLE': 'Give the task a name.',
@@ -138,11 +122,6 @@ export default {
     other: 'Its {count} subtasks go with it.',
   },
 
-  'detail.state': 'Status',
-  'detail.subtasks': 'Subtasks',
-  'detail.window': 'When',
-  'detail.progress': 'Progress',
-
   'deleted.title': { one: 'Deleted ({count})', other: 'Deleted ({count})' },
   'deleted.restored': 'Task restored.',
 
@@ -155,14 +134,12 @@ export default {
   'settings.weddingTime': 'Time',
   'settings.venue': 'Venue',
   'settings.timezone': 'Time zone',
-  'settings.timezoneHint':
-    'Every time on this board is read in this zone, so 14:00 means 14:00 at the venue for everyone.',
+  'settings.timezoneHint': 'Every time on the board is read in this zone.',
   'settings.timezoneBad': 'Not a time zone name. Try Asia/Tokyo or America/Los_Angeles.',
   'settings.timezoneMismatch':
     'The spreadsheet itself is set to {zone}. Times typed straight into the sheet may land off.',
   'settings.categories': 'Categories',
-  'settings.categoriesHint': 'Comma separated. Used by the category picker.',
-  'settings.shared': 'Shared with everyone on this board',
+  'settings.categoriesHint': 'Comma separated.',
   'settings.device': 'This device only',
   'settings.language': 'Language',
   'settings.accent': 'Colour',
@@ -172,18 +149,6 @@ export default {
   'settings.compactHint': { one: 'Removes {count} tombstoned row for good.', other: 'Removes {count} tombstoned rows for good.' },
   'settings.compacted': 'Deleted tasks purged.',
   'settings.saved': 'Settings saved.',
-
-  'timeline.title': 'Timeline',
-  'timeline.hint': 'Tap a row for details',
-  'timeline.zoom': 'Zoom',
-  'timeline.zoomIn': 'Zoom in',
-  'timeline.zoomOut': 'Zoom out',
-  'timeline.today': 'Today',
-  'timeline.empty': 'Nothing with dates to draw yet.',
-  'timeline.rowLabel': '{title}: {range}, {percent}% complete, {state}',
-  'timeline.rowLabelSubs': '{title}: {range}, {percent}% complete, {state}, {subs}',
-  'timeline.subRowLabel': '{tick}. Subtask of {parent}',
-  'timeline.outline': 'Subtasks',
 
   'accent.rose': 'Rose',
   'accent.sage': 'Sage',
@@ -207,7 +172,7 @@ export default {
   'category.other': 'Other',
 
   'status.stale': 'Showing saved data',
-  'status.staleHint': 'The board could not be reached. This is the last copy this device saw.',
+  'status.staleHint': 'The last copy this device saw.',
   'status.refresh': 'Refresh',
 
   'toast.saved': 'Saved.',

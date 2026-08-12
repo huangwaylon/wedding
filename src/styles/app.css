@@ -1,31 +1,36 @@
 /* app.css — app-specific layout and components. Generic pieces are in
    primitives.css; every value comes from tokens.css.
 
-   Mobile-first. One column, capped at --column-max from 48rem, two columns at
-   62rem. There is no third breakpoint. */
+   Mobile-first, ONE column at every width, capped at --column-max and centred. The
+   only breakpoint is 48rem, and all it does is give the photograph more room. */
 
-/* ---- Shell ------------------------------------------------------------- */
+/* ---- Shell -------------------------------------------------------------
+   The tab bar is fixed, so nothing else has to reason about it: `.views` reserves
+   the bar plus the FAB below its content, once, and every tab inherits that. */
 .app {
   min-height: 100dvh;
 }
 
-.shell {
+.views {
   width: 100%;
   max-width: var(--column-max);
   margin: 0 auto;
+  padding-bottom: calc(
+    var(--tabbar-height) + var(--fab-size) + var(--space-6) + var(--safe-bottom)
+  );
+}
+
+/* Padding only. `.stack` supplies the rhythm, and the two are always used together —
+   a tab that also declared a gap would set it twice with two different meanings. */
+.view {
   padding: var(--space-4);
-  /* The two stacks are siblings and `.stack`'s gap only applies INSIDE each one, so below
-     62rem — where `.shell` is not yet a grid — they had ZERO separation: the summary card's
-     bottom hairline and the first filter chip's top edge touched, which is what made the
-     chips read as welded to the card. The 62rem grid overrides `display` and supplies its
-     own gap. */
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  /* Clearance for the FAB, so it never covers the last task in the list. Every
-     layout below keeps this reservation; dropping it in the two-column block is
-     exactly how the button once landed on a row's delete control. */
-  padding-bottom: calc(var(--fab-size) + var(--space-7) + var(--safe-bottom));
+}
+
+/* The Timeline tab has no photograph above it, so it pads past the status bar and the
+   Dynamic Island itself. The Home tab must NOT: the hero paints into that inset
+   deliberately. */
+.view--plan {
+  padding-top: calc(var(--safe-top) + var(--space-4));
 }
 
 .stack {
@@ -34,64 +39,116 @@
   gap: var(--space-4);
 }
 
-/* ---- Header ------------------------------------------------------------
-   Sticky, and it paints into the top safe area rather than sitting below it. */
-.app__header {
-  position: sticky;
-  top: 0;
-  z-index: var(--z-header);
-  padding-top: var(--safe-top);
-  background-color: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
+/* ---- Hero --------------------------------------------------------------
+   A full-bleed photograph with the couple's names over its dense end. It is the
+   first thing on screen and it is why the Home tab exists.
+
+   `isolation: isolate` keeps the scrim, the settings control and the type in one
+   local stacking context, so none of them can be raised above the fixed tab bar by
+   an ancestor's z-index later. */
+.hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* Tall enough to be a photograph rather than a banner, capped so it never eats a
+     whole laptop screen. A clamp, not a breakpoint. */
+  height: clamp(19rem, 52vh, 30rem);
+  overflow: hidden;
 }
 
-.header__inner {
+.hero__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Above centre. The faces sit at 40–44% of the photograph's own height, so 42% holds
+     them at 40–45% of the band at every width the app has — including the pathological
+     one, a 1248x304 desktop letterbox, where 38% pushed the second face down into the
+     scrim's dense end. */
+  object-position: 50% 42%;
+}
+
+/* The gradient IS the contrast mechanism for every word below — see --photo-scrim in
+   tokens.css for the measured worst case. Not decoration: lighten its end stop and
+   white type over a bright sky fails AA. */
+.hero__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--photo-scrim);
+}
+
+/* On the photograph rather than in a bar of its own: a header band above a full-bleed
+   image would cost a row of chrome to hold one rarely-pressed control. The disc is
+   what lets a white glyph stay legible over an unknown pixel. */
+.hero__gear {
+  position: absolute;
+  top: calc(var(--safe-top) + var(--space-2));
+  right: var(--space-3);
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  max-width: var(--shell-max);
-  min-height: var(--header-height);
-  margin: 0 auto;
-  padding: var(--space-2) var(--space-4);
+  justify-content: center;
+  width: var(--tap-target);
+  height: var(--tap-target);
+  border-radius: var(--radius-full);
+  background-color: var(--photo-control);
+  color: var(--photo-ink);
+  transition: background-color var(--transition-fast);
 }
 
-.header__text {
-  flex: 1;
-  min-width: 0;
+.hero__gear:hover {
+  background-color: var(--photo-control-hover);
 }
 
-.header__title {
-  font-size: var(--fs-lg);
+.hero__text {
+  position: relative;
+  padding: var(--space-5) var(--space-4) var(--space-6);
+}
+
+.hero__eyebrow {
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  color: var(--photo-ink-2);
+  text-shadow: var(--photo-shadow);
+}
+
+/* No tracking and no line-height below 1.5, at any size: these are names, and a name
+   here can be Japanese. The size is fluid instead — that is what makes it read as
+   display type without touching either. */
+.hero__title {
+  margin-top: var(--space-1);
+  font-size: clamp(2rem, 9vw, 2.75rem);
   font-weight: 600;
-  /* One line, ellipsised: two names and a venue can be long, and a header that
-     reflows to three lines on a 320px phone pushes the board off screen. */
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: var(--lh-tight);
+  color: var(--photo-ink);
+  text-shadow: var(--photo-shadow);
 }
 
-.header__sub {
+.hero__sub {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  font-size: var(--fs-caption);
-  color: var(--ink-3);
+  margin-top: var(--space-2);
+  font-size: var(--fs-label);
+  color: var(--photo-ink-2);
+  text-shadow: var(--photo-shadow);
 }
 
-/* THE COUNTDOWN NEVER WRAPS AND NEVER SHRINKS. It is the one number in the header, and with a
-   long venue name beside it and the View only badge after that, "427 days / to go" broke across
-   two lines and grew the header a whole row on a 393px phone. */
-.header__count {
+/* THE COUNTDOWN NEVER WRAPS AND NEVER SHRINKS. It is the one number up here, and with
+   a long venue name beside it and the View only badge after that, "427 days to go"
+   broke across two lines and pushed the names up. */
+.hero__count {
   flex: none;
+  font-weight: 500;
   white-space: nowrap;
 }
 
-/* The venue is what gives way instead — it is the one part of this row that can be truncated and
-   still say something useful, which is why it already had the ellipsis. */
-.header__sub-text {
+/* The venue gives way instead — it is the one part of this row that can be truncated
+   and still say something useful. */
+.hero__venue {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -99,17 +156,88 @@
   white-space: nowrap;
 }
 
-.header__actions {
+@media (min-width: 48rem) {
+  /* Past the phone the column is centred with paper on both sides, so the photograph
+     stops being edge-to-edge and becomes a plate: taller, and rounded where it meets
+     the content below it. The top stays square — it runs off the top of the screen. */
+  .hero {
+    height: clamp(22rem, 46vh, 34rem);
+    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  }
+}
+
+/* ---- Bottom tab bar ----------------------------------------------------
+   Two destinations, fixed, translucent over whatever scrolls beneath it. It pads
+   itself with the bottom inset rather than sitting above it, so the blur runs to the
+   bottom edge of the glass the way a platform tab bar does. */
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-tabbar);
+  padding-bottom: var(--safe-bottom);
+  background-color: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line);
+}
+
+/* Without a working blur the bar has to be opaque, or the list reads straight through
+   it. `color-mix` at 82% over a scrolling card is not legible on its own. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar {
+    background-color: var(--bg);
+  }
+}
+
+.tabbar__inner {
   display: flex;
+  width: 100%;
+  max-width: var(--column-max);
+  margin: 0 auto;
+}
+
+.tabbtn {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-1);
-  flex: none;
+  min-height: var(--tabbar-height);
+  color: var(--ink-3);
+  transition: color var(--transition-fast);
+}
+
+.tabbtn--on {
+  color: var(--accent);
+}
+
+.tabbtn__label {
+  font-size: var(--fs-caption);
+  font-weight: 500;
+}
+
+/* A second channel for the selected tab, so it is not colour alone: a short rule on
+   the bar's own top edge, which is where a platform tab bar puts it. `aria-current`
+   is the third. */
+.tabbtn--on::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1.75rem;
+  height: 2px;
+  border-radius: 0 0 var(--radius-full) var(--radius-full);
+  background-color: var(--accent);
+  transform: translateX(-50%);
 }
 
 /* ---- Overall progress --------------------------------------------------
    The one hero figure in the app. `container-type: inline-size` is what lets
-   --fs-display be container-relative, so the same card reads correctly in a
-   320px phone column and in a 23rem desktop aside. */
+   --fs-display be container-relative, so the same card reads correctly in a 320px
+   phone column and at the full 40rem cap. */
 .overall {
   container-type: inline-size;
 }
@@ -124,8 +252,8 @@
 .overall__percent {
   font-size: var(--fs-display);
   font-weight: 600;
-  /* The single carve-out from the 1.5 line-height floor: this element renders
-     digits and a percent sign, never Japanese. */
+  /* The single carve-out from the 1.5 line-height floor: this element renders digits
+     and a percent sign, never Japanese. */
   line-height: var(--lh-flat);
   /* Proportional figures deliberately, not tabular — see base.css. */
   letter-spacing: -0.02em;
@@ -147,28 +275,6 @@
   margin-bottom: var(--space-2);
 }
 
-.overall__legend {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--fs-caption);
-  color: var(--ink-3);
-  margin-bottom: var(--space-4);
-}
-
-/* A miniature of the meter's tick, so the legend explains the mark by showing it
-   rather than by describing its position. */
-.overall__legend-mark {
-  width: 2px;
-  height: 0.75rem;
-  flex: none;
-  border-radius: var(--radius-full);
-  background-color: var(--ink);
-  box-shadow: 0 0 0 2px var(--surface);
-  margin-left: 2px;
-  margin-right: 2px;
-}
-
 /* Four counts. Two columns on a narrow phone, four once there is room — never a
    single row of four on 320px, where the numbers and their labels collide. */
 .overall__stats {
@@ -186,8 +292,8 @@
 }
 
 .stat {
-  /* The markup is dt-then-dd, which is the only valid order inside a `dl`; the number still
-     reads above its label. */
+  /* The markup is dt-then-dd, which is the only valid order inside a `dl`; the number
+     still reads above its label. */
   display: flex;
   flex-direction: column-reverse;
 }
@@ -210,288 +316,259 @@
   color: var(--ink-4);
 }
 
-.overall__method {
-  margin-top: var(--space-4);
-}
-
-/* ---- Overall progress, compact ----------------------------------------
-   Timeline view. The tall card pushed a thirty-row Gantt off the screen, so here the
-   summary becomes one band: the figure and the verdict on the left, the meter and the
-   counts filling the rest. Stacks on a narrow screen, because two columns of this at 390px
-   is worse than one.
-
-   Note `container-type: inline-size` is still on `.overall`, so --fs-display resolves
-   against the CARD here rather than the aside — which is why the figure needs its own
-   size below instead of inheriting the hero step. */
-.overall--compact {
-  display: grid;
-  gap: var(--space-3) var(--space-6);
-  padding: var(--space-4) var(--space-5);
-}
-
-.overall--compact .overall__figure {
-  margin-bottom: 0;
-}
-
-/* Not --fs-display: at this size the number is a stat, not the hero. One hero per view,
-   and in timeline view the chart is it. */
-.overall--compact .overall__percent {
-  font-size: var(--fs-xl);
-}
-
-.overall--compact .overall__unit {
-  font-size: var(--fs-lg);
-}
-
-.overall--compact .overall__pace {
-  margin-bottom: 0;
-}
-
-.overall--compact .overall__meter {
-  margin-bottom: 0;
-}
-
-.overall--compact .overall__stats {
-  padding-top: 0;
-  border-top: 0;
-  /* Deliberately NOT forcing four columns. The base card's container query drops to two
-     below 22rem for a documented reason — four tiles in ~70px collide — and forcing four
-     here meant the same data had two rhythms on the same phone depending on the view. */
-}
-
-.overall--compact .stat__value {
-  font-size: var(--fs-body);
-}
-
-.overall__lead {
+/* ---- The plan ----------------------------------------------------------
+   A stack of month groups. The gap between groups is larger than the gap
+   between cards inside one, because that difference is the only thing
+   separating "next month" from "next task". */
+.plan {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2) var(--space-3);
+  flex-direction: column;
+  gap: var(--space-6);
 }
 
-.overall__band {
+/* Flex, and the gap here is load-bearing: `.tcard::before` reaches into it by
+   exactly --space-3 to stitch the spine across the gap between two cards. The
+   two values must stay equal. */
+.plan__group {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  justify-content: center;
 }
 
-@media (min-width: 48rem) {
-  .overall--compact {
-    grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
-    align-items: center;
-  }
-
-  .overall__lead {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-1);
-  }
-}
-
-/* ---- Controls row -----------------------------------------------------
-   The five filter chips measure ~453px against 361px of card, so they used to wrap to two
-   rows and push the segmented control to a third: 132px of a 793px screen before the first
-   task. One scrollable line is both shorter AND lets the chips take the full 44px target —
-   the iOS convention for a filter row, and the reason the chips are no longer 36px. */
-.controls {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-3);
-}
-
-.controls__filters {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: var(--space-2);
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  /* Bleed to the shell's edge and pad back, so a chip scrolls off the screen edge rather
-     than stopping short inside the padding — which reads as a broken row rather than a
-     scrollable one. */
-  margin-inline: calc(var(--space-4) * -1);
-  padding-inline: var(--space-4);
-  /* Room for the focus ring, which a scroll container would otherwise clip. */
-  padding-block: 2px;
-  scroll-padding-inline: var(--space-4);
-}
-
-/* The scrollbar is an overlay on touch and hidden here on desktop, where the row does not
-   overflow anyway. */
-.controls__filters::-webkit-scrollbar {
-  display: none;
-}
-
-/* `.controls` is `align-items: stretch` on a phone so the scrolling chip row can bleed to both
-   edges; the segmented control must opt out or it spans the whole width with dead space. */
-.controls > .segmented {
-  align-self: flex-start;
-}
-
-@media (min-width: 48rem) {
-  .controls {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  /* Past the phone there is room for every chip, so the row stops being a scroller. */
-  .controls__filters {
-    flex-wrap: wrap;
-    overflow: visible;
-    margin-inline: 0;
-    padding-inline: 0;
-  }
-}
-
-/* ---- Task list -------------------------------------------------------- */
-.group + .group {
-  margin-top: var(--space-5);
-}
-
-.group__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-2);
-  padding: 0 var(--space-1);
-}
-
-.group__title {
+/* The month, quiet. No text-transform and no letter-spacing — a short month is
+   Japanese-capable (4月), uppercase is a no-op on kanji, and tracking inserts a
+   gap between every kana. Size, weight and ink carry the micro-label instead.
+   Indented to the cards' date column so the heading sits over the dates it
+   names. */
+.plan__month {
+  padding-inline-start: var(--space-6);
   font-size: var(--fs-caption);
   font-weight: 600;
+  line-height: var(--lh-tight);
   color: var(--ink-2);
 }
 
-.group__rule {
-  flex: 1;
-  height: 1px;
-  background-color: var(--line);
-}
+/* ---- A task card ------------------------------------------------------
+   Two columns: the 44px check, then everything else. The check cannot live
+   inside the head — a button inside a button is dropped by the parser — so it is
+   a sibling, and the grid is what keeps the two on one row with the open content
+   spanning beneath them.
 
-.tasks {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-/* A row is a card. Grid rather than flex so the meter can span the full width
-   underneath the title and controls without a wrapper element. */
-.task {
+   The left padding is the spine's lane: the node sits at --space-3 and the
+   check clears it. */
+.tcard {
+  position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: var(--tap-target) minmax(0, 1fr);
   align-items: start;
-  gap: var(--space-1) var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-6);
   background-color: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
 }
 
-/* An unsaved row. Opacity only — no spinner and no skeleton: the row is real and
-   readable, it just has not landed yet. */
-.task--pending {
+/* THE SPINE, drawn per card and stitched across the gap below it, rather than
+   once on the group: a single line spanning the group would run behind the month
+   heading, and masking it there would depend on the heading's own background
+   matching whatever the tab is painted on. Each segment runs the card's full
+   height and --space-3 further — exactly the group's gap — so the segments meet.
+
+   --track-line, NOT --line. This is the same defect that made the meter's hairline
+   draw nothing: --line measures 1.2:1 against the card it sits on, so the spine was
+   invisible at 390px and the nodes read as twelve unrelated dots. --track-line is
+   1.95:1 on --surface — quiet, and actually there. */
+.tcard::before {
+  content: "";
+  position: absolute;
+  left: var(--space-3);
+  top: 0;
+  bottom: calc(var(--space-3) * -1);
+  width: 2px;
+  margin-left: -1px;
+  background-color: var(--track-line);
+}
+
+/* Nothing hangs off the final card: a line running past the last node reads as
+   a plan that continues somewhere off screen. */
+.tcard:last-of-type::before {
+  bottom: 0;
+}
+
+/* An open card contains form controls of its own, and 1.4.11 wants 3:1 for the
+   boundary that identifies one — which --line is nowhere near. */
+.tcard--open {
+  border-color: var(--line-input);
+}
+
+/* An unsaved card. Opacity only — no spinner and no skeleton: the card is real
+   and readable, it just has not landed yet. */
+.tcard--pending {
   opacity: 0.55;
 }
 
-.task__check {
-  grid-row: 1 / 2;
+/* ---- The check --------------------------------------------------------
+   The primary interaction of the whole app, at the full tap target and in the
+   same ink and radius as the icon buttons elsewhere. */
+.tcard__check {
+  grid-column: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The primary interaction of the whole app. It was a 36px square pinned to the top-left
-     corner of a ~110px card with the rest of the row dead; now it is the full tap target and
-     matches the icon buttons opposite it in both ink and radius. */
   width: var(--tap-target);
   min-height: var(--tap-target);
-  margin-left: calc(var(--space-3) * -1);
   border-radius: var(--radius-md);
   color: var(--ink-2);
-  transition: color var(--transition-fast), background-color var(--transition-fast);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
-.task__check:hover {
+.tcard__check:hover {
   background-color: var(--sunken);
   color: var(--ink);
 }
 
-.task__check--on {
+.tcard__check--on {
   color: var(--good);
 }
 
-/* Read-only: the same slot, so a viewer's rows line up with an editor's rather
-   than shifting 36px left. */
-.task__check--static {
+/* Read-only: the same slot, so a viewer's cards line up with an editor's rather
+   than shifting 44px. */
+.tcard__check--static {
   cursor: default;
 }
 
-.task__main {
-  grid-column: 2 / 3;
-  min-width: 0;
-  padding-top: 0.375rem;
+/* ---- The head --------------------------------------------------------
+   One target for the whole collapsed row, so a card costs two controls instead
+   of five. `align-items: flex-start` rather than centre: the date has to sit
+   against the title's first line, and the body grows downwards. */
+.tcard__head {
+  grid-column: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: var(--tap-target);
+  padding-block: var(--space-1);
+  text-align: start;
 }
 
-.task__title {
+/* The node, on the spine. `.dot` supplies the state fill from the one state
+   table; only the size and the position belong here. A step bigger than a stat
+   tile's dot, because this one has a 2px line running through it. */
+.tcard__node {
+  position: absolute;
+  left: var(--space-3);
+  /* The day number's optical centre — card padding, the head's own padding and
+     half the day's 1.5 line box — not the card's centre: a fixed offset keeps the
+     nodes in one regular column whether a card is one line, three, or open. */
+  top: 1.875rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  transform: translate(-50%, -50%);
+}
+
+/* A ring on the one state whose figure reads as its own opposite — an expired
+   unfinished window is 100% and nowhere near done. Shape as well as hue, and the
+   card also says the word; see StateBadge.
+
+   `--state-wash` rather than `--critical-wash` directly: the card root sets it from
+   the one state table, so this rule names the ROLE and the table stays the only
+   place a state maps to a colour. */
+.tcard--overdue .tcard__node {
+  box-shadow: 0 0 0 3px var(--state-wash);
+}
+
+/* ---- The date chip ----------------------------------------------------
+   day over month, fixed width so every title in a group starts in the same
+   column. `flex: none` because the day is the thing a month of cards is scanned
+   for and must never be squeezed by a long title. */
+.tcard__date {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 2.25rem;
+}
+
+/* Spans, because the head is a <button> and its content model is phrasing
+   content, so they need blockifying by hand. line-height stays at --lh-tight:
+   nothing in this app goes under 1.5 but the digits-only hero figure. */
+.tcard__day {
+  display: block;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  line-height: var(--lh-tight);
+  color: var(--ink);
+}
+
+.tcard__mon {
+  display: block;
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  line-height: var(--lh-tight);
+  color: var(--ink-3);
+}
+
+/* ---- The body ---------------------------------------------------------- */
+.tcard__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tcard__title {
+  display: block;
   font-size: var(--fs-body);
   font-weight: 500;
   line-height: var(--lh-tight);
+  color: var(--ink);
 }
 
-.task--done > .task__main > .task__title {
+/* A done card reads as done without its colour: the strikethrough is the second
+   channel, and the tick beside it is the third. */
+.tcard--done .tcard__title {
   color: var(--ink-2);
   text-decoration: line-through;
   text-decoration-color: var(--ink-4);
   text-decoration-thickness: 1px;
 }
 
-.task__meta {
+/* The dates, the overdue word and the category pill. Also the viewer's owner
+   pill in the open card, which is the same row of static facts. */
+.tcard__meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-2);
-  margin-top: var(--space-1);
   font-size: var(--fs-caption);
+  line-height: var(--lh-tight);
   color: var(--ink-3);
 }
 
-.task__notes {
-  margin-top: var(--space-1);
-  font-size: var(--fs-caption);
-  line-height: var(--lh-body);
-  color: var(--ink-2);
-}
-
-.task__actions {
-  grid-column: 3 / 4;
-  grid-row: 1 / 2;
-  display: flex;
-  align-items: center;
-  /* Edit and Delete were 4px apart — the tightest interactive adjacency in the app, and one
-     of the two is destructive. A thumb on the seam was a coin flip. */
-  gap: var(--space-2);
-  margin-right: calc(var(--space-2) * -1);
-}
-
-/* The percentage sits beside the bar rather than on it. A number inside an 8px
-   fill cannot fit at 13px, and the dataviz rule is explicit: a label that will not
-   fit moves outside the mark rather than being clipped. */
-.task__progress {
-  grid-column: 1 / -1;
+/* The percentage sits BESIDE the bar, never on it: 13px does not fit inside an
+   8px fill, and a label that will not fit moves outside the mark rather than
+   being clipped. */
+.tcard__bar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-top: var(--space-2);
 }
 
-.task__meter {
+/* `Meter` renders spans here rather than divs, because the head is a button. An
+   inline box ignores height, so the track and its fill are blockified — the
+   mark is absolutely positioned and blockifies itself. */
+.tcard__bar > .meter {
+  display: block;
   flex: 1;
   min-width: 0;
 }
 
-.task__percent {
+.tcard__bar .meter__fill {
+  display: block;
+}
+
+.tcard__percent {
   flex: none;
   width: 2.75rem;
   text-align: right;
@@ -500,75 +577,74 @@
   color: var(--ink-2);
 }
 
-/* ---- Subtasks ---------------------------------------------------------
-   A checklist inside the parent's card, not a card of its own: a sibling card reads as a
-   sibling TASK, and the parent's own boundary is what says "these belong to that".
-
-   The disclosure sits on its own grid row spanning from the title column rather than as a
-   fourth control in row one. At 393px the row already spends 152px on three 44px targets and
-   their gaps, so a fourth would cut the title to ~130px; here the toggle is a ~250px target and
-   reads as a card footer action. Every destructive control stays in row one. */
-/* Column ONE, not two. From here the chevron lands in the same optical column as the parent's
-   own tick, so the disclosure reads as belonging to that tick and the checklist below can be
-   indented by design instead of inheriting wherever the title column happens to start. Still a
-   full-width target, and still not a fourth control in row one — which is what the placement
-   was for. */
-.task__subs {
-  grid-column: 1 / -1;
-  min-width: 0;
-  margin-top: var(--space-1);
-}
-
-.task__subs-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--tap-target);
-  font-size: var(--fs-label);
-  font-weight: 500;
-  color: var(--ink-2);
-  transition: color var(--transition-fast);
-}
-
-.task__subs-toggle:hover {
-  color: var(--ink);
-}
-
-.task__subs-chevron {
+/* NEVER coloured. `5/5` in the done colour would claim a `done_at` the sheet
+   does not have — all subtasks done deliberately does not make a parent done. */
+.tcard__tally {
   flex: none;
+  /* Centred on the day number's line, like everything else in the head. */
+  margin-top: var(--space-2);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.tcard__chev {
+  flex: none;
+  margin-top: var(--space-2);
+  color: var(--ink-3);
   transition: transform var(--transition-fast);
 }
 
-.task__subs-toggle[aria-expanded="true"] .task__subs-chevron {
+.tcard__head[aria-expanded="true"] .tcard__chev {
   transform: rotate(90deg);
 }
 
-/* ONE vertical hairline, descending from the chevron, and no horizontal ones. The rule ties the
-   group to the parent it belongs to; five rules BETWEEN five items would make a checklist a
-   table, which is the "fifty hairlines is a grid" problem in miniature. --line is the same
-   hairline the month dividers and the card boundaries are drawn with, so it reads as structure
-   rather than as a mark. */
+/* ---- The open card ----------------------------------------------------
+   Spans both columns, so the fields get the card's full width rather than the
+   head's. A hairline, not a gap, marks the seam: the content belongs to this
+   card and a gap would read as a second one.
+
+   NOT ANIMATED, and that is deliberate. Height and max-height are layout
+   properties — max-height slips past the "never transition width/height" test
+   while being exactly the thrash that test exists to prevent — and a mount is
+   not a transition, so the only alternative is a keyframe animation on every
+   card that opens. The disclosure is instant; the chevron carries the motion. */
+.tcard__content {
+  grid-column: 1 / -1;
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+/* ---- The checklist ----------------------------------------------------
+   ONE vertical hairline descending from the parent, and no horizontal ones. The
+   rule ties the group to the card it belongs to; five rules BETWEEN five items
+   would make a checklist a table. --line is the same hairline as the spine and
+   the card boundaries, so it reads as structure rather than as a mark. */
 .subtasks {
+  margin-top: var(--space-2);
   margin-inline-start: var(--space-2);
   border-inline-start: 1px solid var(--line);
   padding-inline-start: var(--space-2);
   padding-bottom: var(--space-1);
 }
 
+/* Roomier than the tap target it contains. A checklist is aimed at while
+   scrolling, and 48px of row is what stops the next item catching the thumb. */
 .subtask {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: var(--tap-target);
+  min-height: 3rem;
 }
 
 .subtask--pending {
   opacity: 0.55;
 }
 
-/* THE WHOLE ROW IS THE CONTROL — glyph and title inside one button, which is what makes a
-   checklist item tappable where somebody actually aims. Only the 44px circle was live before,
-   so a tap on the text did nothing and the feature read as broken. */
+/* THE WHOLE ROW IS THE CONTROL — glyph and title inside one button, which is
+   what makes an item tappable where somebody actually aims. With only the 44px
+   glyph live, a tap on the text did nothing and the feature read as broken. */
 .subtask__toggle {
   display: flex;
   flex: 1;
@@ -576,8 +652,8 @@
   align-items: center;
   gap: var(--space-2);
   min-height: var(--tap-target);
-  /* Padded rather than pulled: the pressed area extends past the glyph on both sides, and a
-     negative margin here would drag its hover square onto the rail. */
+  /* Padded rather than pulled: the pressed area extends past the glyph on both
+     sides, and a negative margin would drag its hover square onto the rail. */
   padding-inline: var(--space-2);
   border-radius: var(--radius-md);
   text-align: start;
@@ -588,12 +664,13 @@
   background-color: var(--sunken);
 }
 
-/* A step smaller than the parent's check, which is a second subordination channel that costs no
-   contrast and no legibility — the type stays at 16px. The colour is on the GLYPH, never on the
-   button: on the button it would tint the title green too. */
+/* A step smaller than the parent's check, which is a second subordination
+   channel that costs no contrast and no legibility — the type stays at 16px. The
+   colour is on the GLYPH, never on the button: on the button it would tint the
+   title green too. */
 .subtask__toggle > svg {
   flex: none;
-  font-size: 0.8em;
+  font-size: 0.9em;
   color: var(--ink-2);
   transition: color var(--transition-fast);
 }
@@ -602,24 +679,27 @@
   color: var(--good);
 }
 
-/* The same slot for a viewer, so a planner's list lines up with an editor's. */
+/* The same slot for a viewer, so a planner's checklist lines up with an
+   editor's. */
 .subtask__toggle--static {
   cursor: default;
 }
 
-/* 16px and weight 400 against the parent title's 16px and 500. Subordination comes from weight,
-   ink, the glyph size and the indent — never from going under the 13px floor. */
+/* 16px and weight 400 against the parent title's 16px and 500. Subordination
+   comes from weight, ink, the glyph size and the indent — never from going under
+   the 13px floor. --ink-2 is 7.95:1, so it is a step in emphasis, not in
+   legibility. */
 .subtask__title {
   flex: 1;
   min-width: 0;
   padding-block: var(--space-1);
   font-size: var(--fs-body);
   line-height: var(--lh-body);
-  /* The ink step the two-channel subordination needs — 16px/400 in --ink-2 against the parent
-     title's 16px/500 in --ink. 7.95:1, so it is a step in emphasis and not in legibility. */
   color: var(--ink-2);
 }
 
+/* Struck through as well as dimmed: colour is never the only channel, and a
+   viewer's ticked item has no control to read state from. */
 .subtask--done .subtask__title {
   color: var(--ink-3);
   text-decoration: line-through;
@@ -627,28 +707,177 @@
   text-decoration-thickness: 1px;
 }
 
-/* Always last, never moved, never remounted — a changed key or position drops the iOS keyboard
-   mid-checklist. Aligned with the item TITLES rather than their ticks, so the glyph column stays
-   a clean column and the field reads as "type the next one" instead of as another item. */
+/* Always last, never moved, never remounted — a changed key or position drops
+   the iOS keyboard mid-checklist. Aligned with the item TITLES rather than their
+   ticks, so the glyph column stays a clean column and the field reads as "type
+   the next one" instead of as another item. */
 .subtask-add {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   padding-block: var(--space-1);
-  padding-inline-start: var(--tap-target);
+  padding-inline-start: var(--space-7);
 }
 
 .subtask-add__field {
-  /* Inherits `.input`'s 16px floor. Do NOT shrink it to look more subordinate: mobile Safari
-     zooms on focus below 16px and will not zoom back out. */
+  /* Inherits `.input`'s 16px floor. Do NOT shrink it to look more subordinate:
+     mobile Safari zooms on focus below 16px and will not zoom back out. */
   min-height: var(--tap-target);
+}
+
+/* The full target, not the 36px secondary one: it is a thumb target next to a
+   field, and it commits text that exists nowhere else yet. */
+.subtask-add__submit {
+  flex: none;
+}
+
+/* ---- The filter chips -------------------------------------------------
+   Five chips measure ~453px against a 361px card, so they scroll as one line
+   rather than wrapping to two rows above the first card — and one line is what
+   lets each chip keep the full 44px target. */
+.chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* Bleed to the shell's edge and pad back, so a chip scrolls off the screen
+     edge rather than stopping short inside the padding — which reads as a broken
+     row rather than a scrollable one. */
+  margin-inline: calc(var(--space-4) * -1);
+  padding-inline: var(--space-4);
+  /* Room for the focus ring, which a scroll container would otherwise clip. */
+  padding-block: 2px;
+  scroll-padding-inline: var(--space-4);
+}
+
+/* An overlay scrollbar on touch; hidden on desktop, where the row does not
+   overflow anyway. */
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 48rem) {
+  /* Past the phone there is room for every chip, so the row stops being a
+     scroller. */
+  .chips {
+    flex-wrap: wrap;
+    overflow: visible;
+    margin-inline: 0;
+    padding-inline: 0;
+  }
+
+  /* The card can afford a calmer left lane once the column is not 361px. Same
+     tokens, no new breakpoint. */
+  .tcard {
+    padding-inline: var(--space-7) var(--space-4);
+  }
+
+  .tcard::before,
+  .tcard__node {
+    left: var(--space-4);
+  }
+}
+
+/* ---- The inline editor -------------------------------------------------
+   The fields inside an open card, not a form on its own surface. There is no Save button and
+   no footer of actions: every field commits when focus leaves it, so the only thing at the
+   foot is the delete affordance. */
+.editor {
+  display: grid;
+  /* space-3, not the `.field` margin of space-4. This block sits inside a card that already
+     carries its own padding, and at form spacing an opened card ran past the bottom of a
+     phone before its checklist began. */
+  gap: var(--space-3);
+}
+
+.editor__field {
+  /* A grid item's minimum content size is its intrinsic width, and a date input's intrinsic
+     width is wide: without this, one date field widens the whole track and the second column
+     never gets to exist. */
+  min-width: 0;
+}
+
+.editor__label {
+  display: block;
+  margin-bottom: var(--space-1);
+  /* Quiet by size, weight and ink alone. NO uppercase and NO tracking: any of these labels
+     can be Japanese, where tracking inserts a gap between every kana and text-transform does
+     nothing but break the Latin ones. */
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  /* --ink-3 is the lightest ink measured to pass AA at 13px. A label is information, so it
+     does not get the --ink-4 placeholder treatment. */
+  color: var(--ink-3);
+  line-height: var(--lh-tight);
+}
+
+/* The window: two date wheels side by side where the card is wide enough for both, one where
+   it is not. auto-fit rather than a media query, because what constrains this is the CARD's
+   width — which depends on the column and the tab it is in — not the viewport's, and the app
+   is allowed exactly two breakpoints.
+
+   11rem is MEASURED, not guessed: a `type=date` input's min-content width is 164px at the 16px
+   floor (the reading, plus the picker button, plus the padding), so a narrower track clips the
+   date rather than stacking it. Two of these plus the gap need ~364px of column, which a card
+   in the wide layout has and a card on a phone does not. */
+.editor__grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+/* The quieter pair, category and owner. A lower minimum than the dates above: neither is
+   needed to understand a task, so they share one row and stay out of the way. */
+.editor__row {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}
+
+/* A day and a clock reading are one field, and the same 164px minimum applies to the day half
+   of it. `.field__row`'s `flex: 1 1 0` never wraps: right in the sheet, where the panel is wide
+   enough for both, and wrong in a card column that can be half as wide — there it shrank the
+   date until its own value was clipped. So the pair becomes a grid HERE and nowhere else, and
+   stacks when the column cannot hold both. */
+.editor .field__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+/* The delete affordance, alone on the last row and after the notes. A destructive control
+   sitting between fields somebody is tabbing through is how the wrong task gets deleted; the
+   hairline says the fields above are a group and this is not part of it. */
+.editor__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+/* Quiet, and never a filled --danger button: filled, it would be the loudest thing in an open
+   card, competing with the checklist for a control that most people never press. The WORD
+   carries it — the ink is a second channel, not the only one — and it opens the confirmation
+   sheet rather than deleting anything.
+
+   Worn with `.btn--ghost`, whose own hover sets `color: var(--ink)`. Same specificity, so this
+   wins on order alone: app.css is loaded after primitives.css. Not `.btn--sm` — a thumb aims
+   at this, so it keeps the full --tap-target from `.btn`. */
+.editor__danger {
+  color: var(--danger);
+}
+
+.editor__danger:hover {
+  background-color: var(--critical-wash);
+  color: var(--danger);
 }
 
 /* ---- Empty and seeding ------------------------------------------------- */
 .empty {
   text-align: center;
-  /* Block padding only: the inline padding comes from `.card`, so the empty state's left edge
-     lines up with every other card in the column instead of missing it by 4px. */
+  /* Block padding only: the inline padding comes from `.card`, so the empty state's
+     left edge lines up with every other card in the column instead of missing it by
+     4px. */
   padding-block: var(--space-5);
 }
 
@@ -672,12 +901,6 @@
   text-align: start;
 }
 
-@media (min-width: 48rem) {
-  .templates {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 .template {
   display: flex;
   flex-direction: column;
@@ -693,440 +916,18 @@
   font-weight: 600;
 }
 
-.template__about {
-  flex: 1;
-  font-size: var(--fs-caption);
-  line-height: var(--lh-body);
-  color: var(--ink-2);
-}
-
 .template__foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-top: var(--space-1);
+  margin-top: auto;
+  /* The name and the foot are not the same line of thought, and with the paragraph between
+     them gone there is nothing else holding them apart. */
+  padding-top: var(--space-2);
 }
 
-/* ---- Timeline ---------------------------------------------------------
-   A Gantt, in flex rows. The axis and every row share --timeline-gutter, which is why the
-   bars line up with the month ticks; .timeline__overlay spans exactly the plot area so the
-   gridlines and the today rule position as plain percentages.
-
-   FLEX ROWS, NOT GRID. The label has to stay pinned while the plot pans sideways — pan right
-   without it and you are reading fifty anonymous bars. A sticky element is clamped to its
-   containing block, and for a GRID item that containing block is its own grid area, which is
-   exactly the gutter's width: nothing to travel within. A flex item's containing block is the
-   flex container's content box, so it can slide the full scroll width. (Chrome happens to let
-   the grid version travel too; flex is what the spec guarantees, and Safari is the target.)
-
-   The card owns its vertical scroll at every width. That is what lets the axis stick, and the
-   height is deliberately NOT behind a width breakpoint: 48rem is 768px, and an iPhone 15 in
-   landscape is 852px wide, so a width-gated rule gave the phone a 384px nested scroller in a
-   393px viewport — the exact trap it was written to avoid. */
-.timeline {
-  /* Fluid rather than stepped: a stepped gutter would need a third breakpoint, and there are
-     two. 26vw lands on the 7.5rem floor at 393px and on the ceiling by ~1000px.
-     The ceiling is 16rem, not 20: 20rem spent 320px on labels that measure ~230, and every pixel
-     the gutter takes is a pixel the chart does not have. */
-  --timeline-gutter: clamp(7.5rem, 26vw, 16rem);
-  /* Zoom multiplies the plot's width and nothing else — see Timeline.jsx. */
-  --timeline-zoom: 1;
-  /* Not a third breakpoint: the same clamp with a wider floor, applied when the checklists are
-     open. At 393px the base floor leaves ~76px of title, and an indented subtask title read
-     "Shortli…" — the titles ARE the content while the outline is open, so the column that holds
-     them earns 37 more pixels and the chart gives them up. Everything downstream follows the
-     variable: the axis corner, every row's gutter and the overlay's left edge. */
-  --timeline-gutter-open: clamp(10rem, 40vw, 18rem);
-  overflow: auto;
-  /* Contain the HORIZONTAL axis only. A pan that chains becomes an iOS back-swipe; but
-     `contain` on both axes can swallow a vertical drag that starts on the chart. */
-  overscroll-behavior-x: contain;
-  /* There is deliberately no `-webkit-overflow-scrolling: touch` here or on the sheet body.
-     Momentum has been the default since iOS 13, and the legacy implementation created its own
-     stacking context and broke `position: sticky` inside the same scroller — which is now
-     load-bearing twice over, for the axis and for the label gutter. */
-  max-height: max(20rem, 70dvh);
-  /* There is deliberately NO edge fade. It was added as a "there is more to the right"
-     affordance and it was misrepresenting the data: a bar ending near the right edge faded out,
-     so its end read as further right than it is. And now that 1x fits the container exactly on a
-     desktop, a fade there would promise content that does not exist. The zoom control and the
-     cut-off content are the affordance. */
-}
-
-.timeline__inner {
-  /*
-   * WIDTH is what zoom scales; min-width is only the narrow-screen floor.
-   *
-   * min-width alone did not work, and the failure was invisible on a phone and obvious on a
-   * desktop: a floor below the container's own width does nothing, so on a ~1200px window 1x,
-   * 1.5x and 2x all rendered identically at 1200 and 3x was the first step that bound. Zoom now
-   * means multiples of the VISIBLE width, so every step changes by construction.
-   *
-   * The floor still matters: at 393px the container is ~359px, and 34rem keeps a year of months
-   * legible rather than compressing them into the screen.
-   */
-  width: calc(100% * var(--timeline-zoom));
-  min-width: calc(34rem * var(--timeline-zoom));
-}
-
-/* Sticky at the top of the timeline's own scrollport, and opaque, so rows pass behind it
-   rather than through it. It still scrolls horizontally with the plot, which is what keeps a
-   tick above its own gridline. */
-.timeline__axis {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  display: flex;
-  padding: var(--space-3) var(--space-4) var(--space-2) 0;
-  background-color: var(--surface);
-  border-bottom: 1px solid var(--line);
-}
-
-/* Pinned left so the axis corner stays opaque over the panning ticks. Also carries the left
-   padding, so a tick at fraction 0 starts where the plot does. */
-.timeline__axis-gutter {
-  flex: 0 0 var(--timeline-gutter);
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  padding-left: var(--space-4);
-  background-color: var(--surface);
-  /* Same seam as the rows below, so the line runs the full height of the chart. */
-  box-shadow: 1px 0 0 var(--line);
-}
-
-.timeline__ticks {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  height: 2.375rem;
-}
-
-/* Two bands: the Today pill on the upper line, the month labels on the lower one nearest the
-   gridlines they name. They shared a line at first and the pill sat on top of whichever month
-   happened to be next to it. */
-.timeline__tick {
-  position: absolute;
-  top: 1.25rem;
-  font-size: var(--fs-caption);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-  color: var(--ink-3);
-  white-space: nowrap;
-  transform: translateX(-50%);
-}
-
-.timeline__plot {
-  position: relative;
-  padding: var(--space-2) var(--space-4) var(--space-3) 0;
-}
-
-/* Spans exactly the plot area, so a gridline and a bar at the same date land on the same
-   pixel and neither has to reason about the gutter. */
-.timeline__overlay {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--timeline-gutter);
-  right: var(--space-4);
-  pointer-events: none;
-}
-
-/* Hairline, solid, one step off the surface — never dashed. Without these a bar's position is
-   unreadable: the axis is at the top and the row somebody cares about is far below it. */
-.timeline__gridline {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background-color: var(--line);
-}
-
-/* The one place this chart raises its voice. In a countdown-driven app "where we are now" is
-   the most important thing on it, and the accent is how it says so. */
-.timeline__now {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  margin-left: -1px;
-  background-color: var(--accent);
-}
-
-/* Lives in the sticky axis, on its own band above the months, so it stays visible however far
-   the rows are scrolled and never sits on a month label. Anchored to the rule rather than
-   centred on it; the component flips the anchor near the right edge so it cannot be clipped. */
-.timeline__now-label {
-  position: absolute;
-  top: 0;
-  padding: 0.0625rem var(--space-2);
-  border-radius: var(--radius-xs);
-  background-color: var(--accent);
-  color: var(--accent-text);
-  font-size: var(--fs-caption);
-  font-weight: 500;
-  line-height: var(--lh-tight);
-  white-space: nowrap;
-  transform: translateX(-2px);
-}
-
-/* A button, because on a phone a task's dates, percentage and state were reachable by no
-   gesture at all: both the label's and the bar's `title` are dead on touch. One tap opens the
-   detail sheet, which is also the only way to read a title the gutter truncates. */
-.timeline__row {
-  position: relative;
-  display: flex;
-  /* STRETCH, not center. The label and the track are the two things that paint a row, and while
-     they sized to their own content the row held a 29px label and a 24px track inside 36px — so
-     the sticky label's opaque background did not cover the full row, and anything scrolling
-     behind it (the today rule) showed through the 7px bands above and below as a broken column
-     of dashes. It also made hover a stepped, ragged highlight instead of one band. */
-  align-items: stretch;
-  width: 100%;
-  min-height: var(--tap-target-sm);
-  text-align: start;
-}
-
-/* A phone has no hover to fall back on, so the row is the target and it gets the full 44px. */
-@media (pointer: coarse) {
-  .timeline__row {
-    min-height: var(--tap-target);
-  }
-}
-
-/* Rows carry no rules between them — fifty hairlines is a grid, not a chart. The hover band is
-   what lets a pointer track a label across seven hundred pixels to its bar instead. The band
-   goes on the label rather than the row because the label is opaque and painted over it. */
-/* One uniform band across the whole row, which is the only way to track a label to its bar over
-   a thousand-plus pixels of plot. Both halves take it: the sticky label paints over the track, so
-   hovering one alone reads as a misaligned step. */
-@media (hover: hover) and (pointer: fine) {
-  .timeline__row:hover .timeline__label,
-  .timeline__row:hover .timeline__track {
-    background-color: var(--sunken);
-  }
-}
-
-/* Pinned left, and opaque, so the names stay readable at any pan offset. */
-.timeline__label {
-  flex: 0 0 var(--timeline-gutter);
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  /* Inline padding only: the row's `align-items: stretch` supplies the height, and any block
-     padding here would reintroduce the band the plot shows through. */
-  padding-inline: var(--space-4) var(--space-3);
-  background-color: var(--surface);
-  /* The seam between the frozen column and the plot, drawn as a shadow rather than a border so
-     it costs no layout width and cannot shift the gutter out of step with the axis. One
-     continuous line makes the two halves read as one table instead of two lists. */
-  box-shadow: 1px 0 0 var(--line);
-  font-size: var(--fs-label);
-  line-height: var(--lh-tight);
-  color: var(--ink);
-  transition: background-color var(--transition-fast);
-}
-
-.timeline__label-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Two lines for a parent with a checklist, one for everything else. No block padding — the extra
-   height comes from CONTENT, which is why the bar is centred on the track with a transform rather
-   than by the two agreeing about a height. */
-.timeline__label-stack {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-}
-
-/* A numeric readout, exactly like the zoom level; the row's accessible name carries the spoken
-   "3 of 5 subtasks". NEVER coloured, and --good least of all: a 5/5 in the done colour would
-   claim a `done_at` the sheet does not have, and all subtasks done deliberately does not make a
-   parent done. */
-.timeline__label-tally {
-  font-size: var(--fs-caption);
-  line-height: var(--lh-tight);
-  color: var(--ink-3);
-}
-
-.timeline--outline {
-  --timeline-gutter: var(--timeline-gutter-open);
-}
-
-/* ---- Timeline: the outline control ------------------------------------
-   In the axis corner, which is the label column's own header and is sticky in both axes.
-   --fs-caption rather than --fs-label because 「サブタスク」 plus the chevron measures ~89px and
-   the gutter's 7.5rem floor leaves about 104. */
-.timeline__outline {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--tap-target);
-  font-size: var(--fs-caption);
-  font-weight: 500;
-  color: var(--ink-2);
-  white-space: nowrap;
-  transition: color var(--transition-fast);
-}
-
-.timeline__outline:hover {
-  color: var(--ink);
-}
-
-.timeline__outline-chevron {
-  flex: none;
-  transition: transform var(--transition-fast);
-}
-
-.timeline__outline[aria-pressed="true"] .timeline__outline-chevron {
-  transform: rotate(90deg);
-}
-
-/* ---- Timeline: subtask rows -------------------------------------------
-   Indented in the gutter. In the plot, a RAIL and not a bar: a subtask has no dates, so it has
-   no extent of its own to draw — what IS in the model is that it happens inside its parent's
-   window, and the rail says exactly that by being co-extensive with the parent's bar. 1px and
-   square against the bar's 8px filled pill, and never --state-fill, so the two can never be
-   read as the same kind of mark. */
-.timeline__label--sub {
-  padding-inline-start: var(--space-6);
-  color: var(--ink-2);
-}
-
-.timeline__sub-tick {
-  display: flex;
-  align-items: center;
-  flex: none;
-  margin-inline-end: var(--space-1);
-  font-size: var(--fs-caption);
-  color: var(--ink-3);
-}
-
-.timeline__row--sub-done .timeline__sub-tick {
-  color: var(--good);
-}
-
-.timeline__row--sub-done .timeline__label-text {
-  color: var(--ink-3);
-  text-decoration: line-through;
-  text-decoration-color: var(--ink-4);
-  text-decoration-thickness: 1px;
-}
-
-/* --track-line, NOT --line: --line measures 1.2:1 on the surface and this is the child row's
-   only mark, which is the same defect that made the meter hairline draw nothing at all.
-   `display: block` because the row is a `<button>` — an absolutely positioned span is
-   blockified, but that does not extend to its own box model here. */
-.timeline__sub-rail {
-  display: block;
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 1px;
-  min-width: 4px;
-  background-color: var(--track-line);
-}
-
-
-.timeline__row--done .timeline__label-text {
-  color: var(--ink-3);
-  text-decoration: line-through;
-  text-decoration-color: var(--ink-4);
-  text-decoration-thickness: 1px;
-}
-
-.timeline__row--overdue .timeline__label-text {
-  font-weight: 500;
-}
-
-.timeline__track {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  transition: background-color var(--transition-fast);
-}
-
-/* Capped well under the 24px mark spec, and the band's leftover is air. The hairline is what
-   makes an unstarted bar read as a planned window rather than as nothing — the same reasoning
-   as the meter's, and for the same measured reason. */
-.timeline__bar {
-  /* Spans, because the row is a <button> and its content model is phrasing content. An
-     absolutely positioned element is blockified, but its CHILD is not — `height: 100%` on an
-     inline fill does nothing, which silently painted every bar as unstarted. */
-  display: block;
-  position: absolute;
-  /* Centred in whatever height the row turns out to be, rather than offset by a magic number
-     from a track that was pinned at 1.5rem. The row is 36px on a pointer, 44px on touch. */
-  top: 50%;
-  transform: translateY(-50%);
-  height: var(--meter-height);
-  min-width: 4px;
-  border-radius: var(--radius-full);
-  background-color: var(--track);
-  border: 1px solid var(--track-line);
-  overflow: hidden;
-}
-
-.timeline__bar-fill {
-  display: block;
-  height: 100%;
-  /* Reads the state table in primitives.css, like every other mark that carries state. */
-  background-color: var(--state-fill, var(--accent));
-}
-
-
-/* ---- Timeline toolbar -------------------------------------------------
-   Outside .timeline, so it does not scroll away with the chart. Zoom is the only way to read
-   a year-long plan on a phone: at 1x a one-week task is 8px and nine of fifty bars sit on the
-   4px floor. */
-.timeline__toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
-  border-bottom: 1px solid var(--line);
-}
-
-/* One line, truncating. Four 44px targets leave ~150px on a 393px screen, and a hint that
-   wraps to two lines costs more height than it is worth. */
-.timeline__toolbar > .hint {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.timeline__zoom {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.timeline__zoom-level {
-  min-width: 2.5rem;
-  text-align: center;
-  font-size: var(--fs-caption);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-  color: var(--ink-2);
-}
-
-/* ---- Deleted ----------------------------------------------------------
-   This rule lost its selector at some point. Per CSS error recovery the parser then swallowed
-   the FOLLOWING selector into the malformed prelude too, so both `.deleted__row` and its
-   sibling hairline were dropped — the Restore rows shipped with no layout and no 44px target. */
+/* ---- Deleted ----------------------------------------------------------- */
 .deleted__row {
   display: flex;
   align-items: center;
@@ -1179,121 +980,7 @@
   height: 0.875rem;
   flex: none;
   border-radius: var(--radius-full);
-  /* Painted by the preset the swatch scopes locally — the reason the accent rules
-     are attribute-scoped rather than :root-scoped. */
+  /* Painted by the preset the swatch scopes locally — the reason the accent rules are
+     attribute-scoped rather than :root-scoped. */
   background-color: var(--accent);
-}
-
-@media (min-width: 48rem) {
-  /* Timeline view takes the full width from here, not from 62rem. A Gantt squeezed into
-     the 36rem reading column is the one layout where the cap actively hurts — an iPad in
-     portrait is 768px and would otherwise draw a year of bars in 576 of them. */
-  .shell--wide {
-    max-width: var(--shell-max);
-  }
-}
-
-/* ---- Two columns ------------------------------------------------------
-   From 62rem the summary moves into an aside and stays put while the list
-   scrolls, which is the layout a planner on a large monitor is actually using.
-   Timeline view opts out: a Gantt wants the full width. */
-@media (min-width: 62rem) {
-  .shell {
-    max-width: var(--shell-max);
-    display: grid;
-    grid-template-columns: var(--aside-w) minmax(0, 1fr);
-    gap: var(--space-6);
-    align-items: start;
-  }
-
-  .shell--wide {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .shell__aside {
-    position: sticky;
-    top: calc(var(--header-height) + var(--safe-top) + var(--space-4));
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-
-  /* --wide is ONE column, so the aside and the main are stacked ROWS rather than
-     neighbours — and a sticky element in a stack does not sit beside the content, it floats
-     over it. This shipped once: scrolling the timeline dragged the summary card down across
-     the rows and drew it on top of them. Static is not a tidy-up; it is the fix. */
-  .shell--wide .shell__aside {
-    position: static;
-  }
-
-  .shell__main {
-    min-width: 0;
-    max-width: var(--main-max);
-  }
-
-  .shell--wide .shell__main {
-    max-width: none;
-  }
-}
-
-/* ---- Task detail ------------------------------------------------------
-   The read-only sheet a timeline row opens. A two-column definition list, collapsing to one
-   on a narrow phone where a 6rem term column leaves nothing for a date range. */
-.detail {
-  display: grid;
-  gap: var(--space-1) var(--space-4);
-}
-
-.detail__term {
-  font-size: var(--fs-caption);
-  font-weight: 500;
-  color: var(--ink-3);
-}
-
-.detail__value {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
-  color: var(--ink);
-}
-
-/* The meter takes the room and the figure sits beside it, as it does on a task row: a
-   percentage inside an 8px fill does not fit at any size. */
-.detail__value > .meter {
-  flex: 1;
-  min-width: 0;
-}
-
-.detail__value--stack {
-  /* `.detail__value` is a centred row; a list of subtasks is a column. */
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-1);
-}
-
-.detail__percent {
-  flex: none;
-  font-size: var(--fs-label);
-  font-weight: 500;
-  color: var(--ink-2);
-}
-
-.detail dt + dd {
-  margin-bottom: var(--space-3);
-}
-
-/* A container query, not a media query: there are two breakpoints in this app and this is a
-   question about the sheet's width, not the viewport's. Same mechanism as `.overall__stats`. */
-@container (min-width: 24rem) {
-  .detail {
-    grid-template-columns: 6rem minmax(0, 1fr);
-    align-items: baseline;
-  }
-
-  .detail__term {
-    /* Baseline-align the term with the first line of its value, not with the row. */
-    padding-top: 0.125rem;
-  }
 }

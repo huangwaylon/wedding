@@ -55,8 +55,7 @@ const zoneValidity = new Map()
  *
  * `taskProgress` resolves each task's start and end on every tick, but both are pure
  * functions of `(wall, zone)` — the answer cannot change between ticks. This is what takes
- * the per-tick work down to arithmetic, and it fixes `monthTicks` for free, since that
- * walks one `wallToInstant` per month boundary in the window.
+ * the per-tick work down to arithmetic on a board of any size.
  */
 const instantCache = new Map()
 
@@ -366,19 +365,33 @@ export function formatWallMonth(wall, { locale } = {}) {
 }
 
 /**
- * 'Apr' / '4月', and with the year only when asked — the timeline's axis.
+ * The two halves of a card's date chip: '18' and 'APR' — '18' and '4月' in Japanese.
  *
- * The long form does not fit there. '2026年11月' is nine characters wide, and eight of
- * those on a phone's plot area overlap into an unreadable smear; the axis therefore
- * carries the short month and spells the year out only when it changes.
+ * A pair rather than one string, because the two are set at completely different sizes:
+ * the day is the number somebody scans a month of cards for, the month is the quiet
+ * label under it that stops the 18th of April reading as the 18th of May.
+ *
+ * The month is uppercased HERE rather than with `text-transform`, which is a no-op on
+ * kanji and would silently apply to Latin only in a stylesheet that has to hold both.
+ * `toLocaleUpperCase` is the locale-aware form and leaves '4月' exactly as it is.
+ *
+ * THE DAY IS NOT FORMATTED THROUGH Intl, and that is the one deliberate exception to
+ * routing numbers through it: `{ day: 'numeric' }` in `ja` returns '18日', which at
+ * --fs-xl wraps onto a second line inside a 36px chip and prints the day as two rows
+ * with '4月' under it. A day of the month is 1–31 — there is no grouping separator for
+ * Intl to add, and the suffix is redundant with the month directly beneath.
+ *
+ * @returns {{day:string, month:string}|null} null when the wall string is unusable, so a
+ *   task with no dates renders no chip rather than a plausible-looking wrong one.
  */
-export function formatWallMonthShort(wall, { locale, year = false } = {}) {
+export function formatWallChip(wall, { locale } = {}) {
   const date = asUtcDate(wall)
-  if (!date) return ''
-  return displayFormatter(locale, {
-    month: 'short',
-    ...(year ? { year: 'numeric' } : {}),
-  }).format(date)
+  if (!date) return null
+  const month = displayFormatter(locale, { month: 'short' }).format(date)
+  return {
+    day: String(date.getUTCDate()),
+    month: locale ? month.toLocaleUpperCase(locale) : month.toLocaleUpperCase(),
+  }
 }
 
 /** '14:00'. Always 24-hour: a schedule read at a glance has no room for am/pm. */

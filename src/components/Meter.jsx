@@ -16,6 +16,11 @@
  * THE MARK HAS NO COLOUR OF ITS OWN. It is ink with a 2px ring in the surface
  * colour, which is what keeps it legible whether it lands on the fill or on the
  * bare track. See `.meter__mark` in primitives.css.
+ *
+ * IT CAN BE BUILT OUT OF SPANS. A card's whole collapsed row is one `<button>`, whose
+ * content model is phrasing content, so the three `<div>`s this renders by default cannot
+ * live there. `tag` swaps all three at once — never just the wrapper, or the fill inside a
+ * span wrapper is an inline box that ignores its own height.
  */
 
 import { toPercent } from '../lib/progress.js'
@@ -28,11 +33,21 @@ import { toPercent } from '../lib/progress.js'
  * @param {boolean} [props.large]
  * @param {string} props.label an accessible name — the bar is never self-explanatory
  * @param {string} [props.valueText] overrides the spoken value
+ * @param {'div'|'span'} [props.tag] `span` inside a control; the caller's CSS gives the
+ *   three of them `display: block`
  */
-export default function Meter({ value, mark, state, large = false, label, valueText }) {
+export default function Meter({
+  value,
+  mark,
+  state,
+  large = false,
+  label,
+  valueText,
+  tag: Tag = 'div',
+}) {
   const percent = toPercent(value)
   return (
-    <div
+    <Tag
       className={`meter${large ? ' meter--lg' : ''}${mark == null ? '' : ' meter--marked'}${
         state ? ` meter--${state}` : ''
       }`}
@@ -43,12 +58,12 @@ export default function Meter({ value, mark, state, large = false, label, valueT
       aria-valuetext={valueText}
       aria-label={label}
     >
-      <div className="meter__fill" style={{ width: `${percent}%` }} />
+      <Tag className="meter__fill" style={{ width: `${percent}%` }} />
       {mark == null ? null : (
         // Presentational: the value it marks is already in the parent's text, so a
         // screen reader announcing "97%" again here would only be confusing.
-        <div className="meter__mark" style={{ left: `${toPercent(mark)}%` }} aria-hidden="true" />
+        <Tag className="meter__mark" style={{ left: `${toPercent(mark)}%` }} aria-hidden="true" />
       )}
-    </div>
+    </Tag>
   )
 }

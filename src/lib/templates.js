@@ -52,11 +52,16 @@ export const CATEGORIES = [
   'Other',
 ]
 
-/** @type {{id: string, months: number, tasks: Array}[]} */
+/**
+ * A template is an id and its tasks. There is no length or description field: the id names the
+ * shape ("classic12", "japan8"), the count is `tasks.length`, and the UI offers each list by
+ * name and size alone — anything longer would be copy nobody reads twice.
+ *
+ * @type {{id: string, tasks: Array}[]}
+ */
 export const TEMPLATES = [
   {
     id: 'classic12',
-    months: 12,
     tasks: [
       { c: 'Budget', from: -365, to: -335, en: 'Agree the budget and who is contributing', ja: '予算と、誰がいくら出すかを決める' },
       { c: 'Guests', from: -365, to: -335, en: 'Draft the guest count and your priorities', ja: 'おおよそのゲスト人数と優先順位を決める' },
@@ -114,7 +119,6 @@ export const TEMPLATES = [
   },
   {
     id: 'japan8',
-    months: 8,
     tasks: [
       { c: 'Other', from: -240, to: -210, en: 'Agree on the style of wedding you want', ja: 'ふたりで結婚式のイメージを固める' },
       { c: 'Budget', from: -240, to: -215, en: 'Set the budget and its ceiling', ja: '予算と上限額を決める' },

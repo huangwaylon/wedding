@@ -125,6 +125,49 @@ for (const [name, hex] of Object.entries(STATUS)) {
 // has to pass is ink against that ring — not ink against whatever it crosses.
 add('ink tick on its surface ring', contrast(INK.ink, SURFACE), 3)
 
+// ---------------------------------------------------------------------------
+// Over the photograph
+//
+// The hero's background is a photograph, so its ink cannot be measured against a
+// token. It is measured against the WORST CASE the scrim allows: the gradient's
+// dense end composited over a blown-out white sky. Anything darker in the photo
+// only helps. Lightening --photo-scrim's end stop is what would break this — at
+// 0.55 alpha the same worst case measures 4.07:1 and fails.
+// ---------------------------------------------------------------------------
+
+/** sRGB compositing of a solid over a backdrop, per channel, as CSS does it. */
+function over(top, alpha, backdrop) {
+  const [tr, tg, tb] = srgb(top)
+  const [br, bg, bb] = srgb(backdrop)
+  const mix = [tr * alpha + br * (1 - alpha), tg * alpha + bg * (1 - alpha), tb * alpha + bb * (1 - alpha)]
+  return `#${mix.map((c) => Math.round(c * 255).toString(16).padStart(2, '0')).join('')}`
+}
+
+/** --photo-scrim's base colour and the alpha it reaches where the type sits. */
+const SCRIM = '#181410'
+const SCRIM_ALPHA = 0.78
+
+add(
+  'white on the scrim over a white sky',
+  contrast('#ffffff', over(SCRIM, SCRIM_ALPHA, '#ffffff')),
+  4.5,
+)
+// --photo-ink-2 is the countdown and the date, which are --fs-label and --fs-caption:
+// small text, so no large-text relief.
+const SCRIMMED = over(SCRIM, SCRIM_ALPHA, '#ffffff')
+add(
+  'photo-ink-2 on the scrim over a white sky',
+  contrast(over('#ffffff', 0.92, SCRIMMED), SCRIMMED),
+  4.5,
+)
+// The settings disc: a white glyph on the control's own fill over the brightest
+// possible pixel. A glyph is a graphic, so the floor is 3:1.
+add(
+  'white glyph on the photo control over a white sky',
+  contrast('#ffffff', over(SCRIM, 0.55, '#ffffff')),
+  3,
+)
+
 console.table(rows)
 const failures = rows.filter((row) => row.verdict === 'FAIL')
 console.log(failures.length ? `${failures.length} FAILING` : 'all pass')

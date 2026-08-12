@@ -25,7 +25,7 @@ export const STORAGE_KEYS = {
   snapshot: 'wd.snapshot',
   locale: 'wd.locale',
   accent: 'wd.accent',
-  /** Which list filter and view the device was last using. Per-device, never shared. */
+  /** Which state filter the device was last using. Per-device, never shared. */
   filter: 'wd.filter',
 }
 

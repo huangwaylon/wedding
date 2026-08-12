@@ -3,3 +3,9 @@ dist/
 .env
 .DS_Store
 scripts/preview-*.html
+# The harness's own copy of the hero, written beside its pages by scripts/preview.jsx —
+# `scripts/` is not served, so an absolute /hero.jpg resolves to nothing from there.
+scripts/preview-hero.jpg
+# The camera original behind public/hero.jpg. Only the derived crop is ever served, and
+# a 6MB source in git would be downloaded by every clone forever to serve ~290KB.
+IMG_0509.JPG

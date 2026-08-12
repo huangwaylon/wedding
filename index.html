@@ -43,6 +43,14 @@
          the base itself, so using it here would double it in dev. -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+    <!-- The hero photograph is the largest-contentful-paint element — it is the first
+         thing on Home and nothing above it competes. It is rendered by React, so the
+         preload scanner cannot see it in the HTML: without this the request does not
+         start until the bundle has downloaded, parsed and committed a first render.
+         `fetchpriority="high"` is the other half, since an `as="image"` preload is
+         queued at low priority by default and would then wait behind that same bundle.
+         Same origin, so `img-src 'self'` below already covers it. -->
+    <link rel="preload" as="image" href="/hero.jpg" fetchpriority="high" />
     <!-- Safari still only recognizes the apple- prefixed tag; the unprefixed one is
          the standards-track name Chromium now asks for instead. Harmless to ship both. -->
     <meta name="mobile-web-app-capable" content="yes" />

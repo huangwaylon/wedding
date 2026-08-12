@@ -7,10 +7,15 @@
  *   THIS DEVICE — `localStorage` only: the interface language and the accent. Neither
  *   may ever reach the sheet. The couple and their planners all read the same board
  *   and none of them gets to restyle anybody else's screen, or decide what language
- *   a planner reads.
+ *   a planner reads. Only that half is labelled, because it is the half nobody would
+ *   guess: an editor's own name and venue are obviously shared with the board.
  *
  * A viewer sees only the device half plus the edit-link field, because everything
  * else is a write they cannot make.
+ *
+ * Three sentences here survive the text pass on purpose, and each one is attached to a
+ * control that is ambiguous without it: what the timezone reinterprets, what Purge destroys,
+ * and that revoking editing is undone by the link somebody already has.
  */
 
 import { useState } from 'react'
@@ -106,7 +111,6 @@ export default function SettingsSheet({
         <>
           <section className="section">
             <h3 className="section__title">{t('settings.couple')}</h3>
-            <p className="section__hint">{t('settings.shared')}</p>
             <div className="field__row">
               <div>
                 <label className="label" htmlFor="p1">
@@ -227,7 +231,6 @@ export default function SettingsSheet({
         <section className="section">
           <div className="notice">
             <span className="notice__title">{t('access.viewOnly')}</span>
-            <span className="notice__body">{t('access.viewOnlyHint')}</span>
           </div>
         </section>
       )}
@@ -293,6 +296,10 @@ export default function SettingsSheet({
               autoComplete="off"
               spellCheck={false}
             />
+            {/* The hint stays: an installed app gets its own storage bucket, which is the only
+                explanation for why somebody who HAS the edit link is being shown a paste
+                field. Without it the field reads as a demand for a credential they thought
+                they already had. */}
             {pasteError ? (
               <span className="field__error">{t('access.pasteBad')}</span>
             ) : (

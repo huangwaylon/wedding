@@ -32,8 +32,11 @@ import { rowToTask, taskToRow } from '../schema.js'
 /** Beyond this something is wrong with the network, not with the request. */
 const TIMEOUT_MS = 20_000
 
-/** Thrown by everything here. `code` is what the UI branches on. */
-export class ApiError extends Error {
+/**
+ * Thrown by everything here. `code` is what the UI branches on, and it never leaves
+ * this module: `useBoard` reads `error.code`, so nothing outside needs the class.
+ */
+class ApiError extends Error {
   constructor(code, cause) {
     super(code)
     this.name = 'ApiError'

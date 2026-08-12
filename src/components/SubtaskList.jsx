@@ -1,19 +1,19 @@
 /**
- * A task's subtasks: a checklist inside the parent's card.
+ * A task's subtasks: the checklist inside the open card.
  *
- * A subtask is deliberately the lightest thing in the model — a title and a tick, no dates. Two
- * consequences the layout depends on:
+ * A subtask is deliberately the lightest thing in the model — a title and a tick, no dates.
+ * Two consequences the layout depends on:
  *
  *   NO METER. A dateless item has nothing for a bar to measure, so a meter here would encode
- *   exactly the one bit the checkbox 8px to its left already encodes. The parent's meter is
- *   where subtask progress shows up, because that is what it now measures.
+ *   exactly the one bit the tick 8px to its left already encodes. The parent's meter is where
+ *   subtask progress shows up, because that is what it now measures.
  *
  *   NO STATE BADGE. A subtask is ticked or it is not.
  *
- * The add row is a form that never unmounts and never moves — new rows insert BEFORE it — which
- * is what keeps the iOS keyboard up while somebody enters five in a row. It does not await the
- * write before clearing: the optimistic update has already landed synchronously, and awaiting
- * would freeze the field for a second per item.
+ * The add row is a form that never unmounts and never moves — new rows insert BEFORE it —
+ * which is what keeps the iOS keyboard up while somebody enters five in a row. It does not
+ * await the write before clearing: the optimistic update has already landed synchronously,
+ * and awaiting would freeze the field for a second per item.
  */
 
 import { useRef, useState } from 'react'
@@ -44,7 +44,7 @@ function SubtaskRow({ subtask, canEdit, onToggle, onDelete }) {
       {canEdit ? (
         <button
           type="button"
-          className="btn btn--icon btn--icon-sm"
+          className="btn btn--icon"
           onClick={() => onDelete(subtask)}
           aria-label={t('list.deleteTask', { title: subtask.title })}
         >
@@ -63,10 +63,10 @@ function AddSubtask({ onAdd, onFocusChange }) {
   /**
    * Enter on the input, NOT a `<form>` submit.
    *
-   * This list also renders inside `TaskFormSheet`'s `<form id="task-form">`, and HTML forbids
-   * nested forms — the parser silently drops the inner one, so `Enter` here reached the TASK
-   * form's submit handler and tried to save the task instead of adding a subtask. Found by
-   * driving the real app; a static render cannot see it, because the nesting only becomes
+   * This list renders inside a card that also holds the editor's own fields, and HTML forbids
+   * nested forms — the parser silently drops the inner one, so `Enter` here would reach the
+   * ENCLOSING form's submit handler and try to save the task instead of adding an item. Found
+   * by driving the real app; a static render cannot see it, because the nesting only becomes
    * invalid once a browser parses it.
    */
   const submit = () => {
@@ -94,8 +94,8 @@ function AddSubtask({ onAdd, onFocusChange }) {
           event.preventDefault()
           submit()
         }}
-        onFocus={() => onFocusChange(true)}
-        onBlur={() => onFocusChange(false)}
+        onFocus={() => onFocusChange?.(true)}
+        onBlur={() => onFocusChange?.(false)}
         placeholder={t('list.subtaskAdd')}
         aria-label={t('list.subtaskAdd')}
         autoComplete="off"
@@ -110,7 +110,7 @@ function AddSubtask({ onAdd, onFocusChange }) {
           field first, and blur is what closes the keyboard and hides this row on a phone. */}
       <button
         type="button"
-        className="btn btn--icon btn--icon-sm subtask-add__submit"
+        className="btn btn--icon subtask-add__submit"
         onMouseDown={(event) => event.preventDefault()}
         onClick={submit}
         disabled={!draft.trim()}
@@ -129,7 +129,6 @@ function AddSubtask({ onAdd, onFocusChange }) {
  *   invite somebody to type a checklist that gets thrown away. The banner says why.
  */
 export default function SubtaskList({
-  id,
   subtasks,
   canEdit,
   canAdd = true,
@@ -139,7 +138,7 @@ export default function SubtaskList({
   onFocusChange,
 }) {
   return (
-    <ul className="subtasks" id={id}>
+    <ul className="subtasks">
       {subtasks.map((subtask) => (
         <SubtaskRow
           key={subtask.id}

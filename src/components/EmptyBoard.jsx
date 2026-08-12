@@ -1,12 +1,17 @@
 /**
  * The empty board, and the one place a starter checklist is offered.
  *
- * A viewer gets a sentence and nothing else — a planner arriving before the couple
- * has added anything should not be shown two buttons they cannot press.
+ * A viewer gets a sentence and nothing else — a planner arriving before the couple has added
+ * anything should not be shown two buttons they cannot press, and "the board is empty" alone
+ * would read as a fault.
  *
- * Seeding needs the wedding date, because every template offset is counted backwards
- * from it. Rather than disable the buttons and leave somebody guessing why, the empty
- * state says what is missing and offers the way to fix it.
+ * Seeding needs the wedding date, because every template offset is counted backwards from it.
+ * Rather than disable the buttons and leave somebody guessing why, the empty state says what is
+ * missing and offers the way to fix it.
+ *
+ * A template is its name, its size and a button. What each list contains is fifty-two rows
+ * long and appears on the board the moment it is chosen, so a paragraph describing it here
+ * would be read once and never again.
  */
 
 import { TEMPLATES } from '../lib/templates.js'
@@ -33,33 +38,26 @@ export default function EmptyBoard({ canEdit, weddingDay, seeding, onSeed, onOpe
           </button>
         </>
       ) : (
-        <>
-          <p className="empty__body">{t('empty.editor')}</p>
-          <h3 className="card__title" style={{ marginBottom: 'var(--space-3)' }}>
-            {t('empty.seedTitle')}
-          </h3>
-          <div className="templates">
-            {TEMPLATES.map((template) => (
-              <article className="template" key={template.id}>
-                <h4 className="template__title">{t(`template.${template.id}`)}</h4>
-                <p className="template__about">{t(`template.${template.id}.about`)}</p>
-                <div className="template__foot">
-                  <span className="hint tnum">
-                    {t('template.count', { count: template.tasks.length })}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn--secondary btn--sm"
-                    disabled={seeding}
-                    onClick={() => onSeed(template.id)}
-                  >
-                    {seeding ? t('empty.seeding') : t('template.use')}
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </>
+        <div className="templates">
+          {TEMPLATES.map((template) => (
+            <article className="template" key={template.id}>
+              <h3 className="template__title">{t(`template.${template.id}`)}</h3>
+              <div className="template__foot">
+                <span className="hint tnum">
+                  {t('template.count', { count: template.tasks.length })}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  disabled={seeding}
+                  onClick={() => onSeed(template.id)}
+                >
+                  {seeding ? t('empty.seeding') : t('template.use')}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
       )}
     </section>
   )

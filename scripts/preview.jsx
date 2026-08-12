@@ -5,14 +5,20 @@
  *
  *   npx vite-node scripts/preview.jsx     # writes scripts/preview-*.html (gitignored)
  *
- * Then load those in <iframe>s at 390 / 430 / 768 / 1440 and screenshot.
+ * Then load those in <iframe>s at 390 / 430 / 768 / 1440 and screenshot: open
+ * `scripts/harness.html`, which documents its own query string.
  *
  * USE IFRAMES, NOT A RESIZED WINDOW. An iframe gets its own viewport, so container and
  * media queries resolve honestly; headless Chrome quietly reports a different width than
  * you asked for and every breakpoint reads wrong.
+ *
+ * A STATIC RENDER RUNS NO EFFECT, so what these files show is every default as it is on
+ * first paint — which is the point, and also the limit: the tab switch, an accordion
+ * opening, a commit on blur and the keyboard's effect on a sheet were each verified by
+ * driving the built app in a real browser instead.
  */
 
-import { writeFileSync } from 'node:fs'
+import { copyFileSync, writeFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { mergeConfig } from '../src/config.js'
 import { overallProgress, withProgress } from '../src/lib/progress.js'
@@ -20,12 +26,12 @@ import { wallToInstant } from '../src/lib/time.js'
 import { ACCENTS } from '../src/lib/theme.js'
 import { setLocale } from '../src/i18n/index.js'
 import { findTemplate, materialize } from '../src/lib/templates.js'
-import Controls, { FILTER_ALL, VIEWS } from '../src/components/Controls.jsx'
 import { DeletedList } from '../src/components/Deleted.jsx'
 import EmptyBoard from '../src/components/EmptyBoard.jsx'
-import Header from '../src/components/Header.jsx'
+import FilterChips, { FILTER_ALL } from '../src/components/FilterChips.jsx'
+import Hero from '../src/components/Hero.jsx'
 import OverallCard from '../src/components/OverallCard.jsx'
-import TaskList from '../src/components/TaskList.jsx'
+import TabBar, { TABS } from '../src/components/TabBar.jsx'
 import Timeline from '../src/components/Timeline.jsx'
 import { PlusIcon } from '../src/components/icons.jsx'
 
@@ -45,18 +51,27 @@ const CONFIG = mergeConfig({
   partner2Name: 'Ren',
   weddingDate: WEDDING_DAY,
   weddingTime: '14:00',
-  // A long venue name on purpose: this is the string that broke the header's countdown onto a
-  // second line at 393px, and a short fixture never showed it.
+  // A long venue name on purpose: this is the string that broke the countdown onto a second
+  // line at 393px, and a short fixture never showed it.
   venue: 'The 迎賓館 偕楽園 別邸',
   timezone: TOKYO,
 })
+
+/**
+ * The photograph, beside the pages that reference it. These files live in `scripts/`, so
+ * the app's own absolute `/wedding/hero.jpg` resolves to nothing here and the hero would
+ * screenshot as a bare gradient — which is exactly the failure this harness exists to catch,
+ * so it must not be the harness's own fault.
+ */
+const PHOTO = 'preview-hero.jpg'
+copyFileSync('public/hero.jpg', `scripts/${PHOTO}`)
 
 let counter = 0
 
 /**
  * The real twelve-month template, with a plausible spread of progress applied: the early
  * items done, several left to run out, one deliberately dateless. Hand-written fixtures
- * would not exercise the month grouping or the timeline's span.
+ * would not exercise the month grouping or the spine.
  *
  * Seeded in the preview's own locale, because that is what seeding actually does — a
  * template's titles become content at the moment they are written (see templates.js), so
@@ -71,8 +86,8 @@ function board(locale) {
   })
 
   return seeded.map((task, index) => {
-    // The first nine are finished; #10 onwards are left to go overdue, which is what puts
-    // an honest gap between the headline figure and the on-schedule mark.
+    // The first nine are finished; #10 onwards are left to go overdue, which is what puts an
+    // honest gap between the headline figure and the on-schedule mark.
     if (index < 9) return { ...task, doneAt: '2026-06-01T00:00:00.000Z' }
     if (index === 12) {
       return {
@@ -94,9 +109,9 @@ function board(locale) {
 }
 
 /**
- * Subtasks for one in-progress parent, so the disclosure, the tally and the tally-driven meter
- * are all on screen. One parent only: that is the realistic case, and it is what shows that a
- * board without subtasks costs no height.
+ * Subtasks for one in-progress parent, so the tally, the tally-driven meter and the
+ * checklist inside an open card are all on screen. One parent only: that is the realistic
+ * case, and it is what shows that a board without subtasks costs no height.
  */
 function withSubtasks(tasks, locale) {
   const parent = tasks[11]
@@ -143,78 +158,71 @@ const DELETED = {
 
 const noop = () => {}
 
-/**
- * `canEdit` reaches the HEADER, not just the body. It used to be hardcoded true here, so no
- * fixture could render the View only badge — and that badge sharing the header's second line with
- * a long venue name is exactly what broke the countdown onto two lines on the live site. A harness
- * that cannot show a case cannot protect the fix for it either.
- */
-function Shell({ children, wide = false, canEdit = true }) {
+/** The tab bar is fixed, so it belongs to the shell rather than to either tab. */
+function Shell({ children, tab, fab = false }) {
   return (
     <div className="app">
-      <Header config={CONFIG} nowMs={NOW} canEdit={canEdit} onOpenSettings={noop} />
-      <main className={`shell${wide ? ' shell--wide' : ''}`}>{children}</main>
-      {/* Not in timeline view, matching App: the FAB sits over the bottom-right of the chart. */}
-      {wide || !canEdit ? null : (
+      <div className="views">{children}</div>
+      {fab ? (
         <span className="fab" aria-hidden="true">
           <PlusIcon style={{ width: '1.5em', height: '1.5em' }} />
         </span>
-      )}
+      ) : null}
+      <TabBar tab={tab} onTab={noop} />
     </div>
   )
 }
 
-function ListView({ locale, canEdit = true }) {
-  const { tasks, overall } = surfaces(locale)
+/**
+ * `canEdit` reaches the HERO, not just the body. It was hardcoded true here once, so no
+ * fixture could render the View only badge — and that badge sharing the hero's last line
+ * with a long venue name is exactly what broke the countdown onto two lines on the live
+ * site. A harness that cannot show a case cannot protect the fix for it either.
+ */
+function HomeView({ locale, canEdit = true }) {
+  const { overall } = surfaces(locale)
   return (
-    <Shell canEdit={canEdit}>
-      <div className="shell__aside stack">
+    <Shell tab={TABS.HOME}>
+      <Hero config={CONFIG} nowMs={NOW} canEdit={canEdit} onOpenSettings={noop} photo={PHOTO} />
+      <div className="view stack">
         <OverallCard overall={overall} />
         {canEdit ? <DeletedList tasks={DELETED[locale]} onRestore={noop} /> : null}
-      </div>
-      <div className="shell__main stack">
-        <Controls
-          counts={overall}
-          total={overall.total}
-          filter={FILTER_ALL}
-          onFilter={noop}
-          view={VIEWS.LIST}
-          onView={noop}
-        />
-        <TaskList
-          tasks={tasks}
-          nowWall={NOW_WALL}
-          canEdit={canEdit}
-          expanded={new Set(tasks.filter((row) => row.progress.tally).map((row) => row.id))}
-          onToggle={noop}
-          onEdit={noop}
-          onDelete={noop}
-          onExpand={noop}
-          onAddSubtask={noop}
-          onSubtaskFocus={noop}
-        />
       </div>
     </Shell>
   )
 }
 
-function TimelineView({ locale }) {
+/**
+ * The plan, with the one card that has a checklist opened — so the editor's fields, the
+ * checklist and the add row are all in the screenshot. `open` comes from `App`'s `expanded`
+ * set, which no effect populates, so passing it here is the only way to see it.
+ */
+function PlanView({ locale, canEdit = true }) {
   const { tasks, overall } = surfaces(locale)
+  const opened = tasks.find((task) => task.progress.tally)
   return (
-    <Shell wide>
-      <div className="shell__aside stack">
-        <OverallCard overall={overall} compact />
-      </div>
-      <div className="shell__main stack">
-        <Controls
+    <Shell tab={TABS.TIMELINE} fab={canEdit}>
+      <div className="view view--plan stack">
+        <FilterChips
           counts={overall}
           total={overall.total}
           filter={FILTER_ALL}
           onFilter={noop}
-          view={VIEWS.TIMELINE}
-          onView={noop}
         />
-        <Timeline tasks={tasks} nowMs={NOW} timeZone={TOKYO} />
+        <Timeline
+          tasks={tasks}
+          nowWall={NOW_WALL}
+          canEdit={canEdit}
+          categories={CONFIG.categories}
+          expanded={new Set(opened ? [opened.id] : [])}
+          onExpand={noop}
+          onToggle={noop}
+          onSave={noop}
+          onDelete={noop}
+          canAddSubtask
+          onAddSubtask={noop}
+          onFieldFocus={noop}
+        />
       </div>
     </Shell>
   )
@@ -222,11 +230,8 @@ function TimelineView({ locale }) {
 
 function EmptyView() {
   return (
-    <Shell>
-      <div className="shell__aside stack">
-        <OverallCard overall={overallProgress([])} />
-      </div>
-      <div className="shell__main stack">
+    <Shell tab={TABS.TIMELINE} fab>
+      <div className="view view--plan stack">
         <EmptyBoard
           canEdit
           weddingDay={WEDDING_DAY}
@@ -264,18 +269,20 @@ function emit(name, element, { locale = 'en', accent = 'rose' } = {}) {
   console.log(path)
 }
 
-emit('en', <ListView locale="en" />)
-emit('en-viewer', <ListView locale="en" canEdit={false} />)
-emit('en-timeline', <TimelineView locale="en" />)
+emit('en-home', <HomeView locale="en" />)
+emit('en-home-viewer', <HomeView locale="en" canEdit={false} />)
+emit('en', <PlanView locale="en" />)
+emit('en-viewer', <PlanView locale="en" canEdit={false} />)
 emit('en-empty', <EmptyView />)
-emit('ja', <ListView locale="ja" />, { locale: 'ja' })
-emit('ja-timeline', <TimelineView locale="ja" />, { locale: 'ja' })
+emit('ja-home', <HomeView locale="ja" />, { locale: 'ja' })
+emit('ja', <PlanView locale="ja" />, { locale: 'ja' })
 
 // One file per accent, so a preset that breaks a contrast pair is visible rather than
-// merely measured.
+// merely measured. Home, because that is where the accent is loudest: the tab bar's
+// selected rule and the summary meter's fill.
 for (const accent of ACCENTS) {
   if (accent === 'rose') continue
-  emit(`en-${accent}`, <ListView locale="en" />, { accent })
+  emit(`en-${accent}`, <HomeView locale="en" />, { accent })
 }
 
 setLocale('en')
