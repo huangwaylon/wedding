@@ -34,8 +34,6 @@ const EDIT_KEY_PARAM = 'k'
  */
 export const KEY_PATTERN = /^[0-9a-f]{32,128}$/i
 
-export const ACCESS = { EDIT: 'edit', VIEW: 'view' }
-
 /** Pure: '#k=abc&x=1' -> 'abc'. Anything unusable is null, never a partial. */
 export function parseEditKey(hash) {
   const raw = String(hash ?? '')
@@ -144,7 +142,9 @@ export function isStandalone() {
  * @param {object} input
  * @param {string} input.hash `location.hash`
  * @param {boolean} input.standalone
- * @returns {{key: string|null, mode: string, rejected: boolean, strip: boolean}}
+ * @returns {{key: string|null, rejected: boolean, strip: boolean}} `key` is the whole
+ *   answer: holding one is what edit rights are, and `rejected` says the endpoint
+ *   refused it.
  */
 export function resolveAccess({ hash, standalone }) {
   const fromHash = parseEditKey(hash)
@@ -153,7 +153,6 @@ export function resolveAccess({ hash, standalone }) {
   const key = fromHash ? writeEditKey(fromHash) : readEditKey()
   return {
     key,
-    mode: key ? ACCESS.EDIT : ACCESS.VIEW,
     rejected: Boolean(key) && isKeyRejected(),
     strip: Boolean(fromHash) && shouldStripHash({ standalone }),
   }

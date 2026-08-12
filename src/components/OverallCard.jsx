@@ -7,11 +7,10 @@
  * unmistakable. That label survives as the section's accessible name, where it is the only
  * thing that has to say what this is.
  *
- * "9 of 14 done" RATHER THAN A VERDICT. This replaced a sentence that said "On schedule",
- * "3% ahead" or "Behind: 2 tasks are past their date" — and the sentence could be wrong: two
- * tasks late plus two future tasks finished early sums to a pace of exactly zero. A count
- * cannot be wrong, it makes the percentage above it checkable by arithmetic, and it is four
- * words in either language.
+ * "9 of 14 done" RATHER THAN A VERDICT. No sentence here may claim a pace: two tasks late plus
+ * two future tasks finished early sum to a pace of exactly zero, so any single figure reports "on
+ * schedule" with two things late. A count cannot be wrong, it makes the percentage above it
+ * checkable by arithmetic, and it is four words in either language.
  *
  * THE MARK IS THE PACE SIGNAL AND IT COSTS NO WORDS. It sits where the fill would be if
  * everything had been finished on its date, so ahead of it is ahead of schedule. That is a

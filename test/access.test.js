@@ -6,7 +6,6 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  ACCESS,
   KEY_PATTERN,
   isKeyRejected,
   markKeyRejected,
@@ -121,13 +120,14 @@ describe('shouldStripHash', () => {
 
 describe('resolveAccess', () => {
   it('is view-only with no key anywhere', () => {
+    // No key IS view-only: there is no second field saying so, and a planner opening the bare
+    // URL must get a board with nothing to dismiss.
     const access = resolveAccess({ hash: '', standalone: false })
-    expect(access).toMatchObject({ key: null, mode: ACCESS.VIEW, rejected: false, strip: false })
+    expect(access).toEqual({ key: null, rejected: false, strip: false })
   })
 
   it('captures a key from the fragment and grants edit', () => {
     const access = resolveAccess({ hash: `#k=${KEY}`, standalone: false })
-    expect(access.mode).toBe(ACCESS.EDIT)
     expect(access.key).toBe(KEY)
     expect(readEditKey()).toBe(KEY)
   })

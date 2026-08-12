@@ -141,6 +141,12 @@ export default {
   'settings.language': 'Language',
   'settings.accent': 'Colour',
   'settings.access': 'Editing',
+  /* A VIEW preference, not an access change — the wording has to make that unmistakable, or it
+     reads as the same thing as revoking the key directly below it. */
+  'settings.readOnlyHint':
+    'See the board exactly as your guests see it. Your edit link stays on this device.',
+  'settings.readOnlyOn': 'Switch to the read-only view',
+  'settings.readOnlyOff': 'Leave the read-only view',
   'settings.maintenance': 'Maintenance',
   'settings.compact': 'Purge deleted tasks',
   'settings.compactHint': { one: 'Removes {count} tombstoned row for good.', other: 'Removes {count} tombstoned rows for good.' },
@@ -173,30 +179,28 @@ export default {
   'status.refresh': 'Refresh',
 
   'toast.saved': 'Saved.',
-  /* IT NO LONGER POINTS AT A NOTICE, because for the failures that produce this toast there is
-     not one. It used to read "See the notice at the top, or try again" — but a persistent notice
-     is rendered only for a TERMINAL code, and `busy` and `transient` are deliberately excluded
-     from that set as the two retryable ones. So the only writes that told somebody to look up
-     were the only ones with nothing up there to look at. */
+  /* IT MUST STAND ALONE and may not point at a notice: one is rendered only for a TERMINAL code,
+     and `busy`/`transient` — the two retryable ones that produce most of these — are deliberately
+     excluded from that set, so there would be nothing up there to look at. */
   'toast.failed': 'Nothing was saved. Try again.',
   'toast.deleted': 'Task deleted.',
 
   'api.unconfigured': 'This build has no endpoint address',
   'api.unconfiguredHint':
-    'VITE_SCRIPT_URL was empty when the site was built. See SETUP.md.',
+    'VITE_SCRIPT_URL was empty when the site was built. See README.md.',
   'api.outdated': 'Saving is paused: the spreadsheet’s script is out of date',
-  /* This used to say "subtasks cannot be saved", which was true of an APPENDED column and
-     dangerously wrong once one was renamed: the old script silently dropped every due date it
-     was handed. Nothing that touches a task is written until it is redeployed. */
+  /* It must name NO specific field: a renamed column leaves a stale script holding every other
+     one, so what it cannot store is whatever this version has that it does not. Nothing that
+     touches a task is written until it is redeployed. */
   'api.outdatedHint':
-    'It cannot store every field this version writes, so nothing on the board can be saved until it is updated — a save would drop the values it has never heard of. Dates are still shown from the old column, so nothing is lost. In the sheet: Extensions › Apps Script, paste the current Code.gs, then Deploy › Manage deployments › New version.',
+    'It cannot store every field this version writes, so nothing on the board can be saved until it is updated — a save would drop the values it has never heard of. In the sheet: Extensions › Apps Script, paste the current Code.gs, then Deploy › Manage deployments › New version.',
   'api.unauthorized': 'The edit link was refused',
   'api.not_empty': 'That spreadsheet already has other tabs',
   'api.not_emptyHint':
     'The script refused to add its tabs to a spreadsheet somebody is using. Bind it to an empty one.',
   'api.misconfigured': 'The script is not attached to a spreadsheet',
   'api.misconfiguredHint':
-    'It has to be created from the sheet via Extensions › Apps Script. See SETUP.md.',
+    'It has to be created from the sheet via Extensions › Apps Script. See README.md.',
   'api.busy': 'Somebody else was saving. Try again.',
   'api.not_found': 'That task is no longer in the sheet.',
   'api.transient': 'Could not reach the board.',

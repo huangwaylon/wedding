@@ -1,20 +1,18 @@
 /**
  * `useBoard`'s mutation primitive.
  *
- * There is no DOM here, so this does not render the hook — it pins the property that made
- * unifying the four hand-written copies worth doing: every mutation, without exception,
- * flags a rejected key. The fourth copy (`compact`) had quietly dropped that, so a rotated
- * key plus a Purge left the app still showing edit controls and still failing silently.
+ * There is no DOM here, so this does not render the hook — it pins the property the single
+ * `run` wrapper exists for: every mutation, without exception, flags a rejected key. A
+ * hand-written copy that forgets to leaves a rotated key still showing edit controls and still
+ * failing silently.
  *
- * Read as a source check rather than a behavioural one. That is a weaker test than calling
- * the hook, and it is the strongest one available without a DOM: the failure it guards is
- * somebody adding a fifth mutation with its own try/catch.
+ * The first block reads as a source check rather than a behavioural one. That is weaker than
+ * calling the hook and it is the strongest thing available without a DOM: the failure it guards
+ * is somebody adding another mutation with its own try/catch.
  *
- * WHERE THAT WEAKNESS COST SOMETHING, and why `missingColumnsFor` is a function now: the
- * out-of-date guard used to be pinned the same way, by matching the source for
- * `schema.includes(...)`. It matched. It was checking the wrong column, and a whole board's
- * dates went through it. Anything with a rule in it belongs in a function these assertions can
- * call — see the second describe block.
+ * A source check cannot test a RULE, though — it can only confirm the code says something, not
+ * that it decides correctly. So anything with a rule in it belongs in a callable function, which
+ * is what `missingColumnsFor` is and what the second block exercises.
  */
 
 import { readFileSync } from 'node:fs'
@@ -29,8 +27,8 @@ const source = readFileSync('src/state/useBoard.js', 'utf8')
  * Comments discuss the duplication this file forbids, so they have to go first.
  *
  * They are REMOVED, not blanked. Blanking a `//` line leaves an empty line behind, and
- * `declarationOf` splits on blank lines — so a comment inside a mutation manufactured a false
- * block boundary and the assertion read only the half above it.
+ * `declarationOf` splits on blank lines — so a comment inside a mutation would manufacture a
+ * false block boundary and the assertion would read only the half above it.
  */
 function code(text) {
   return text.replace(/\/\*\*?[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*\n/gm, '')
@@ -40,7 +38,7 @@ const body = code(source)
 
 /**
  * The block of source declaring one mutation. Blocks rather than a brace-matching regex,
- * because after the unification some of these are a single line and some span twenty.
+ * because some of these are a single line and some span twenty.
  */
 function declarationOf(name) {
   return body
@@ -54,7 +52,7 @@ describe('the mutation primitive', () => {
   })
 
   it('is the only place that flags a rejected key', () => {
-    // One copy cannot drift from itself. Four could, and did.
+    // One copy cannot drift from itself; several can.
     expect(body.match(/unauthorizedRef\.current\?\.\(\)/g)).toHaveLength(1)
   })
 
@@ -72,7 +70,7 @@ describe('the mutation primitive', () => {
 
   it('routes every mutation through it', () => {
     // The named mutations the hook exposes, each of which must be a `run` call rather than
-    // its own try/catch. `compact` is listed first because it is the one that regressed.
+    // its own try/catch.
     for (const mutation of [
       'compact',
       'saveConfig',
@@ -111,8 +109,8 @@ describe('the mutation primitive', () => {
   })
 
   it('puts the SAME guard in front of every write that touches a row', () => {
-    // Per-op guards are what let the rename through: `addSubtask` had one, `editTask` had one for
-    // subtasks only, and `addTask` — the path that writes a date on a new task — had none.
+    // ONE guard rather than one per operation: a per-op check goes missing from something
+    // eventually, and the paths that write a date are the ones that matter.
     for (const name of [
       'addTask',
       'editTask',
@@ -139,13 +137,13 @@ describe('the mutation primitive', () => {
 /**
  * The out-of-date rule itself, called rather than grepped for.
  *
- * This is the test that was missing. The old assertions checked that the source SAID
- * `schema.includes(...)` — and it did, on the last column alone, which was sound only while the
- * list could only grow. `due` replaced `end`, a deployment predating that still had every other
- * column including the last, and so every write was allowed through and lost its date.
+ * A deployment is pinned to a version, so the browser can be running a newer column list than
+ * the script. The rule has to compare the WHOLE list: checking the last column alone is sound
+ * only while the list can grow and nothing is ever renamed, and a rename leaves a stale
+ * deployment holding every other column including the last one.
  */
 describe('missingColumnsFor', () => {
-  /** Exactly what an un-redeployed script reports today. */
+  /** What a deployment predating the current layout reports. */
   const LEGACY = [
     'id',
     'title',
@@ -167,7 +165,7 @@ describe('missingColumnsFor', () => {
   })
 
   it('is not fooled by the last column being present', () => {
-    // The precise shape of the defect: the guard read the final entry, and the old layout has it.
+    // Which is why the rule cannot read the final entry alone: this list has it.
     expect(LEGACY).toContain(TASK_COLUMNS[TASK_COLUMNS.length - 1])
     expect(missingColumnsFor(LEGACY).length).toBeGreaterThan(0)
   })

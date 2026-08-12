@@ -36,10 +36,9 @@ export const STATUS = { LOADING: 'loading', READY: 'ready', ERROR: 'error' }
  * Columns the DEPLOYED script has never heard of. Empty means it can store everything this
  * bundle writes.
  *
- * A FUNCTION, AND EXPORTED, because the rule itself is what went wrong and a rule that is not
- * callable can only be tested by matching the source text — which is exactly how the defect got
- * through: the assertions checked that the code said `schema.includes(...)`, and it did, on the
- * wrong column. `test/board.test.js` now runs this against the real previous column list.
+ * A FUNCTION, AND EXPORTED, because it holds a rule: a rule that cannot be CALLED can only be
+ * tested by matching the source text, which proves the code says something rather than that it
+ * decides correctly. `test/board.test.js` runs this against real column lists.
  *
  * @param {string[]|null} schema what the read reported. `null` is "nothing read yet" and is
  *   deliberately not out of date, or every cold start would flag itself. `[]` is a deployment
@@ -75,9 +74,9 @@ export function useBoard({ editKey, onUnauthorized }) {
   const [sheetTimeZone, setSheetTimeZone] = useState('')
   /**
    * The columns the DEPLOYED script understands. `null` means no read has landed yet, which is
-   * NOT the same as an empty list — an older script sends no `schema` field at all, so `[]` is
-   * the positive signal that the deployment is out of date. Conflating the two is what let the
-   * guard below miss the only case it exists for.
+   * NOT the same as an empty list — a script older than this bundle sends no `schema` field at
+   * all, so `[]` is the positive signal that the deployment is out of date. The guard below
+   * depends on the two staying distinct.
    */
   const [schema, setSchema] = useState(null)
   const [saving, setSaving] = useState(0)
@@ -163,11 +162,10 @@ export function useBoard({ editKey, onUnauthorized }) {
   /**
    * Every mutation goes through here, and there is exactly one of these on purpose.
    *
-   * This block — bump `saving`, call, accept the fresh board, classify the failure, flag a
-   * rejected key, decrement `saving` — was written out four times, and the fourth copy
-   * (`compact`) had quietly dropped the `unauthorized` callback. So a rotated key plus a
-   * Purge left the app looking like it still had edit rights. One copy cannot drift from
-   * itself.
+   * Bump `saving`, call, accept the fresh board, classify the failure, flag a rejected key,
+   * decrement `saving`: written out once per mutation, one copy will eventually forget the
+   * `unauthorized` callback and a rotated key will leave the app still showing edit controls.
+   * One copy cannot drift from itself.
    *
    * `optimistic` is the only variable part. With it, the local edit lands immediately and
    * any failure restores exactly what was there before — captured through the updater
@@ -178,10 +176,9 @@ export function useBoard({ editKey, onUnauthorized }) {
    * ONLY THE LAST WRITE STILL IN FLIGHT MAY REPLACE THE BOARD, and that rule is what makes a
    * burst of edits survivable. Every reply carries the WHOLE board as it stood when that write
    * committed, so an earlier one's reply describes a sheet that does not yet contain the later
-   * edits — and accepting it wipes them off the screen. Ticking three subtasks in a row
-   * measurably did that: 3 of 3, then back to 2 of 3 for a second and a half, then 3 again.
-   * Dropping the intermediate boards is safe because `chain` guarantees the last reply is the
-   * one composed after every earlier write had already been applied.
+   * edits — and accepting it wipes them off the screen, so three subtasks ticked in a row read
+   * 3 of 3, then 2 of 3, then 3 again. Dropping the intermediate boards is safe because `chain`
+   * guarantees the last reply is the one composed after every earlier write had been applied.
    *
    * @param {(key: string) => Promise<object>} call
    * @param {(tasks: object[]) => object[]} [optimistic]
@@ -223,18 +220,16 @@ export function useBoard({ editKey, onUnauthorized }) {
   /**
    * COLUMNS THE DEPLOYED SCRIPT HAS NEVER HEARD OF, which is the whole out-of-date signal.
    *
-   * A deployment is pinned to a version, so the browser can be running newer code than the
-   * script — and the script writes rows by looping its OWN column list, so an older one silently
-   * DROPS a field it does not know. It answers `ok: true`, the row is written, and the value is
-   * simply gone.
+   * A deployment is pinned to a version, so the browser can be running a newer column list than
+   * the script — and the script writes rows by looping its OWN list, so one missing a column
+   * silently DROPS that field. It answers `ok: true`, the row is written, and the value is simply
+   * gone. EVERY WRITE IS THEREFORE REFUSED while the reported schema does not cover
+   * `TASK_COLUMNS`.
    *
-   * THIS COMPARES THE WHOLE LIST, and it has to. The version before it checked the LAST column
-   * alone, which was sound while the list only ever grew: a new column is appended, so an older
-   * script is missing exactly that one. Then `end` was replaced by `due` — and a deployment that
-   * predated the rename still had every other column INCLUDING the last one, so the guard passed,
-   * every write was allowed through, and every date on the board was thrown away one edit at a
-   * time. Reads from such a script carry no `due` either, so the whole plan read as undated.
-   * `scripts/stub-endpoint.mjs --legacy` reproduces it.
+   * THE COMPARISON IS OVER THE WHOLE LIST, NEVER THE LAST ENTRY. Reading the final column alone
+   * is sound only while the list can grow and nothing is renamed; a renamed column leaves a stale
+   * deployment holding every other column including the last, so the guard would pass and each
+   * write would drop the field it could not store.
    *
    * The rule lives in `missingColumnsFor` so it can be CALLED rather than grepped for.
    */
@@ -243,11 +238,11 @@ export function useBoard({ editKey, onUnauthorized }) {
   /**
    * The one guard, in front of every write that touches a TASK ROW.
    *
-   * Per-op guards are what let this go wrong: `addSubtask` had one, `editTask` had one for
-   * subtasks only, and `addTask` had none — so the rename walked straight through the two paths
-   * that write a date. Anything writing a row goes through here, and `saveConfig` deliberately
-   * does not: it writes key/value pairs on the other tab, where no column layout is involved,
-   * and it is how somebody fixes the wedding date while the script is being redeployed.
+   * ONE guard rather than one per operation: a per-op check is missing from something eventually,
+   * and the paths that write a date are the ones that matter. Anything writing a row goes through
+   * here, and `saveConfig` deliberately does not — it writes key/value pairs on the other tab,
+   * where no column layout is involved, and it is how somebody fixes the wedding date while the
+   * script is being redeployed.
    *
    * @returns {Promise<false>|null} null when the write may proceed
    */
@@ -272,9 +267,9 @@ export function useBoard({ editKey, onUnauthorized }) {
 
   const editTask = useCallback(
     (task) => {
-      // EVERY edit, not just a subtask's. `toggleDone` comes through here too, and an old script
-      // rewrites the whole row from the columns IT knows — so ticking a task was enough to lose
-      // its date.
+      // EVERY edit, not just a subtask's. `toggleDone` comes through here too, and a mismatched
+      // script rewrites the whole row from the columns IT knows — so ticking a task is enough to
+      // lose its date.
       const refused = refuseIfOutdated()
       if (refused) return refused
       return run(
@@ -287,7 +282,8 @@ export function useBoard({ editKey, onUnauthorized }) {
 
   /**
    * A subtask is a task with a parent and no date. It goes through the same `run` as
-   * everything else — a second write path would be the fifth try/catch `run` exists to prevent.
+   * everything else — a second write path would be another hand-written try/catch, which is
+   * exactly what `run` exists to prevent.
    */
   const addSubtask = useCallback(
     (parent, title) => {
@@ -331,10 +327,10 @@ export function useBoard({ editKey, onUnauthorized }) {
     )
 
   /**
-   * Refused too, and not for the obvious reason. An old script stamps `updated_at` and
-   * `deleted_at` by ITS OWN indices — which point at different cells entirely if the grid has
-   * already been relaid out — so a delete against a mismatched deployment can write over a
-   * column it was not aiming at. One rule for everything touching the grid.
+   * Refused too, and not for the obvious reason. A mismatched script stamps `updated_at` and
+   * `deleted_at` by ITS OWN indices — which point at different cells entirely once the grid has
+   * been relaid out — so a delete against it can write over a column it was not aiming at. One
+   * rule for everything touching the grid.
    */
   const removeTask = useCallback(
     (id) =>
@@ -398,7 +394,7 @@ export function useBoard({ editKey, onUnauthorized }) {
     config,
     /** The spreadsheet's OWN zone, only used to warn when it disagrees with config. */
     sheetTimeZone,
-    /** The deployed script is missing a column this bundle writes. See `missingColumns`. */
+    /** The deployed script is missing a column this bundle writes. See `missingColumnsFor`. */
     outdatedScript,
     status,
     error,

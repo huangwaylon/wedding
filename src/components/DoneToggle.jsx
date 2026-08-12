@@ -9,7 +9,7 @@
  * The label names what the tap will do and carries the title, so a rotor full of these is
  * navigable — thirty buttons all called "Mark done" is not.
  *
- * IT CAN SWALLOW ITS OWN LABEL. Pass `children` and they render inside the control, which is how
+ * IT CAN SWALLOW ITS OWN LABEL. Pass `children` and they render inside the control, so
  * a subtask makes its ENTIRE row the target rather than a 44px circle at the end of it. That was
  * reported as "clicking a subtask does not register it as done": tapping the title — the obvious
  * thing to aim at on a checklist — did nothing at all, and a real tap test confirmed it. The

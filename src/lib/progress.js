@@ -17,12 +17,9 @@
  * sentence, because a sentence has to pick a verdict and a verdict can be wrong —
  * five things late and five future things ticked early sum to a pace of zero.
  *
- * This is a deliberate correction of an earlier model, where a task's percentage was
- * how far the clock had got between a start and an end. That number reached 100% for
- * a window that had merely run out, so "78% complete" and "78% of the time is gone"
- * were the same figure and the app needed a badge, a mark and an overdue count just
- * to stop the headline lying. An unfinished task is now 0%, whatever the date says,
- * and the headline is a number somebody can check by counting.
+ * AN UNFINISHED TASK IS 0%, WHATEVER THE DATE SAYS. Nothing may make a percentage
+ * advance without somebody ticking something: the headline has to be a number
+ * somebody can check by counting.
  *
  * Every task counts EQUALLY in the roll-up — not weighted by subtask count. "62% of
  * our tasks" is a sentence somebody can check; a weighted average silently makes the
@@ -211,11 +208,11 @@ function compareForDisplay(a, b) {
  * denominator, two different claims, and the distance between them is drawn as a fill
  * against a mark.
  *
- * THERE IS NO VERDICT HERE, DELIBERATELY. An earlier version answered "ahead" or
- * "behind" in words, and the words could be wrong: five tasks past their date with
- * nothing done, plus five future tasks ticked early, sums to a pace of exactly zero
- * and read "On schedule". The graphic cannot make that claim, and `overdue` states the
- * fact independently — so the number that could lie was removed rather than patched.
+ * THERE IS NO PACE VERDICT HERE AND THERE MUST NOT BE ONE. Any single figure
+ * subtracting the two can be flatly wrong: five tasks past their date with nothing
+ * done, plus five future tasks ticked early, sums to exactly zero and would read "on
+ * schedule" with five things late. The graphic declines to claim it and `overdue`
+ * states the fact on its own.
  *
  * TOP-LEVEL TASKS ONLY, which `withProgress` already guarantees. A subtask must never enter
  * this mean: a parent with ten subtasks would otherwise carry eleven twentieths of a ten-task
@@ -226,6 +223,9 @@ function compareForDisplay(a, b) {
  * @param {Array} tasks live TOP-LEVEL tasks WITH `progress` attached (`withProgress`)
  */
 export function overallProgress(tasks) {
+  // Every key in `STATE` needs a slot here, `nodate` included: the loop below indexes this
+  // object BY state, so a missing key makes the count NaN for the first undated task. It is
+  // an accumulator, not a promise that something displays it.
   const counts = { done: 0, overdue: 0, soon: 0, later: 0, nodate: 0 }
   let percentSum = 0
   let passed = 0

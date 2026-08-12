@@ -50,9 +50,8 @@ const ACCENTS = {
 }
 
 /**
- * Two states get a colour of their own. There is no `warning`: the third and
- * fourth states — in progress and upcoming — are the accent and the bare track,
- * so nothing needs a hue that cannot clear 3:1 on white.
+ * Two states get a colour of their own. There is no `warning`: `soon` is the accent and
+ * `later` is the bare track, so nothing needs a hue that cannot clear 3:1 on white.
  */
 const STATUS = { good: '#098409', critical: '#c4362f' }
 

@@ -24,11 +24,9 @@
  * unambiguous and the .gs comparison is a plain array equality.
  *
  * APPEND, never rename or reorder. Appending is the only change that cannot shift an
- * existing index — and the only one an older deployment can be caught out by cheaply.
- * `useBoard` compares this whole list against the `schema` every read carries, which is
- * what a RENAME taught it to do: `due` replaced `end`, a deployment that predated it still
- * had every other column including the last one, and the guard that only checked the last
- * one let the write through and dropped every date on the board.
+ * existing index. `useBoard` compares this WHOLE list against the `schema` every read
+ * carries — never just the last entry, which a rename leaves in place while breaking
+ * everything before it.
  */
 export const TASK_COLUMNS = [
   'id',
@@ -64,17 +62,7 @@ export function rowToTask(row) {
     id: cellText(row?.id),
     title: cellText(row?.title),
     category: cellText(row?.category),
-    /**
-     * `end` IS THE FALLBACK, AND IT IS READ-ONLY. A deployment that predates this column list
-     * sends no `due` at all, which read every task on the board as undated — the whole plan
-     * looked empty rather than out of date. The old closing end of the window is what "due by"
-     * meant, so this shows the board correctly until the script is redeployed; the `slice` drops
-     * the clock half the same way `normalizeDay` does.
-     *
-     * Nothing WRITES `end`. `useBoard` refuses every task write against such a deployment
-     * (`missingColumns`), because a write there is what silently threw the dates away.
-     */
-    due: cellText(row?.due) || cellText(row?.end).slice(0, 10),
+    due: cellText(row?.due),
     doneAt: cellText(row?.done_at),
     createdAt: cellText(row?.created_at),
     updatedAt: cellText(row?.updated_at),
@@ -126,13 +114,7 @@ function isSubtask(task) {
  * Structural problems that must stop a save, as codes rather than sentences so
  * the catalog owns the wording.
  *
- * A TITLE IS THE ONLY THING REQUIRED. The due date is deliberately optional, and that
- * is not laziness: forcing one forces a WRONG one. During entry the date is exactly
- * what is not yet known — "find a florist" is real, "find a florist by the 12th" is an
- * invention — and under this app's arithmetic an invented date lands straight in the
- * overdue count and in the on-schedule mark. A dateless task sorts to its own group at
- * the foot of the list, counts in the total, and asks nothing of anybody until somebody
- * gives it a day.
+ * A TASK NEEDS A TITLE AND A DAY. A subtask needs only a title.
  *
  * @param {object} task
  * @param {(day: string) => boolean} isValidDay injected from `lib/time.js` to
@@ -143,24 +125,21 @@ export function validateTask(task, isValidDay) {
   if (!cellText(task?.title)) codes.push('MISSING_TITLE')
 
   /**
-   * A subtask is a checklist item: a title and a tick. It carries no date at all — not even an
-   * optional one — because a date wheel per item would make entering five of them in a row
-   * unusable on a phone, and then no parent's progress would ever advance, which is the whole
-   * point of the feature. One branch rather than a second function, so the title check cannot
-   * drift between them.
+   * A subtask is a checklist item: a title and a tick, with no date at all. A date wheel per item
+   * would make entering five in a row unusable on a phone, and then no parent's progress would
+   * advance, which is the point of the feature. One branch rather than a second function, so the
+   * title check cannot drift between them.
    */
   if (isSubtask(task)) return codes
 
   /**
-   * A TASK MUST CARRY A DAY. Refused rather than defaulted: the app must never invent a date,
-   * because an invented one lands straight in the overdue count and in the on-schedule mark, and
-   * that is a false figure nobody typed. So the create sheet still opens with the field BLANK and
-   * Save refuses until somebody picks one.
+   * A DAY IS REQUIRED, AND REFUSED RATHER THAN DEFAULTED. Nothing may invent a date: an invented
+   * one lands straight in the overdue count and in the on-schedule mark, so the create sheet opens
+   * BLANK and Save refuses until somebody picks a day.
    *
-   * `STATE.NODATE` survives this and must keep working. It is no longer reachable from the UI, but
-   * a board can already hold undated rows and somebody can empty the cell in the spreadsheet at any
-   * time — and a task the client refuses to SAVE still has to be shown. Anything else hides a row,
-   * which is the worst thing this app can do.
+   * `STATE.NODATE` still has to render. A sheet can hold undated rows and anybody can empty the
+   * cell by hand, and a row this refuses to SAVE must still be shown — hiding one is the worst
+   * thing this app can do.
    */
   const due = cellText(task?.due)
   if (!due) codes.push('MISSING_DUE')

@@ -1,11 +1,10 @@
 /**
  * The hero: the photograph, who is getting married, and how long there is left.
  *
- * The photograph is the first thing on screen and the reason the Home tab exists —
- * a planning board that opens on a progress bar reads like a project tracker. It is
- * `alt=""` and not described: the `<h1>` directly beneath it names the couple, so a
- * described photo would say the same thing twice to a screen reader while adding
- * nothing to it.
+ * The photograph is the first thing on screen, and it is the header: a planning board that
+ * opens on a progress bar reads like a project tracker. It is `alt=""` and not described — the
+ * `<h1>` directly beneath names the couple, so a described photo would say the same thing twice
+ * to a screen reader.
  *
  * The countdown is counted in CALENDAR days in the board's zone (see `daysUntil`),
  * so it flips at midnight rather than at whatever o'clock the page happened to load.

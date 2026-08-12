@@ -29,6 +29,7 @@ import Meter from '../src/components/Meter.jsx'
 import Notice from '../src/components/Notice.jsx'
 import OverallCard from '../src/components/OverallCard.jsx'
 import Plan from '../src/components/Plan.jsx'
+import SettingsSheet from '../src/components/SettingsSheet.jsx'
 import TaskCard from '../src/components/TaskCard.jsx'
 import { draftFrom, taskFromDraft } from '../src/components/TaskFields.jsx'
 import Toasts from '../src/components/Toasts.jsx'
@@ -156,8 +157,8 @@ describe('OverallCard', () => {
     )
     expect(html).toContain('overall__percent')
     expect(html).toContain('role="progressbar"')
-    // The count is what makes the percentage above it checkable by arithmetic. It replaced a
-    // pace sentence, which could be wrong; a count cannot.
+    // The count is what makes the percentage above it checkable by arithmetic. The card claims
+    // no pace: a single figure for that can be wrong, and a count cannot.
     expect(html).toMatch(/class="overall__count tnum">1 of 2 done</)
   })
 
@@ -190,7 +191,7 @@ describe('OverallCard', () => {
 
   it('never reads as a finished plan when nothing is finished', () => {
     // The old model's most dangerous reading, kept as a regression: every date passed and
-    // nothing done used to report 100%.
+    // nothing done must not report 100%.
     const late = overallOf(
       Array.from({ length: 8 }, (_, index) => task({ id: `t${index}`, due: '2026-12-01' })),
     )
@@ -306,7 +307,7 @@ describe('TaskCard', () => {
   })
 
   it('gives a viewer with nothing to reveal no disclosure at all', () => {
-    // A row with no checklist and no editor used to open a padded empty box, which is the
+    // A row with no checklist and no editor would open a padded empty box, which is the
     // normal case for a planner on a freshly seeded board.
     const viewer = render(row, { canEdit: false })
     expect(viewer).not.toContain('tcard__chev')
@@ -368,13 +369,13 @@ describe('TaskCard', () => {
     expect(html).toContain('>Due<')
     expect(html).toContain('>Category<')
     expect(html).not.toContain('<form')
-    // The fields the model no longer has.
+    // Fields the model does not have.
     expect(html).not.toContain('>Owner<')
     expect(html).not.toContain('>Notes<')
     expect(html).not.toContain('>All day<')
     expect(html).not.toContain('type="time"')
     expect(html.match(/type="date"/g)).toHaveLength(1)
-    // And the facts line is replaced rather than stacked above the fields.
+    // And the facts line gives way to the fields rather than stacking above them.
     expect(html).not.toContain('tcard__fact')
     expect(html).toContain('aria-pressed="true"')
   })
@@ -663,6 +664,62 @@ describe('Plan', () => {
   })
 })
 
+describe('the read-only view toggle', () => {
+  const render = (extra = {}) =>
+    renderToStaticMarkup(
+      <SettingsSheet
+        config={mergeConfig({})}
+        canEdit
+        hasKey
+        readOnly={false}
+        onToggleReadOnly={noop}
+        sheetTimeZone=""
+        deletedTasks={[]}
+        onRestore={noop}
+        onSaveConfig={noop}
+        onCompact={noop}
+        onEnableEditing={noop}
+        onRevokeEditing={noop}
+        onClose={noop}
+        {...extra}
+      />,
+    )
+
+  it('offers an editor the guest view, as a toggle that names where the tap goes', () => {
+    const html = render()
+    expect(html).toContain('Switch to the read-only view')
+    expect(html).toContain('aria-pressed="false"')
+  })
+
+  it('flips the label rather than only the state, so the way back is legible', () => {
+    // A toggle that names its state alone is a guess. Same rule as the row's Edit/Done control.
+    const html = render({ readOnly: true, canEdit: false })
+    expect(html).toContain('Leave the read-only view')
+    expect(html).toContain('aria-pressed="true"')
+  })
+
+  it('keeps the revoke control while previewing, and never asks for the link again', () => {
+    // THE POINT OF SPLITTING `hasKey` FROM `canEdit`. Previewing is not losing the key, so this
+    // half of Settings answers "do you hold one" — otherwise an editor is shown a paste field
+    // for a credential already on the device, which reads as the link having broken.
+    const html = render({ readOnly: true, canEdit: false })
+    expect(html).toContain('Stop editing on this device')
+    expect(html).not.toContain('Paste your edit link')
+  })
+
+  it('shows a real viewer the paste field and no toggle at all', () => {
+    // Nothing to preview and nothing to revoke: a guest has no key.
+    const html = render({ hasKey: false, canEdit: false })
+    expect(html).toContain('Paste your edit link')
+    expect(html).not.toContain('read-only view')
+  })
+
+  it('hides maintenance while previewing, because a guest cannot restore a row', () => {
+    const html = render({ readOnly: true, canEdit: false, deletedTasks: [task({ id: 'gone' })] })
+    expect(html).not.toContain('Purge deleted tasks')
+  })
+})
+
 describe('Hero', () => {
   it('shows both names, the countdown and the venue', () => {
     const config = mergeConfig({
@@ -736,7 +793,7 @@ describe('FilterChips', () => {
   }
 
   it('carries a count on every filter, and is the only place the counts live', () => {
-    // The four read-only stat tiles that used to sit on the tracker are gone: the same
+    // No read-only stat tiles on the tracker: the same
     // numbers are here, and here they are also the control that acts on them.
     const html = render([task({ id: 'a' }), task({ id: 'b' })])
     const labels = [...html.matchAll(/class="chip"[^>]*>([^<]*)</g)].map((m) => m[1])

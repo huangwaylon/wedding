@@ -1,18 +1,12 @@
 /**
  * A local endpoint that EXECUTES the real `apps-script/Code.gs` against an in-memory grid.
  *
- * `scripts/drive.mjs` used to point at a static JSON file, which meant a write round-tripped as a
- * valid reply containing the value from before the edit — enough to prove the request left, and
- * useless for proving anything was stored. That gap is exactly where the bug lived: setting a date
- * looked like it saved and came back undated. This serves the same code the deployment runs, so
- * "does the date survive a round trip" is a question with an answer.
+ * It serves the same code the deployment runs, so "does the date survive a round trip" is a
+ * question with an answer. A static JSON file cannot answer it: a write against one round-trips
+ * as a valid reply holding the value from before the edit, which proves the request left and
+ * nothing else.
  *
- *   node scripts/stub-endpoint.mjs [--legacy] [--port 5200]
- *
- * `--legacy` reproduces a DEPLOYMENT THAT PREDATES A COLUMN RENAME: it runs the same handlers but
- * answers with the previous thirteen-column list and strips `due` from every row, which is what an
- * un-redeployed Apps Script does. It exists so the out-of-date guard can be tested against the
- * failure it is for, rather than against a hand-written fixture of what we imagine that looks like.
+ *   node scripts/stub-endpoint.mjs [--port 5200]
  *
  * No new dependency: `node:http` and the same `new Function` trick `test/script.test.js` uses.
  */
@@ -23,25 +17,7 @@ import { readFileSync } from 'node:fs'
 const SOURCE = readFileSync('apps-script/Code.gs', 'utf8')
 const KEY = 'a'.repeat(64)
 const args = process.argv.slice(2)
-const LEGACY = args.includes('--legacy')
 const PORT = Number(args[args.indexOf('--port') + 1]) || 5200
-
-/** The layout this script replaced. `--legacy` answers with these and nothing else. */
-const LEGACY_COLUMNS = [
-  'id',
-  'title',
-  'category',
-  'start',
-  'end',
-  'all_day',
-  'done_at',
-  'notes',
-  'owner',
-  'created_at',
-  'updated_at',
-  'deleted_at',
-  'parent_id',
-]
 
 // ---------------------------------------------------------------------------
 // A Sheets service, in memory. Same shape as test/script.test.js's fake.
@@ -59,10 +35,6 @@ function makeSheet(name, grid) {
         if (sheet.grid[row - 1].some((cell) => cell !== '' && cell != null)) return row
       }
       return 0
-    },
-    getLastColumn: () => {
-      sheet.calls += 1
-      return Math.max(0, ...sheet.grid.map((line) => line.length))
     },
     getMaxRows: () => Math.max(sheet.grid.length, 1000),
     setFrozenRows: () => {},
@@ -128,8 +100,8 @@ function lastRowOf(sheet) {
 }
 
 /**
- * A board seven months out: some done, some overdue, some due this fortnight, one undated —
- * which is the row the reported bug was about.
+ * A board seven months out: some done, some overdue, some due this fortnight, and three with no
+ * date at all — `nodate` is a state of its own, and a row in it must draw and count as one.
  */
 function seed() {
   const day = (offset) => {
@@ -145,7 +117,7 @@ function seed() {
     ['a5', 'Choose the invitation paper', 'Stationery', day(7), ''],
     ['a6', 'Order signage, vow books and favours', 'Gifts', day(120), ''],
     ['a7', 'Agree the budget and who is contributing', 'Budget', day(-60), '2026-07-01T00:00:00.000Z'],
-    // The three the bug was reported against: no date at all.
+    // The three with no date at all: `nodate` sorts last, into its own group.
     ['a8', 'Decide about a live band', 'Music', '', ''],
     ['a9', 'Ask about corkage', 'Food', '', ''],
     ['a10', 'Find a calligrapher', 'Stationery', '', ''],
@@ -209,19 +181,6 @@ function load() {
 
 const script = load()
 
-/** What an un-redeployed Apps Script would answer: the old column list, and no `due` anywhere. */
-function degrade(body) {
-  if (!LEGACY || !body.ok) return body
-  return {
-    ...body,
-    schema: LEGACY_COLUMNS,
-    tasks: (body.tasks ?? []).map((task) => {
-      const { due, ...rest } = task
-      return { ...rest, start: '', end: due ? `${due}T23:59` : '' }
-    }),
-  }
-}
-
 const server = createServer((request, response) => {
   const chunks = []
   request.on('data', (chunk) => chunks.push(chunk))
@@ -233,7 +192,7 @@ const server = createServer((request, response) => {
     } else {
       text = script.doGet()
     }
-    const body = degrade(JSON.parse(text))
+    const body = JSON.parse(text)
     // A Sheets service call is the unit of cost in Apps Script, so it is the number worth
     // printing: the arithmetic between them is free and the network floor is not ours to fix.
     console.log(
@@ -249,6 +208,6 @@ const server = createServer((request, response) => {
 })
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`stub endpoint on http://127.0.0.1:${PORT}${LEGACY ? ' (LEGACY deployment)' : ''}`)
+  console.log(`stub endpoint on http://127.0.0.1:${PORT}`)
   console.log(`key: ${KEY}`)
 })

@@ -1,12 +1,12 @@
 /**
  * Calendar days and zone resolution.
  *
- * The zone is now used for exactly ONE thing — deciding what today's date is — so that is
- * what this file leans on: a board in Tokyo and a device in Los Angeles must disagree about
+ * The zone is used for exactly ONE thing — deciding what today's date is — so that is what
+ * this file leans on: a board in Tokyo and a device in Los Angeles must disagree about
  * "today" by a day for several hours, and everything downstream compares day strings.
  *
- * `formatDayChip`'s Japanese cases and the calendar validation are the other two places a
- * "simplification" has already gone wrong once each.
+ * Calendar validation is the other load-bearing half: a date that matches the pattern and is
+ * not a date must be refused rather than silently rolled into the next month.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -16,7 +16,6 @@ import {
   daysBetween,
   daysUntil,
   formatDay,
-  formatDayChip,
   formatDayMonth,
   isValidDay,
   isValidTimeZone,
@@ -57,9 +56,9 @@ describe('parseDay', () => {
 })
 
 describe('normalizeDay', () => {
-  it('drops a clock time a legacy row or the Sheets UI carries', () => {
-    // Every task on a board written before dates lost their times holds one of these, and
-    // `readCell` reformats a hand-edited Date cell into exactly this shape.
+  it('drops a clock time a row or the Sheets UI carries', () => {
+    // `readCell` reformats a hand-edited Date cell into exactly this shape, and rows out on
+    // live boards can hold a clock time of their own.
     expect(normalizeDay('2027-04-18T23:59')).toBe('2027-04-18')
     expect(normalizeDay('2027-04-18 14:30')).toBe('2027-04-18')
     expect(normalizeDay('  2027-04-18  ')).toBe('2027-04-18')
@@ -129,7 +128,7 @@ describe('daysBetween', () => {
     expect(daysBetween('2027-02-28', '2027-03-01')).toBe(1)
   })
 
-  it('tolerates a legacy value on either side', () => {
+  it('tolerates a clock time on either side', () => {
     expect(daysBetween('2027-04-18T09:00', '2027-04-20')).toBe(2)
   })
 
@@ -194,7 +193,7 @@ describe('formatting', () => {
     expect(formatDayMonth('2027-04-01', { locale: 'en' })).toBe('April 2027')
   })
 
-  it('accepts a legacy value, so an unmigrated row still renders', () => {
+  it('accepts a clock time, so a row carrying one still renders', () => {
     expect(formatDay('2027-01-01T00:00', { locale: 'en' })).toBe('Jan 1')
   })
 
@@ -202,36 +201,5 @@ describe('formatting', () => {
     expect(formatDay('', { locale: 'en' })).toBe('')
     expect(formatDay('2027-02-31', { locale: 'en' })).toBe('')
     expect(formatDayMonth('', { locale: 'en' })).toBe('')
-  })
-})
-
-describe('formatDayChip', () => {
-  it('splits a chip into the day and the month', () => {
-    expect(formatDayChip('2027-04-18', { locale: 'en' })).toEqual({ day: '18', month: 'APR' })
-  })
-
-  it('uppercases the month in JS, not with `text-transform`', () => {
-    // CSS `text-transform` is forbidden anywhere Japanese can pass through: it is a no-op on
-    // kanji, so a stylesheet holding both languages would silently uppercase the Latin half
-    // only. `toLocaleUpperCase` is the locale-aware form and leaves '4月' exactly as it is.
-    expect(formatDayChip('2027-04-18', { locale: 'ja' }).month).toBe('4月')
-    expect(formatDayChip('2027-04-18', { locale: 'en' }).month).toBe('APR')
-  })
-
-  it('keeps the day a bare numeral in Japanese', () => {
-    // The one deliberate exception to routing numbers through Intl. `{ day: 'numeric' }` in
-    // `ja` returns '18日', which does not fit the chip at --fs-xl and printed the day on two
-    // rows. A day is 1–31, so there is no grouping separator for Intl to add.
-    expect(formatDayChip('2027-04-18', { locale: 'ja' }).day).toBe('18')
-  })
-
-  it('is null rather than a plausible-looking wrong chip', () => {
-    // A task with no date has to render no chip at all. Inventing today, or the created-on
-    // date, would put a date on the row that is nowhere in the sheet.
-    expect(formatDayChip('', { locale: 'en' })).toBeNull()
-    expect(formatDayChip('nonsense', { locale: 'en' })).toBeNull()
-    // Calendar-invalid, not merely malformed — the same validation as `parseDay`, or this
-    // chip would say "31" for a task that silently landed in March.
-    expect(formatDayChip('2027-02-31', { locale: 'en' })).toBeNull()
   })
 })

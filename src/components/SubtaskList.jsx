@@ -125,7 +125,7 @@ function AddSubtask({ onAdd, onFocusChange }) {
 /**
  * @param {boolean} [props.canAdd] false when the DEPLOYED script has no `parent_id` column, so a
  *   subtask cannot be stored at all. The existing items stay live — they can still be ticked and
- *   deleted, which the old script handles fine — but there is no field, because offering one would
+ *   deleted — but there is no field, because offering one would
  *   invite somebody to type a checklist that gets thrown away. The banner says why.
  * @param {boolean} [props.canRemove] false on the read path. Ticking and adding are doing the
  *   work; removing is destructive, so it lives with the task's own delete behind the Edit toggle

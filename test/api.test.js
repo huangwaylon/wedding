@@ -56,25 +56,6 @@ describe('readBoard', () => {
     })
   })
 
-  it('decodes a board from a deployment that predates the column rename', () => {
-    // The reported failure: such a script sends its own thirteen columns and no `due`, so every
-    // row arrived undated and the plan looked empty. The read degrades; the WRITE is refused, by
-    // `missingColumnsFor` in useBoard.
-    vi.stubGlobal(
-      'fetch',
-      reply({
-        ok: true,
-        tasks: [{ id: 'a', title: 'Book the venue', end: '2027-02-01T23:59', parent_id: '' }],
-        config: {},
-        schema: ['id', 'title', 'category', 'start', 'end', 'all_day', 'done_at', 'notes', 'owner', 'created_at', 'updated_at', 'deleted_at', 'parent_id'],
-      }),
-    )
-    return readBoard(1).then((board) => {
-      expect(board.tasks[0].due).toBe('2027-02-01')
-      expect(board.schema).not.toContain('due')
-    })
-  })
-
   it('sends no credential at all', async () => {
     // The defining property of the read path: a view-only planner has nothing to send.
     const fetcher = reply(BOARD)

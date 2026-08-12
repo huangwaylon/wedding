@@ -118,6 +118,9 @@ export default {
   'settings.language': '言語',
   'settings.accent': '色',
   'settings.access': '編集',
+  'settings.readOnlyHint': 'ゲストに見えるとおりの画面を確認できます。編集リンクはこの端末に残ります。',
+  'settings.readOnlyOn': '閲覧モードにする',
+  'settings.readOnlyOff': '閲覧モードを終了する',
   'settings.maintenance': 'メンテナンス',
   'settings.compact': '削除済みを完全に消す',
   'settings.compactHint': { other: '{count}行を完全に削除します。' },
@@ -154,17 +157,17 @@ export default {
   'toast.deleted': 'タスクを削除しました。',
 
   'api.unconfigured': 'このビルドにはエンドポイントが設定されていません',
-  'api.unconfiguredHint': 'ビルド時に VITE_SCRIPT_URL が空でした。SETUP.md を参照してください。',
+  'api.unconfiguredHint': 'ビルド時に VITE_SCRIPT_URL が空でした。README.md を参照してください。',
   'api.outdated': '保存を停止中：スプレッドシートのスクリプトが古いままです',
   'api.outdatedHint':
-    'このバージョンが書き込む項目をすべて保存できないため、更新するまでボードへの保存は行いません（保存すると未知の項目が失われます）。期限は旧列から表示しているので、データは失われていません。シートの「拡張機能 › Apps Script」で最新の Code.gs を貼り付け、「デプロイ › デプロイを管理 › 新バージョン」を実行してください。',
+    'このバージョンが書き込む項目をすべて保存できないため、更新するまでボードへの保存は行いません（保存すると未知の項目が失われます）。シートの「拡張機能 › Apps Script」で最新の Code.gs を貼り付け、「デプロイ › デプロイを管理 › 新バージョン」を実行してください。',
   'api.unauthorized': '編集リンクが拒否されました',
   'api.not_empty': 'そのスプレッドシートには既に他のシートがあります',
   'api.not_emptyHint':
     '使用中のスプレッドシートにシートを追加することは拒否されました。空のファイルに紐付けてください。',
   'api.misconfigured': 'スクリプトがスプレッドシートに紐付いていません',
   'api.misconfiguredHint':
-    'シートの「拡張機能 › Apps Script」から作成する必要があります。SETUP.md を参照してください。',
+    'シートの「拡張機能 › Apps Script」から作成する必要があります。README.md を参照してください。',
   'api.busy': '他の保存が進行中でした。もう一度お試しください。',
   'api.not_found': 'そのタスクはシートに存在しません。',
   'api.transient': 'ボードに接続できませんでした。',

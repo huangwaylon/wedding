@@ -1,21 +1,23 @@
 /**
  * Settings. Two kinds of value, kept visibly apart because the distinction matters:
  *
- *   SHARED — written to the sheet, so everyone on the board sees the change: names,
- *   the wedding date and time, the venue, the timezone, the category list.
+ *   SHARED — written to the sheet, so everyone on the board sees the change: names, the
+ *   wedding date, the venue, the timezone, the category list.
  *
- *   THIS DEVICE — `localStorage` only: the interface language and the accent. Neither
- *   may ever reach the sheet. The couple and their planners all read the same board
- *   and none of them gets to restyle anybody else's screen, or decide what language
- *   a planner reads. Only that half is labelled, because it is the half nobody would
- *   guess: an editor's own name and venue are obviously shared with the board.
+ *   THIS DEVICE — `localStorage` only: the interface language, the accent, and the read-only
+ *   view. None of them may ever reach the sheet. The couple and their planners all read the
+ *   same board and none of them gets to restyle anybody else's screen or decide what language
+ *   a planner reads. Only that half is labelled, because it is the half nobody would guess: an
+ *   editor's own name and venue are obviously shared.
  *
- * A viewer sees only the device half plus the edit-link field, because everything
- * else is a write they cannot make.
+ * A viewer sees only the device half plus the edit-link field, because everything else is a
+ * write they cannot make. `hasKey`, not `canEdit`, decides which of those two the Editing
+ * section shows — an editor previewing the guest view still holds a key, and offering them a
+ * paste field for it would read as the link having broken.
  *
- * Three sentences here survive the text pass on purpose, and each one is attached to a
- * control that is ambiguous without it: what the timezone reinterprets, what Purge destroys,
- * and that revoking editing is undone by the link somebody already has.
+ * Every sentence of prose here is attached to a control that is ambiguous without it: what the
+ * timezone reinterprets, what Purge destroys, that the read-only view keeps the key, and that
+ * revoking editing is undone by the link somebody already has.
  */
 
 import { useState } from 'react'
@@ -30,6 +32,10 @@ import { DeletedList } from './Deleted.jsx'
 export default function SettingsSheet({
   config,
   canEdit,
+  /** Whether this device holds a usable edit key at all — see `App` for why that is separate. */
+  hasKey = canEdit,
+  readOnly = false,
+  onToggleReadOnly,
   sheetTimeZone,
   deletedTasks,
   onRestore,
@@ -142,8 +148,7 @@ export default function SettingsSheet({
 
           <section className="section">
             <h3 className="section__title">{t('settings.wedding')}</h3>
-            {/* One date, alone on its row. It used to share the row with a ceremony time,
-                which nothing on the board ever read. */}
+            {/* One date, alone on its row. Nothing on the board reads a clock time. */}
             <div className="field">
               <label className="label" htmlFor="wdate">
                 {t('settings.weddingDate')}
@@ -263,8 +268,22 @@ export default function SettingsSheet({
 
       <section className="section">
         <h3 className="section__title">{t('settings.access')}</h3>
-        {canEdit ? (
+        {hasKey ? (
           <>
+            {/* THE READ-ONLY VIEW, above the revoke, because it is the one somebody actually wants:
+                "show me what the guests see" and "hand my phone over" are both this, and revoking
+                is neither. The label names the direction the tap goes, the same rule the row's own
+                Edit/Done toggle follows — a toggle that only names its state is a guess. */}
+            <p className="section__hint">{t('settings.readOnlyHint')}</p>
+            <button
+              type="button"
+              className="btn btn--secondary btn--block"
+              aria-pressed={readOnly}
+              onClick={onToggleReadOnly}
+            >
+              {readOnly ? t('settings.readOnlyOff') : t('settings.readOnlyOn')}
+            </button>
+
             <p className="section__hint">{t('access.revokeHint')}</p>
             <button type="button" className="btn btn--secondary btn--block" onClick={onRevokeEditing}>
               {t('access.revoke')}

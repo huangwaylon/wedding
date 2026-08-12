@@ -31,8 +31,8 @@ body {
   overflow-wrap: break-word;
   word-break: normal;
   /* Horizontal safe area lives here so nothing hides under a landscape notch.
-     Top/bottom insets are intentionally NOT applied globally: the sticky
-     header and the bottom sheet each need to paint *into* their inset and
+     Top/bottom insets are intentionally NOT applied globally: the sticky month
+     heading and the bottom sheet each need to paint *into* their inset and
      pad their own content. Use var(--safe-top) / var(--safe-bottom) there. */
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
@@ -95,11 +95,7 @@ svg {
 button,
 input,
 select,
-optgroup,
-/* textarea belongs here: browsers default it to monospace, so without it the notes field is
-   the one control in the app not in --font-sans — and a monospace fallback for Japanese is
-   markedly worse than for Latin. */
-textarea {
+optgroup {
   margin: 0;
   font: inherit;
   color: inherit;
@@ -153,7 +149,7 @@ samp,
 pre {
   font-family: var(--font-mono);
   /* Relative, but floored: 0.9375em inside a 13px hint is 12.19px, and 12px
-     kanji is mush. Every <code> in this app sits inside caption-sized text. */
+     kanji is mush. Monospace here only ever nests inside caption-sized text. */
   font-size: max(var(--fs-caption), 0.9375em);
 }
 
@@ -162,8 +158,8 @@ pre {
 }
 
 /* ---- Numerals ----------------------------------------------------------
-   Carried by every figure that sits in a column and must not jitter: the per-task
-   percentages down the plan, a card's date chip and its range, the countdown. Tabular
+   Carried by every figure that sits in a column and must not jitter: a row's day number
+   and its checklist tally, a month's tally, the countdown, the board's own count. Tabular
    figures line up while keeping the proportional letterforms of the UI sans.
 
    Deliberately NOT on the hero percentage. `tabular-nums` gives every digit the

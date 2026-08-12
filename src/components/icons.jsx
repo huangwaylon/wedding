@@ -109,18 +109,13 @@ export function CheckCircleIcon(props) {
 }
 
 /**
- * Two peaks. THE APP'S OWN MARK, and it replaced two interlocking rings.
+ * Two peaks. THE APP'S OWN MARK. These two hike, and a ridgeline is both theirs and — without
+ * making a joke of it — two things side by side.
  *
- * The rings were the stock wedding glyph — the one every planning app reaches for, and a mark
- * that would be equally right for any couple on earth. These two hike, and a ridgeline is both
- * theirs and, without making a joke of it, two things side by side.
- *
- * A GINKGO LEAF WAS DRAWN FIRST AND TESTED FIRST, because the photograph this app opens on is an
- * 銀杏並木 in late November. It does not survive this grammar: a fan on a stem with the notch a
- * ginkgo needs reads as a HEART at a 1.75 stroke in a 24 box — eight variants of notch depth,
- * crown flatness and vein count were rendered at 16/20/32/56px and every notched one read as a
- * heart, which is precisely the cliché the rings were being replaced to escape. Dropping the
- * notch loses the leaf and leaves a lollipop. The photograph carries that autumn on its own.
+ * `scripts/make-icons.js` rasterises the same shape for the Home Screen and `index.html`'s
+ * favicon draws it inline; all three must agree. A leaf or any other notched fan is not
+ * available at this size: at a 1.75 stroke in a 24 box a notch deep enough to read turns the
+ * silhouette into a heart, which is the one thing this mark must not be.
  */
 export function PeaksIcon(props) {
   return (
@@ -228,10 +223,9 @@ export function NotesIcon(props) {
 }
 
 /**
- * Scissors, for Beauty. A hand mirror was drawn first and had to go: a circle on a stem with a
- * crossbar is the Venus symbol, so the glyph read as "women" rather than as ヘアメイク. The salon
- * is what the category actually holds — hair, makeup, a trial, ブライダルエステ — and the word
- * beside it settles the only other reading.
+ * Scissors, for Beauty: the salon is what the category holds — hair, makeup, a trial,
+ * ブライダルエステ. Not a hand mirror, which is a circle on a stem with a crossbar and therefore
+ * the Venus symbol.
  */
 export function ScissorsIcon(props) {
   return (
@@ -243,8 +237,8 @@ export function ScissorsIcon(props) {
   )
 }
 
-/** The bow is what makes this a gift rather than a cabinet: without it the lid seam plus the
-    ribbon read as two drawers. */
+/** The bow is what makes this a gift rather than a cabinet: the lid seam plus the ribbon alone
+    read as two drawers. */
 export function GiftIcon(props) {
   return (
     <svg {...base} {...props}>

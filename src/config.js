@@ -27,6 +27,12 @@ export const STORAGE_KEYS = {
   accent: 'wd.accent',
   /** Which state filter the device was last using. Per-device, never shared. */
   filter: 'wd.filter',
+  /**
+   * An editor choosing to see the board the way a guest sees it. Per-device, and purely a VIEW
+   * preference: the edit key stays exactly where it is, and the endpoint's own refusal is
+   * untouched either way, so this only ever decides what renders.
+   */
+  readOnly: 'wd.readOnly',
 }
 
 /**

@@ -5,19 +5,14 @@
  * a state grouping reshuffles the whole board every time something is ticked off, which loses
  * the reader's place. State slicing lives in the filter chips instead.
  *
- * THE MONTH HEADING IS STICKY, AND IT IS WHAT REPLACED THE SPINE. An earlier version drew a
- * vertical line through a node on every card to make twelve rows read as one sequence. It cost
- * 24px of the left edge — on a 320pt screen, a tenth of the row — and pinned the node to a
- * magic offset tuned to the date chip's optical centre. A heading that stays on screen says
- * more (it names the month rather than implying continuity), costs nothing horizontally, and is
- * what lets a card print a bare day number instead of restating APR forty times.
+ * THE MONTH HEADING IS STICKY, AND IT NAMES THE MONTH RATHER THAN IMPLYING IT. That costs nothing
+ * horizontally and is what lets a row print a bare day number instead of restating APR forty times.
  *
- * SO THE HEADING IS ALSO WHERE A MONTH'S OWN FIGURE GOES. It is already the one thing on screen
- * while a month's rows scroll past it, and it was carrying one word. A `3/9` at its trailing edge
- * answers "am I done with April" — which is the unit wedding planning is actually done in, and
- * the one question neither the board's single percentage nor any individual row could answer. The
- * month the wedding falls in says so, once, because a plan that runs to one fixed day should name
- * its last sign.
+ * IT IS ALSO WHERE A MONTH'S OWN FIGURE GOES, because it is already the one thing on screen while
+ * that month's rows scroll past. A `3/9` at its trailing edge answers "am I done with April", which
+ * is the unit this work is done in and a question neither the board's single percentage nor any
+ * individual row can answer. The month the wedding falls in says so once: a plan running to one
+ * fixed day should name its last sign.
  *
  * AND THE LIST SAYS WHERE TODAY IS. One line, between two rows, at the boundary between what has
  * passed and what has not. The hero counts down and the tracker carries an on-schedule mark, but

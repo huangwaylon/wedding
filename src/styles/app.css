@@ -2,7 +2,8 @@
    primitives.css; every value comes from tokens.css.
 
    Mobile-first, ONE column at every width, capped at --column-max and centred. The
-   only breakpoint is 48rem, and all it does is give the photograph more room. */
+   only breakpoint is 48rem, and all it does is spend the extra room: a taller photograph,
+   a chip row that no longer scrolls, and a little more padding on a task row. */
 
 /* ---- Shell -------------------------------------------------------------
    ONE column, ONE scroller, no fixed chrome but the FAB. `.views` reserves the FAB's
@@ -32,11 +33,11 @@
 
 /* ---- Hero --------------------------------------------------------------
    A full-bleed photograph with the couple's names over its dense end. It is the
-   first thing on screen and it is why the Home tab exists.
+   header of the one screen, and the first thing on it.
 
    `isolation: isolate` keeps the scrim, the settings control and the type in one
-   local stacking context, so none of them can be raised above the fixed tab bar by
-   an ancestor's z-index later. */
+   local stacking context, so none of them can be raised above the FAB by an
+   ancestor's z-index later. */
 .hero {
   position: relative;
   isolation: isolate;
@@ -57,8 +58,8 @@
   object-fit: cover;
   /* Above centre. The faces sit at 40–44% of the photograph's own height, so 42% holds
      them at 40–45% of the band at every width the app has — including the pathological
-     one, a 1248x304 desktop letterbox, where 38% pushed the second face down into the
-     scrim's dense end. */
+     one, a 1248x304 desktop letterbox, where anything higher drops the second face into
+     the scrim's dense end. */
   object-position: 50% 42%;
 }
 
@@ -128,9 +129,9 @@
   text-shadow: var(--photo-shadow);
 }
 
-/* THE COUNTDOWN NEVER WRAPS AND NEVER SHRINKS. It is the one number up here, and with
-   a long venue name beside it and the View only badge after that, "427 days to go"
-   broke across two lines and pushed the names up. */
+/* THE COUNTDOWN NEVER WRAPS AND NEVER SHRINKS. It is the one number up here, and with a long
+   venue name beside it and the View only badge after that, a wrapped "427 days to go" pushes
+   the names up. */
 .hero__count {
   flex: none;
   font-weight: 500;
@@ -188,8 +189,8 @@
   color: var(--ink-3);
 }
 
-/* The count that makes the figure above it checkable by arithmetic. It replaced a pace
-   sentence, which is why it carries the space that sentence did. */
+/* The count that makes the figure above it checkable by arithmetic — the app makes no claim
+   about pace, so this is what the space under the figure says instead. */
 .overall__count {
   font-size: var(--fs-label);
   color: var(--ink-2);
@@ -218,10 +219,8 @@
   gap: var(--space-2);
 }
 
-/* THE MONTH, AND IT STAYS ON SCREEN. Sticky is what replaced the vertical spine this list
-   used to draw through every card: the spine cost 24px of the left edge to imply continuity,
-   while a heading that does not scroll away NAMES the month — which is also what lets a row
-   print a bare `18` instead of restating APR on all forty of them.
+/* THE MONTH, AND IT STAYS ON SCREEN. A heading that does not scroll away NAMES the month, which
+   is what lets a row print a bare `18` instead of restating APR on all forty of them.
 
    Three things it depends on, none of them optional. The background is REQUIRED, not
    decoration: rows scroll underneath it. `top` is the safe-area inset, so it parks below the
@@ -258,11 +257,11 @@
    the heading is the one place a plan running to a single fixed day can name its last sign, and it
    must not become a sixth state colour.
 
-   THE NEGATIVE MARGIN IS WHAT KEEPS THE MONTHS IN ONE COLUMN. Padding alone pushed "April 2027"
-   8px right of every other heading, so the one month that matters was the one that did not line up
-   — the tint bleeds outward instead and the text stays where it was. It stays inside `.view`'s own
-   --space-4, so nothing touches the screen edge. The wash is opaque, so this heading still occludes
-   the rows scrolling under it. */
+   THE NEGATIVE MARGIN IS WHAT KEEPS THE MONTHS IN ONE COLUMN. Padding alone pushes "April 2027"
+   8px right of every other heading, so the one month that matters is the one that does not line
+   up — the tint bleeds outward instead and the text stays where it was. It stays inside `.view`'s
+   own --space-4, so nothing touches the screen edge. The wash is opaque, so this heading still
+   occludes the rows scrolling under it. */
 .plan__month--day {
   margin-inline: calc(var(--space-2) * -1);
   padding-inline: var(--space-2);
@@ -284,8 +283,8 @@
    --ink-2, NOT the --ink-3 a quiet figure would otherwise take, and that is a measurement rather
    than a preference: on the wedding month this sits on --accent-wash, where --ink-3 is 4.47:1
    under the plum preset and fails AA outright (4.56–4.64:1 on the other four, which is no margin
-   at all). --ink-2 is 6.71:1 on the worst of them. `scripts/check-contrast.js` covers every wash
-   against both inks now that a rule finally consumes one.
+   at all). --ink-2 is 6.71:1 on the worst of them. `scripts/check-contrast.js` measures every wash
+   against both inks.
 
    NEVER coloured, for the same reason `.tcard__tally` is not: a whole month in --good would claim
    something about the month rather than about its tasks, and this figure is deliberately the one
@@ -335,7 +334,7 @@
 
    The column gap is not cosmetic. Without it a 44px toggle sits flush against the day number
    a thumb aims at to OPEN the row, and the two most consequential taps on the screen are
-   pixels apart. A gap, never a negative margin — that mistake is documented on
+   pixels apart. A gap, never a negative margin — the reasoning for that is on
    `.subtask__toggle`. */
 .tcard {
   display: grid;
@@ -357,8 +356,8 @@
 /* An unsaved row. Opacity only — no spinner and no skeleton: the row is real and readable,
    it just has not landed yet.
 
-   THE CHECK IS DELIBERATELY EXCLUDED. Dimming the whole card took the tick with it, so the
-   confirmation of the app's highest-frequency gesture faded for the ~3s the write was in flight
+   THE CHECK IS DELIBERATELY EXCLUDED. Dimming the whole card takes the tick with it, so the
+   confirmation of the app's highest-frequency gesture fades for the ~3s the write is in flight
    — which reads as un-pressed, the exact opposite of what is true. The head recedes; the tick
    somebody just made stays at full ink. */
 .tcard--pending .tcard__head {
@@ -400,14 +399,13 @@
 /* ---- The head --------------------------------------------------------
    One target for the whole collapsed row, so a row costs two controls instead of five.
 
-   CENTRED, and it took three tries. `flex-start` put the title's first line 6px above the day's.
-   `baseline` fixed that pair and traded it for a worse imbalance: the day's baseline locks to the
-   TITLE's, so on a row that also carries a meta line the day's optical centre sat 16.7px above the
-   centre of the block beside it — measured over CDP — and read as shifted up, because what the eye
-   weighs the day against is the whole right-hand column, not its first line. Centring costs the day
-   a fixed y (it follows the block's height now), which is not what the day column is for: what has
-   to line up down a month is its trailing EDGE, and that is `width: 2rem` plus `text-align: end`,
-   neither of which alignment touches. */
+   CENTRED. What the eye weighs the day against is the whole right-hand block, not its first
+   line, so the day's centre has to match the block's — `baseline` would lock it to the TITLE's
+   first line instead, and on a row that also carries a meta line that puts the day's optical
+   centre 16.7px above the centre of the block beside it (measured over CDP). Centring costs the
+   day a fixed y, which is not what the day column is for: what has to line up down a month is
+   its trailing EDGE, and that is `width: 2rem` plus `text-align: end`, neither of which
+   alignment touches. */
 .tcard__head {
   grid-column: 2;
   display: flex;
@@ -420,7 +418,7 @@
 
 /* ---- The day ----------------------------------------------------------
    ONE LINE, day only, fixed width so every title in a group starts in the same column.
-   The month is in the sticky heading above and was always identical to it.
+   The month is in the sticky heading above and is identical for every row under it.
 
    `flex: none` because the day is the thing a month of rows is scanned for and must never be
    squeezed by a long title. NEVER state-coloured — see the state table in primitives.css.
@@ -429,8 +427,8 @@
   flex: none;
   display: block;
   /* 2rem, and `nowrap` is the guard rather than the width. Two tabular digits at --fs-xl
-     measure ~29px, so a 1.75rem box broke "18" into "1" and "8" on two lines and printed the
-     day as a column of single digits — visible in the first screenshot of this layout. */
+     measure ~29px, so a 1.75rem box breaks "18" into "1" and "8" on two lines and prints the
+     day as a column of single digits. */
   width: 2rem;
   white-space: nowrap;
   text-align: end;
@@ -440,8 +438,8 @@
   color: var(--ink);
 }
 
-/* A finished row recedes as a whole, the date with it. Left at full ink the day was the
-   loudest thing on a row whose title is already struck through. */
+/* A finished row recedes as a whole, the date with it. At full ink the day is the loudest
+   thing on a row whose title is already struck through. */
 .tcard--done .tcard__day {
   color: var(--ink-3);
 }
@@ -497,17 +495,16 @@
 
 /* NEVER coloured. `5/5` in the done colour would claim a `done_at` the sheet does not have —
    all subtasks done deliberately does not make a parent done. --ink-2 rather than the meta
-   line's --ink-3: it is the only progress figure a task has left, and it used to sit in a
-   column of its own at the row's trailing edge. Moving it here is what stopped every chevron
-   in the list sitting at a different x depending on whether the row had a checklist. */
+   line's --ink-3: it is the only progress figure a task has. It sits in the meta line rather
+   than a column of its own, so every chevron in the list sits at the same x whether or not the
+   row has a checklist. */
 .tcard__tally {
   font-weight: 500;
   color: var(--ink-2);
 }
 
-/* Centred with everything else in the head. It used to be pinned to the top with a margin, which
-   was a workaround for `align-items: baseline`: an SVG has no baseline, so it aligned its bottom
-   margin edge to the text's and sat too low. With the head centred there is nothing to correct. */
+/* Centred with everything else in the head, and carrying no margin of its own: with the head
+   centred there is no baseline to correct for. */
 .tcard__chev {
   flex: none;
   color: var(--ink-3);
@@ -538,8 +535,8 @@
 /* ---- The checklist ----------------------------------------------------
    ONE vertical hairline descending from the parent, and no horizontal ones. The
    rule ties the group to the card it belongs to; five rules BETWEEN five items
-   would make a checklist a table. --line is the same hairline as the spine and
-   the card boundaries, so it reads as structure rather than as a mark. */
+   would make a checklist a table. --line is the same hairline as the card
+   boundaries, so it reads as structure rather than as a mark. */
 .subtasks {
   margin-top: var(--space-2);
   margin-inline-start: var(--space-2);
@@ -566,7 +563,7 @@
 
 /* THE WHOLE ROW IS THE CONTROL — glyph and title inside one button, which is
    what makes an item tappable where somebody actually aims. With only the 44px
-   glyph live, a tap on the text did nothing and the feature read as broken. */
+   glyph live, a tap on the text does nothing and the feature reads as broken. */
 .subtask__toggle {
   display: flex;
   flex: 1;
@@ -634,7 +631,7 @@
    ticks, so the glyph column stays a clean column and the field reads as "type
    the next one" instead of as another item.
 
-   THE INDENT IS A CLAMP BECAUSE OF ONE PHONE. At a flat --space-7 the field itself measured
+   THE INDENT IS A CLAMP BECAUSE OF ONE PHONE. At a flat --space-7 the field itself measures
    ~139px of usable text on a 320pt screen — about ten characters, for the entry this app most
    needs width for: 288 of viewport, less the view's 32, the card's 22 and its border, the rail's
    17, this 32, then the 8 gap and the 44px submit. It relaxes to --space-2 there and is
@@ -677,11 +674,11 @@
   /* Room for the focus ring, which a scroll container would otherwise clip. */
   padding-block: 2px;
   scroll-padding-inline: var(--space-4);
-  /* THE ONLY SIGN THAT THIS ROW MOVES. Five chips measure ~453px against a 361px card and the
-     overlay scrollbar is hidden below, so on a 320pt phone two of the filters were off the right
-     edge with nothing at all indicating they existed. The fade is horizontal ONLY — a mask on
-     both axes would clip the focus ring the padding above exists to keep. It is removed at 48rem,
-     where the row no longer scrolls. */
+  /* THE ONLY SIGN THAT THIS ROW MOVES. The overlay scrollbar is hidden below, so without the
+     fade two of the filters sit off the right edge of a 320pt phone with nothing at all
+     indicating they exist. It is horizontal ONLY — a mask on both axes would clip the focus
+     ring the padding above exists to keep. Removed at 48rem, where the row no longer
+     scrolls. */
   mask-image: linear-gradient(to right, #000 calc(100% - var(--space-6)), transparent);
 }
 
@@ -712,18 +709,16 @@
 
 /* ---- The inline editor -------------------------------------------------
    The fields inside an open row, not a form on its own surface. There is no Save button and
-   no footer of actions: every field commits when focus leaves it, so the only thing at the
-   foot is the delete affordance.
+   no footer of actions: the whole session commits when the row closes, so the only thing at
+   the foot is the delete affordance.
 
-   ONE COLUMN, THREE ROWS. Two multi-track grids used to live here, sized around a pair of date
-   wheels and a category/owner pair. With a title, one day and a category left, a single column
-   is both simpler and wider — and width is the whole reason the date control used to hang off
-   the card's right edge. */
+   ONE COLUMN. A title, one day and a category — a single column is both simpler and wider than
+   a track per field, and width is what keeps the date control inside the card. */
 .editor {
   display: grid;
   /* space-3, not the `.field` margin of space-4. This block sits inside a card that already
-     carries its own padding, and at form spacing an opened card ran past the bottom of a
-     phone before its checklist began. */
+     carries its own padding, and at form spacing an opened card runs past the bottom of a
+     phone before its checklist begins. */
   gap: var(--space-3);
 }
 
@@ -811,7 +806,7 @@
 .empty {
   text-align: center;
   /* Block padding only: the inline padding comes from `.card`, so the empty state's
-     left edge lines up with every other card in the column instead of missing it by
+     left edge lines up with every other card in the column rather than missing it by
      4px. */
   padding-block: var(--space-5);
 }
@@ -857,8 +852,8 @@
   justify-content: space-between;
   gap: var(--space-3);
   margin-top: auto;
-  /* The name and the foot are not the same line of thought, and with the paragraph between
-     them gone there is nothing else holding them apart. */
+  /* The name and the foot are not the same line of thought, and nothing else holds them
+     apart. */
   padding-top: var(--space-2);
 }
 

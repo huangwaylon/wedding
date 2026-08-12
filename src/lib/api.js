@@ -61,7 +61,7 @@ export const API_ERROR = {
   /**
    * The DEPLOYED script cannot store a column this bundle writes, so the write is refused
    * here rather than sent. The only code the server never produces: `useBoard` raises it from
-   * the `schema` every read carries. See `missingColumns` there for what it prevents.
+   * the `schema` every read carries. See `missingColumnsFor` there for what it prevents.
    */
   OUTDATED: 'outdated',
   /** Anything else. Assumed transient; see the module header. */
@@ -150,7 +150,7 @@ function decodeBoard(body) {
     sheetTimeZone: typeof body.sheetTimeZone === 'string' ? body.sheetTimeZone : '',
     /**
      * The columns the deployed script understands. A deployment older than this bundle sends no
-     * `schema` at all, which is itself the signal — see `SCRIPT_COLUMNS` in `useBoard`.
+     * `schema` at all, which is itself the signal — see `missingColumnsFor` in `useBoard`.
      */
     schema: Array.isArray(body.schema) ? body.schema.map(String) : [],
   }

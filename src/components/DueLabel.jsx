@@ -3,10 +3,7 @@
  *
  * IT SAYS THE RELATIVE DISTANCE, NOT THE STATE. "3 days ago" and "in 5 days" are the two
  * questions somebody scanning a checklist actually has, and they carry the state as a
- * side effect: nothing that reads "3 days ago" needs a second pill saying "Overdue". The
- * badge this replaced existed because a percentage of 100 could mean "finished" or "ran
- * out of time"; an unfinished task now reads 0% whatever the calendar says, so the word
- * has nothing left to disambiguate.
+ * side effect: nothing that reads "3 days ago" needs a second pill saying "Overdue".
  *
  * IT RENDERS NOTHING PAST THE FORTNIGHT, and that is the point. A wedding board runs
  * four hundred days, so a label on every row would be four hundred labels — and presence
@@ -14,8 +11,7 @@
  * with a mark on it is a row to act on this fortnight. A finished task and an undated one
  * say nothing either; their tick and their empty day column have already said it.
  *
- * The dot takes its fill from the one state table, so no state colour ever touches type —
- * the same rule the meters and the stat tiles follow.
+ * The dot takes its fill from the one state table, so no state colour ever touches type.
  */
 
 import { STATE } from '../lib/progress.js'

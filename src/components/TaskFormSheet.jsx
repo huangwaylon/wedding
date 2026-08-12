@@ -46,12 +46,10 @@ export default function TaskFormSheet({ categories, onSave, onClose }) {
     /**
      * CLOSED IMMEDIATELY, AND THE WRITE IS NOT AWAITED.
      *
-     * A round trip to the Apps Script endpoint measures ~3s, and this sheet used to sit on
-     * screen saying "Saving…" for the whole of it. Nothing is gained by waiting: the mutation
-     * is optimistic, so the row is already in the list behind this panel. `onSave` still
-     * reports what happened, as a toast, and a failure rolls the row back out — which is why
-     * there is a toast for the failure too. Validation above is synchronous and still keeps
-     * the sheet open.
+     * A round trip to the endpoint measures ~3s, and nothing is gained by waiting on it: the
+     * mutation is optimistic, so the row is already in the list behind this panel. `onSave`
+     * reports what happened as a toast, and a failure rolls the row back out — which is why the
+     * failure needs a toast of its own. Validation above is synchronous and keeps the sheet open.
      */
     onSave(next)
     onClose()

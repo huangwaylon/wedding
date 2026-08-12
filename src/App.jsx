@@ -10,15 +10,11 @@
  * refuses any write without the key, so a planner who reaches into the DOM gains
  * nothing — which is why nothing here needs to be defensive beyond hiding controls.
  *
- * ONE SCROLL, AND THE PHOTOGRAPH IS THE HEADER. This replaced a two-tab bar, and the
- * tabs went for three reasons rather than a preference. The Home tab held one card once
- * a task stopped being a window with an owner and a memo — a destination that holds one
- * card should be a heading. The bar cost 56px of permanent chrome plus its safe-area
- * inset on every screen, on the one axis a phone cannot spare. And the split was already
- * leaking: the standing notices had to be rendered on BOTH tabs because the out-of-date
- * script is the reason a control is missing from a card on the other one, the FAB existed
- * on one, and a scroll-reset hack papered over the fact that there was only ever one
- * document scroller. Returning to the photograph is one tap on the status bar.
+ * ONE SCROLL, AND THE PHOTOGRAPH IS THE HEADER. No tabs and no fixed bar but the FAB: a phone
+ * cannot spare a permanent 56px plus its safe-area inset on the vertical axis, the standing
+ * notices are global (the out-of-date script is the reason a control is missing from a row, so
+ * that warning has to be visible wherever the row is), and there is exactly one document
+ * scroller. Returning to the photograph is one tap on the status bar.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -155,18 +151,37 @@ export default function App() {
   const [adding, setAdding] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  /**
+   * An editor looking at the board the way a guest sees it.
+   *
+   * Two different questions, and keeping them apart is the whole of this: `hasKey` is what this
+   * device CAN do, and `canEdit` is what it currently shows. Only the second one moves, so nothing
+   * is revoked, nothing is re-pasted, and the way back is a toggle rather than a link somebody has
+   * to find again — which is what separates this from "Stop editing on this device".
+   *
+   * Per-device and remembered, like the language and the accent: it is also the way to hand a phone
+   * to somebody, or to stop yourself editing a board you only want to read.
+   */
+  const [readOnly, setReadOnly] = useState(() => readStored(STORAGE_KEYS.readOnly) === '1')
+  const toggleReadOnly = useCallback(() => {
+    setReadOnly((previous) => {
+      const next = !previous
+      writeStored(STORAGE_KEYS.readOnly, next ? '1' : null)
+      return next
+    })
+  }, [])
   const listTop = useRef(null)
 
-  const canEdit = Boolean(editKey) && !rejected
+  const hasKey = Boolean(editKey) && !rejected
+  const canEdit = hasKey && !readOnly
   const timeZone = resolveTimeZone(board.config.timezone)
 
   /**
    * TODAY, AS A DAY STRING, AND EVERY FIGURE IN THE APP DERIVES FROM IT.
    *
-   * The board is day-granular now, so nothing on screen can change between midnights —
-   * which means `withProgress` recomputes at most once a day instead of once a minute.
-   * The clock still ticks for the countdown in the hero; it just no longer reallocates
-   * every task object sixty times an hour.
+   * The board is day-granular, so nothing on screen can change between midnights and
+   * `withProgress` recomputes at most once a day. The clock still ticks for the hero's
+   * countdown; keying this on it would reallocate every task object sixty times an hour.
    */
   const today = useMemo(() => todayIn(timeZone, now), [timeZone, now])
   const tasks = useMemo(() => withProgress(board.tasks, today), [board.tasks, today])
@@ -213,10 +228,10 @@ export default function App() {
   /**
    * Every optimistic mutation reports through here.
    *
-   * A FAILURE NEEDS A TOAST OF ITS OWN. Mutations are optimistic and the sheets close
-   * before the write lands, so a failure is a row that quietly rolls back OUT of a list
-   * somebody is no longer looking at — invisible unless it is said out loud. `run` restores
-   * the previous tasks, so "nothing was saved" is literally true.
+   * A FAILURE NEEDS A TOAST OF ITS OWN. Mutations are optimistic and the sheets close before
+   * the write lands, so a failure is a row that quietly rolls back out of a list nobody is
+   * looking at — invisible unless it is said out loud. `run` restores the previous tasks, so
+   * "nothing was saved" is literally true.
    */
   const report = useCallback(
     async (work, message) => {
@@ -283,14 +298,23 @@ export default function App() {
     [board, locale, show, t],
   )
 
+  /**
+   * Both of these clear the read-only preview, because otherwise it outlives the thing it was
+   * previewing: pasting a fresh edit link while the flag was still set would appear to do nothing
+   * at all, which is the one outcome that makes somebody think their link is broken.
+   */
   const enableEditing = useCallback((key) => {
     writeEditKey(key)
+    writeStored(STORAGE_KEYS.readOnly, null)
+    setReadOnly(false)
     setEditKey(key)
     setRejected(false)
   }, [])
 
   const revokeEditing = useCallback(() => {
     writeEditKey(null)
+    writeStored(STORAGE_KEYS.readOnly, null)
+    setReadOnly(false)
     setEditKey(null)
     setRejected(false)
     setSettingsOpen(false)
@@ -457,6 +481,12 @@ export default function App() {
         <SettingsSheet
           config={board.config}
           canEdit={canEdit}
+          /* The capability, not the view. Settings asks "do you hold a key" to decide between
+             revoking one and pasting one, and a read-only PREVIEW must not turn that into a demand
+             for a credential this device already has. */
+          hasKey={hasKey}
+          readOnly={readOnly}
+          onToggleReadOnly={toggleReadOnly}
           sheetTimeZone={board.sheetTimeZone}
           deletedTasks={board.deletedTasks}
           onRestore={restore}

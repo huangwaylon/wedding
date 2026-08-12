@@ -1,17 +1,13 @@
 /**
  * A task's fields, and the only home for the markup and the draft arithmetic behind them.
  *
- * THREE FIELDS: a title, a day, a category. A task used to carry a start, an end, two clock
- * times, an all-day switch, an owner and a memo — seven controls, five of which were left
- * empty on almost every row, and between them they made a task something you filled in rather
- * than something you wrote down. What is left is what a checklist actually needs: what it is,
- * when it is due, and roughly what kind of thing it is.
+ * THREE FIELDS: a title, a day, a category. That is what a checklist needs — what it is, when it
+ * is due, and roughly what kind of thing it is — and nothing may be added to it. Every extra
+ * control makes a task something you fill in rather than something you write down.
  *
- * TWO SURFACES EDIT A TASK AND BOTH NOW BUFFER A WHOLE DRAFT: `TaskDetail` for an existing task
- * and `TaskFormSheet` for a new one. They used to differ — the inline editor committed each field
- * as focus left it — and on this endpoint that cost one ~3s round trip per field. So every field
- * here is pure value + onChange, and `onEnter`/`onFocusChange` are optional reports a caller may
- * ignore entirely.
+ * TWO SURFACES EDIT A TASK AND BOTH BUFFER A WHOLE DRAFT: `TaskDetail` for an existing task and
+ * `TaskFormSheet` for a new one. Every field here is pure value + onChange, so neither surface
+ * commits on its own; `onEnter`/`onFocusChange` are optional reports a caller may ignore.
  *
  * THE DAY IS A NATIVE `type=date` AND THAT IS DELIBERATE. The platform wheel is the fastest
  * date entry on a phone by a wide margin and it is the control people already know; a
@@ -42,12 +38,11 @@ function skinOf(name) {
 /**
  * The handlers every control in this file shares.
  *
- * `onEnter` IS NOT `onBlur`, and that separation is the whole of what changed here. Blur used to
- * BE the commit — Enter just blurred the control and let the blur handler write — and that cost
- * one ~3s round trip per field. Now a caller buffers a draft and ends the session itself, so
- * Return means "I am done with the whole thing" and blur means nothing at all. `preventDefault`
- * because this markup can sit inside a `<form>`, where Return would submit it, and `blur()`
- * because dropping the iOS keyboard is what somebody pressing Return is asking for.
+ * `onEnter` IS NOT `onBlur`, and blur must never be the commit: at ~3s a round trip, committing
+ * per blur costs one per field. A caller buffers a draft and ends the session itself, so Return
+ * means "I am done with the whole thing" and blur means nothing at all. `preventDefault` because
+ * this markup can sit inside a `<form>`, where Return would submit it, and `blur()` because
+ * dropping the iOS keyboard is what somebody pressing Return is asking for.
  *
  * `onFocusChange` survives for the ADD-A-SUBTASK field, which is genuinely per-field: it is
  * outside any edit session, so nothing else is holding off a reload while it has text in it.
@@ -77,16 +72,17 @@ function fieldEvents({ onEnter, onFocusChange }) {
  * and a second control for it in the field set would let an edit rewrite `done_at` — the
  * answer to "when was this finished" — as a side effect of fixing a typo.
  */
-export function draftFrom(task, defaultDay = '') {
-  if (!task) return { title: '', category: '', due: defaultDay }
+export function draftFrom(task) {
+  // A new task starts with NO day. Nothing may seed one — see `validateTask`.
+  if (!task) return { title: '', category: '', due: '' }
   return {
     title: task.title,
     category: task.category,
     /**
-     * Normalised on the way IN, not just on the way out. A board written before dates lost
-     * their clock times holds '2027-04-18T23:59', and `type=date` silently renders an
-     * unparseable value as blank — so opening such a task showed an empty wheel and the first
-     * commit would have cleared a date somebody could still see on the card.
+     * Normalised on the way IN, not just on the way out. A cell can hold '2027-04-18T23:59' —
+     * the Sheets UI coerces a date, and `readCell` hands back exactly that — and `type=date`
+     * renders anything unparseable as BLANK, so without this the wheel opens empty and the first
+     * commit clears a date still visible on the row.
      */
     due: normalizeDay(task.due),
   }
@@ -168,10 +164,9 @@ export function TitleField({ id, skin, value, error, onChange, onEnter, onFocusC
 }
 
 /**
- * The one date, and it is OPTIONAL — see `validateTask`. Full width, on a row of its own,
- * which is half of why it no longer overflows: the pair of wheels this replaced sat in a
- * two-track grid whose 11rem minimum was narrower than a `type=date` control's own idea of how
- * much room it needs.
+ * The one date, and it is REQUIRED — see `validateTask`. Full width, on a row of its own,
+ * which is half of why it fits: a two-track grid's per-column minimum is narrower than a
+ * `type=date` control's own intrinsic width, and that width is a floor.
  *
  * `scrollIntoView` on focus because THE DATE WHEEL IS NOT A KEYBOARD. iOS raises a ~330px
  * inline picker for it, and `interactive-widget=resizes-content` — which is what keeps the

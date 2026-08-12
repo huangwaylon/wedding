@@ -4,10 +4,10 @@
  * A task's `due` is a WALL-CLOCK DAY — "2027-04-18", no time, no offset, no Z. It
  * means that date on a calendar at the wedding, and the only question ever asked of
  * it is "has it passed, and by how many days" — answered against the board's
- * configured `timezone` (an IANA name like `Asia/Tokyo`). This is deliberate and it
- * is the whole reason this module exists: "due on the 18th" has to say the 18th to a
- * planner working from another country, which a UTC instant rendered in the device's
- * own zone would not. The device's zone is never consulted for a task's date.
+ * configured `timezone` (an IANA name like `Asia/Tokyo`). That is the whole reason
+ * this module exists: "due on the 18th" has to say the 18th to a planner working
+ * from another country, which a UTC instant rendered in the device's own zone would
+ * not. The device's zone is never consulted for a task's date.
  *
  * Three rules that a "simplification" would break:
  *
@@ -19,9 +19,10 @@
  *   value that has none.
  *
  *   The zone is needed for exactly ONE thing: deciding what today's date is. Two
- *   day strings are then compared as arithmetic on their parts, with no instants and
- *   no DST anywhere near it — which is why this file no longer samples an offset,
- *   solves for a wall time inside a spring-forward gap, or caches either.
+ *   day strings are then compared as arithmetic on their parts, so no offset is ever
+ *   sampled, no wall time inside a spring-forward gap is ever solved for, and no
+ *   instant is cached. Anything that needs one of those is asking about a moment
+ *   rather than a date, which the model has no answer for.
  */
 
 /** The stored shape. */
@@ -38,7 +39,7 @@ const displayFormatters = new Map()
 /**
  * Zone-name validity, memoised.
  *
- * `new Intl.DateTimeFormat` is the expensive call in this module — measured at ~17µs —
+ * `new Intl.DateTimeFormat` is the expensive call in this module — tens of microseconds —
  * and `resolveTimeZone` sits on the path of every date question the app asks. A plain
  * `Map` rather than a bounded cache: the keys are zone names out of the board config,
  * which is a set of one in practice and could never be attacker-controlled.
@@ -105,11 +106,11 @@ export function isValidDay(day) {
 }
 
 /**
- * Accept what a person or an older row might hold and return the stored shape.
+ * Accept what a person or a long-lived row might hold and return the stored shape.
  *
- * The `slice(0, 10)` is not cosmetic: a cell somebody hand-edited in the Sheets UI
- * comes back through `readCell` as "2027-04-18T00:00", and a board written before
- * dates lost their clock times holds exactly that in every row. Both mean that day.
+ * The `slice(0, 10)` is not cosmetic: a cell somebody hand-edited in the Sheets UI comes
+ * back through `readCell` as "2027-04-18T00:00", and rows out on live boards can carry a
+ * clock time of their own. Both mean that day.
  */
 export function normalizeDay(text) {
   const raw = String(text ?? '')
@@ -159,8 +160,11 @@ export function daysBetween(from, to) {
  * this single call is what makes "overdue" mean overdue at the venue rather than
  * wherever the phone happens to be. `en-CA` yields YYYY-MM-DD directly, which is
  * the stored shape.
+ *
+ * `nowMs` is required: the clock reaches this module from `useNow` through the render,
+ * so nothing here reads `Date.now()` behind React's back.
  */
-export function todayIn(timeZone, nowMs = Date.now()) {
+export function todayIn(timeZone, nowMs) {
   return dayFormatter(resolveTimeZone(timeZone)).format(new Date(nowMs))
 }
 
@@ -169,7 +173,7 @@ export function todayIn(timeZone, nowMs = Date.now()) {
  * rather than in 24-hour blocks. "3 days to go" has to flip at midnight, not at
  * whatever o'clock the countdown started.
  */
-export function daysUntil(day, timeZone, nowMs = Date.now()) {
+export function daysUntil(day, timeZone, nowMs) {
   return daysBetween(todayIn(timeZone, nowMs), day)
 }
 
@@ -239,34 +243,4 @@ export function formatDayMonth(day, { locale } = {}) {
   const date = asUtcDate(day)
   if (!date) return ''
   return displayFormatter(locale, { year: 'numeric', month: 'long' }).format(date)
-}
-
-/**
- * The two halves of a card's date chip: '18' and 'APR' — '18' and '4月' in Japanese.
- *
- * A pair rather than one string, because the two are set at completely different sizes:
- * the day is the number somebody scans a month of cards for, the month is the quiet
- * label under it that stops the 18th of April reading as the 18th of May.
- *
- * The month is uppercased HERE rather than with `text-transform`, which is a no-op on
- * kanji and would silently apply to Latin only in a stylesheet that has to hold both.
- * `toLocaleUpperCase` is the locale-aware form and leaves '4月' exactly as it is.
- *
- * THE DAY IS NOT FORMATTED THROUGH Intl, and that is the one deliberate exception to
- * routing numbers through it: `{ day: 'numeric' }` in `ja` returns '18日', which at
- * --fs-xl wraps inside the chip and prints the day as two rows with '4月' under it. A
- * day of the month is 1–31 — there is no grouping separator for Intl to add, and the
- * suffix is redundant with the month directly beneath.
- *
- * @returns {{day:string, month:string}|null} null when the day string is unusable, so a
- *   task with no date renders no chip rather than a plausible-looking wrong one.
- */
-export function formatDayChip(day, { locale } = {}) {
-  const date = asUtcDate(day)
-  if (!date) return null
-  const month = displayFormatter(locale, { month: 'short' }).format(date)
-  return {
-    day: String(date.getUTCDate()),
-    month: locale ? month.toLocaleUpperCase(locale) : month.toLocaleUpperCase(),
-  }
 }

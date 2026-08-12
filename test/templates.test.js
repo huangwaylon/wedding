@@ -48,9 +48,9 @@ describe('the templates themselves', () => {
   })
 
   it('gives every task exactly one offset', () => {
-    // The pair this replaced described a window. A task is a deadline now, so a leftover
-    // `from` would be data nothing reads — and the symptom of reading the wrong one is a
-    // whole board dated months early.
+    // A seeded task is a deadline, so `d` is the whole schedule. A second bound would be data
+    // nothing reads, and the symptom of reading the wrong one is a whole board dated months
+    // early.
     for (const template of TEMPLATES) {
       for (const item of template.tasks) {
         expect(typeof item.d, `${template.id}: ${item.en}`).toBe('number')
@@ -137,6 +137,21 @@ describe('materialize', () => {
     for (const bad of ['', '2027-04', 'next spring', null, undefined]) {
       expect(materialize(findTemplate('classic12'), bad, { locale: 'en', newId })).toEqual([])
     }
+  })
+
+  it('refuses a wedding day that is a shape but not a date', () => {
+    // CALENDAR validation, not a pattern match: '2027-02-31' matches /\d{4}-\d{2}-\d{2}/ and
+    // is not a date, so counting offsets from it would date a whole seeded board from 3 March.
+    for (const bad of ['2027-02-31', '2027-13-01', '2027-00-10', '2027-02-29']) {
+      expect(
+        materialize(findTemplate('classic12'), bad, { locale: 'en', newId }),
+        bad,
+      ).toEqual([])
+    }
+    // And the leap day that IS a date still works, or the validation has overshot.
+    expect(materialize(findTemplate('classic12'), '2028-02-29', { locale: 'en', newId })).not.toEqual(
+      [],
+    )
   })
 
   it('works across a leap day', () => {

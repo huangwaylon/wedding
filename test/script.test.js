@@ -2,10 +2,10 @@
  * `apps-script/Code.gs`, executed.
  *
  * The other cross-boundary test pins the column LIST; this one runs the code. It exists because
- * the write path was rewritten for latency — the ops now share one read of the grid and stamp
- * whole columns in a single call instead of a cell at a time — and every one of those changes is
- * the kind that returns `{ok: true}` while quietly writing the wrong cell. There is no way to
- * see that from the browser, and the only other place to find out is somebody's real board.
+ * the write path is shaped for latency — the ops share one read of the grid and stamp whole
+ * columns in a single call rather than a cell at a time — and every one of those choices is the
+ * kind that returns `{ok: true}` while quietly writing the wrong cell. There is no way to see
+ * that from the browser, and the only other place to find out is somebody's real board.
  *
  * The fake is deliberately literal about the two things that actually bite:
  *
@@ -46,13 +46,12 @@ function makeSheet(name, grid) {
       return 0
     },
     getMaxRows: () => Math.max(sheet.grid.length, 1000),
-    getLastColumn: () => Math.max(0, ...sheet.grid.map((line) => line.length)),
     /**
      * ONE service call for the header and every row, which is what the script reads the grid
-     * with. It reports the columns that are ACTUALLY there rather than the nine this version
-     * expects — that is the whole point, and it is what lets a legacy thirteen-column layout be
-     * seen as one instead of read as nine wrong cells. Clamped to 1x1 like the real thing, so an
-     * empty tab still yields a row for the header check to fail on.
+     * with. It reports the columns that are ACTUALLY there rather than the ones this version
+     * expects — that is the whole point, and it is what lets a header somebody widened or
+     * reordered be seen as one instead of read as the wrong cells. Clamped to 1x1 like the real
+     * thing, so an empty tab still yields a row for the header check to fail on.
      */
     getDataRange: () =>
       sheet.getRange(
@@ -84,8 +83,8 @@ function makeSheet(name, grid) {
           if (line.length !== columns) {
             throw new Error(`setValues: ${line.length} columns for ${columns}`)
           }
-          // Appended rows take the TAB's own width. The config tab is two columns wide, not
-          // thirteen, and a fake that pads every sheet to the task layout tests nothing real.
+          // Appended rows take the TAB's own width. The config tab is two columns wide, not as
+          // wide as the tasks layout, and a fake that pads every sheet to that tests nothing real.
           const width = Math.max(left - 1 + columns, ...sheet.grid.map((line) => line.length))
           while (sheet.grid.length < top + r) sheet.grid.push(new Array(width).fill(''))
           line.forEach((value, c) => {
@@ -190,79 +189,6 @@ const task = (overrides) => ({
   parent_id: '',
   ...overrides,
 })
-
-/** The layout this script replaced, for the relayout cases. */
-const LEGACY_COLUMNS = [
-  'id',
-  'title',
-  'category',
-  'start',
-  'end',
-  'all_day',
-  'done_at',
-  'notes',
-  'owner',
-  'created_at',
-  'updated_at',
-  'deleted_at',
-  'parent_id',
-]
-
-/** A tasks tab still on the old thirteen-column layout. */
-function makeLegacyBook(rows) {
-  const tasks = makeSheet('tasks', [
-    LEGACY_COLUMNS.slice(),
-    ...rows.map((row) => LEGACY_COLUMNS.map((name) => row[name] ?? '')),
-  ])
-  const config = makeSheet('config', [
-    ['key', 'value'],
-    ['timezone', 'Asia/Tokyo'],
-  ])
-  const sheets = [tasks, config]
-  return {
-    tasks,
-    config,
-    getSheets: () => sheets,
-    getSheetByName: (name) => sheets.find((sheet) => sheet.name === name) ?? null,
-    getSpreadsheetTimeZone: () => 'Asia/Tokyo',
-    insertSheet: (name) => {
-      const made = makeSheet(name, [[]])
-      sheets.push(made)
-      return made
-    },
-    deleteSheet: (sheet) => sheets.splice(sheets.indexOf(sheet), 1),
-  }
-}
-
-const LEGACY_ROWS = [
-  {
-    id: 'L1',
-    title: 'Book the venue',
-    category: 'Venue',
-    start: '2026-12-01T00:00',
-    end: '2027-02-01T23:59',
-    all_day: 'TRUE',
-    notes: 'call first',
-    owner: 'Both',
-    created_at: '2026-01-01T00:00:00.000Z',
-    updated_at: '2026-01-02T00:00:00.000Z',
-    deleted_at: '',
-    parent_id: '',
-  },
-  {
-    id: 'L2',
-    title: 'Shortlist three',
-    category: '',
-    start: '',
-    end: '',
-    all_day: '',
-    done_at: '2026-06-06T00:00:00.000Z',
-    created_at: '2026-01-03T00:00:00.000Z',
-    updated_at: '2026-01-03T00:00:00.000Z',
-    deleted_at: '',
-    parent_id: 'L1',
-  },
-]
 
 /** The stored grid as row objects, header excluded. */
 function stored(book) {
@@ -403,8 +329,8 @@ describe('delete and restore', () => {
   })
 
   it('costs the same number of writes whatever the cascade’s size', () => {
-    // The point of the rewrite. One cell at a time, a parent with four subtasks was ten round
-    // trips and measured 3.6-4.0s against 2.66s for a single row.
+    // Two whole-column stamps, however many rows they touch. One cell at a time, a parent with
+    // four subtasks is ten round trips.
     const one = makeBook(FAMILY)
     post(load(one), 'delete', { id: 'p2' })
     const many = makeBook(FAMILY)
@@ -523,84 +449,58 @@ describe('structure', () => {
     expect(book.tasks.grid[0]).toEqual(TASK_COLUMNS)
   })
 
+  it('repairs a header somebody reordered, by NAME, without moving the data', () => {
+    // Dragging a column in the Sheets UI moves the header cell and its values together, so the
+    // grid stays consistent while no longer sitting where this script addresses — and everything
+    // here addresses by index. Rewriting the header text alone would leave every value a column
+    // or more off, so the repair re-reads each row by the name its own header gives it.
+    const moved = ['category'].concat(TASK_COLUMNS.filter((name) => name !== 'category'))
+    book.tasks.grid = book.tasks.grid.map((line) =>
+      moved.map((name) => line[TASK_COLUMNS.indexOf(name)]),
+    )
+
+    post(script, 'update', { task: task({ id: 'p1', title: 'Booked' }) })
+
+    expect(book.tasks.grid[0]).toEqual(TASK_COLUMNS)
+    const rows = stored(book)
+    expect(rows[0]).toMatchObject({ id: 'p1', title: 'Booked', due: '2027-02-01', parent_id: '' })
+    // The rows nobody touched came across by name too — read at this layout's indices they would
+    // each have taken `category` for an id.
+    expect(rows[1]).toMatchObject({
+      id: 's1',
+      title: 'Shortlist three',
+      category: 'Venue',
+      parent_id: 'p1',
+    })
+  })
+
+  it('clears whatever sat past the layout’s width', () => {
+    // A stray column under a blank header is exactly the kind of thing somebody deletes by hand,
+    // taking a real column with it if the count ever shifts.
+    const moved = ['category'].concat(TASK_COLUMNS.filter((name) => name !== 'category'))
+    book.tasks.grid = book.tasks.grid.map((line, index) =>
+      moved.map((name) => line[TASK_COLUMNS.indexOf(name)]).concat([index ? 'leftover' : 'scratch']),
+    )
+    post(script, 'update', { task: task({ id: 'p1' }) })
+    for (const line of book.tasks.grid) {
+      expect(line.slice(TASK_COLUMNS.length).every((cell) => cell === '')).toBe(true)
+    }
+  })
+
+  it('repairs once, then leaves the grid alone', () => {
+    book.tasks.grid[0] = TASK_COLUMNS.slice(0, -1).concat([''])
+    post(script, 'update', { task: task({ id: 'p1', title: 'Booked' }) })
+    const after = book.tasks.writes
+    post(script, 'update', { task: task({ id: 'p1', title: 'Booked again' }) })
+    // One write: the row itself. A repair on every save would be wasted round trips.
+    expect(book.tasks.writes - after).toBe(1)
+  })
+
   it('leaves a correct header alone', () => {
     const before = book.tasks.writes
     post(script, 'update', { task: task({ id: 'p1' }) })
     // One write: the row itself. A header rewrite on every save would be a wasted round trip.
     expect(book.tasks.writes - before).toBe(1)
-  })
-})
-
-describe('an existing board on the previous layout', () => {
-  let legacy
-  let legacyScript
-
-  beforeEach(() => {
-    legacy = makeLegacyBook(LEGACY_ROWS)
-    legacyScript = load(legacy)
-  })
-
-  it('READS by column name, so the anonymous read needs no write', () => {
-    // `doGet` cannot relayout — an anonymous request must not cause a write — so it resolves
-    // its own columns from the header row it just read. Reading at this version's indices
-    // instead would report `start` as the due date and `notes` as `created_at`.
-    const before = legacy.tasks.writes
-    const body = JSON.parse(legacyScript.doGet())
-    expect(legacy.tasks.writes).toBe(before)
-    expect(body.tasks).toHaveLength(2)
-    expect(body.tasks[0]).toMatchObject({
-      id: 'L1',
-      title: 'Book the venue',
-      // The old closing end of the window IS the due date; the client slices the clock off.
-      due: '2027-02-01T23:59',
-      created_at: '2026-01-01T00:00:00.000Z',
-    })
-    expect(body.tasks[1]).toMatchObject({ id: 'L2', parent_id: 'L1', due: '' })
-  })
-
-  it('moves the grid onto the new layout on the first WRITE', () => {
-    post(legacyScript, 'update', { task: task({ id: 'L1', title: 'Booked', due: '2027-02-01' }) })
-    expect(legacy.tasks.grid[0].slice(0, TASK_COLUMNS.length)).toEqual(TASK_COLUMNS)
-    const rows = stored(legacy)
-    expect(rows[0]).toMatchObject({
-      id: 'L1',
-      title: 'Booked',
-      due: '2027-02-01',
-      created_at: '2026-01-01T00:00:00.000Z',
-      parent_id: '',
-    })
-    // The untouched row was carried across by NAME, not by position — read by index it would
-    // have taken `start` as its due date and `notes` as its created_at.
-    expect(rows[1]).toMatchObject({
-      id: 'L2',
-      title: 'Shortlist three',
-      due: '',
-      done_at: '2026-06-06T00:00:00.000Z',
-      created_at: '2026-01-03T00:00:00.000Z',
-      parent_id: 'L1',
-    })
-  })
-
-  it('clears the columns the old layout had past the new width', () => {
-    // An orphaned `owner` column under a blank header is exactly the kind of thing somebody
-    // deletes by hand, taking a real column with it if the count ever shifts again.
-    post(legacyScript, 'update', { task: task({ id: 'L1' }) })
-    for (const line of legacy.tasks.grid) {
-      expect(line.slice(TASK_COLUMNS.length).every((cell) => cell === '')).toBe(true)
-    }
-  })
-
-  it('runs once, then leaves the grid alone', () => {
-    post(legacyScript, 'update', { task: task({ id: 'L1', title: 'Booked' }) })
-    const after = legacy.tasks.writes
-    post(legacyScript, 'update', { task: task({ id: 'L1', title: 'Booked again' }) })
-    // One write: the row itself. A relayout on every save would be wasted round trips.
-    expect(legacy.tasks.writes - after).toBe(1)
-  })
-
-  it('does not lose a row to the move', () => {
-    post(legacyScript, 'create', { task: task({ id: 'N1', title: 'Order flowers' }) })
-    expect(stored(legacy).map((row) => row.id)).toEqual(['L1', 'L2', 'N1'])
   })
 })
 

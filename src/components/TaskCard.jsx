@@ -13,8 +13,8 @@
  * mark on the row — the dot beside `DueLabel`'s words — plus the tick and the strikethrough
  * on a finished task. Nothing here has colour as its only channel.
  *
- * THE MONTH IS NOT ON THE CARD. `Timeline` groups on the same slice the day comes from, so a
- * month printed here restated the sticky heading directly above it on every row in the app.
+ * THE MONTH IS NOT ON THE CARD. `Plan` groups on the same slice the day comes from, so a month
+ * printed here would restate the sticky heading directly above it on every row in the app.
  *
  * TAPPING THE ROW REVEALS IT, IT DOES NOT ARM IT. What is behind the head is `TaskDetail`,
  * which opens read-only and holds an Edit toggle; see its header for why.
@@ -56,9 +56,9 @@ export default function TaskCard({
   const contentId = `tcard-${task.id}`
 
   /**
-   * What an open card would hold. A viewer's card with no checklist has NOTHING to reveal,
-   * and it used to open a padded empty box — the normal case for a planner on a freshly
-   * seeded board. A card with nothing behind it does not claim to be a disclosure at all.
+   * What an open card would hold. A viewer's card with no checklist has NOTHING to reveal — the
+   * normal case for a planner on a freshly seeded board — and a card with nothing behind it must
+   * not claim to be a disclosure: no chevron, and the tap does not pretend to open anything.
    */
   const expandable = canEdit || subtasks.length > 0
 

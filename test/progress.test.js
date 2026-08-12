@@ -1,13 +1,10 @@
 /**
  * The progress arithmetic. This is the file that decides what every number on screen means,
- * so the cases that matter most are the misleading ones — and the set of misleading cases
- * changed with the model.
+ * so the cases that matter most are the misleading ones.
  *
- * The old one was "an expired window reads 100% while being emphatically unfinished". That
- * cannot happen any more: an unfinished task is 0% whatever the calendar says. The one that
- * replaced it is subtler and is why there is no pace verdict on screen at all — dates missed
- * and work finished early cancel in the subtraction, so any single figure claiming "on
- * schedule" can be flatly wrong. See the `overallProgress` cases at the foot of this file.
+ * The one to keep in mind is why there is no pace verdict on screen at all: dates missed and
+ * work finished early cancel in the subtraction, so any single figure claiming "on schedule"
+ * can be flatly wrong. See the `overallProgress` cases at the foot of this file.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -41,7 +38,7 @@ function task(overrides = {}) {
 
 /**
  * A dateless checklist item under `parent`. The id is namespaced by the parent and cannot be
- * clobbered by the overrides — spreading them last silently un-namespaced it.
+ * clobbered by the overrides, which is why they are spread BEFORE the id rather than after.
  */
 function sub(parent, overrides = {}) {
   const { id = 's', ...rest } = overrides
@@ -52,9 +49,8 @@ const DONE_AT = '2027-01-02T00:00:00.000Z'
 
 describe('taskProgress: what a task is worth', () => {
   it('is 0% until somebody finishes it, whatever the date says', () => {
-    // THE CORRECTION AT THE HEART OF THIS MODEL. The previous one reported "time elapsed",
-    // so a task whose window had merely run out read 100% and the app needed a badge, a mark
-    // and an overdue count to stop the headline lying.
+    // THE RULE AT THE HEART OF THIS MODEL. Nothing may advance a percentage but a tick, so a
+    // date that has merely arrived — or passed — is worth exactly nothing.
     expect(taskProgress(task({ due: '2027-01-11' }), TODAY).percent).toBe(0)
     expect(taskProgress(task({ due: '2027-01-01' }), TODAY).percent).toBe(0)
     expect(taskProgress(task({ due: '' }), TODAY).percent).toBe(0)
@@ -95,8 +91,8 @@ describe('taskProgress: states', () => {
   const stateOf = (due, extra) => taskProgress(task({ due, ...extra }), TODAY).state
 
   it('is overdue the DAY AFTER the due date, never on it', () => {
-    // The defect the previous model had to work around with a 23:59 sentinel: a task due
-    // today is due today, all day, and must not read as late at 00:01 that morning.
+    // Overdue compares DAY STRINGS. A task due today is due today, all day, and must not read
+    // as late at 00:01 that morning.
     expect(stateOf('2027-01-05')).toBe(STATE.OVERDUE)
     expect(stateOf(TODAY)).toBe(STATE.SOON)
   })
@@ -266,7 +262,7 @@ describe('overallProgress', () => {
 
   it('reports what the calendar expected separately from what is done', () => {
     // Two dates passed of four, nothing finished: 0% done against 50% expected. Merging the
-    // two claims is what produced a board that read 50% complete with nothing complete.
+    // two claims would produce a board reading 50% complete with nothing complete.
     const rows = [
       task({ id: 'a', due: '2026-12-01' }),
       task({ id: 'b', due: '2026-12-02' }),
@@ -280,7 +276,8 @@ describe('overallProgress', () => {
   })
 
   it('does not let a wall of overdue tasks read as a finished plan', () => {
-    // The old model's misleading case, kept as a regression: every date passed, nothing done.
+    // Every date passed, nothing done. The headline must say 0% and the fact must be stated
+    // separately, which is what `overdue` and `expected` are for.
     const rows = Array.from({ length: 8 }, (_, index) =>
       task({ id: `t${index}`, due: '2026-12-01' }),
     )
@@ -291,11 +288,11 @@ describe('overallProgress', () => {
   })
 
   it('is why there is no pace VERDICT: early work hides missed dates', () => {
-    // THE NEW MISLEADING CASE. Two dates passed with nothing done, and two future tasks
-    // finished early — so "work done" and "dates passed" are both 50% and any single figure
-    // subtracting them reports exactly "on schedule" while two things are late. The screen
-    // shows the fill against the mark and states `overdue` on its own, so nothing has to
-    // pick a verdict, and this is the test that must fail if a verdict ever comes back.
+    // THE MISLEADING CASE. Two dates passed with nothing done, and two future tasks finished
+    // early — so "work done" and "dates passed" are both 50% and any single figure subtracting
+    // them reports exactly "on schedule" while two things are late. The screen shows the fill
+    // against the mark and states `overdue` on its own, so nothing has to pick a verdict, and
+    // this is the test that must fail if a verdict ever appears.
     const rows = [
       task({ id: 'late1', due: '2026-12-01' }),
       task({ id: 'late2', due: '2026-12-02' }),

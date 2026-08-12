@@ -4,9 +4,9 @@
  *
  * OPENING A ROW REVEALS IT. IT DOES NOT ARM IT. Tapping a row is how you read a task and tick
  * its checklist, and those are the two things done a hundred times a week; changing its title or
- * its date is done once. An earlier version put live fields behind every tap, which meant the
- * common gesture landed a caret in a text input and a stray tap could retitle a task. The Edit
- * toggle is the confirmation, and it costs one tap on the rare path to protect the frequent one.
+ * its date is done once. Live fields behind every tap would land a caret in a text input on the
+ * common gesture, one stray blur away from retitling a task. The Edit toggle is the confirmation,
+ * and it costs one tap on the rare path to protect the frequent one.
  *
  * READ MODE holds the due date spelled out — the one fact the collapsed row abbreviates to a bare
  * day number, and the only place the weekday appears, which is a real question about a wedding
@@ -17,13 +17,9 @@
  *
  * ONE WRITE PER EDIT SESSION, AND THAT IS THE POINT OF OWNING THE DRAFT HERE.
  *
- * Every field used to commit on its own blur. That reads well on paper — nothing to save, nothing
- * to lose — and on this endpoint it measured badly: a round trip is ~3s, writes serialise so the
- * order the sheet's lock sees is the order they were made, and changing a title, a date and a
- * category was therefore three of them nose to tail. Ten seconds of a row flickering through
- * three optimistic states, which is what "saving is slow and inconsistent" looked like.
- *
- * The Edit toggle gave the session a beginning and an end, so the draft lives for exactly as long
+ * A round trip is ~3s and writes serialise, so committing each field on its own blur costs one
+ * per field nose to tail — ten seconds of a row flickering through three optimistic states for one
+ * edit. The Edit toggle gives the session a beginning and an end: the draft lives exactly as long
  * as the mode does and goes out once, when Done is pressed. `draft === null` IS read mode; there
  * is no second flag that can disagree with it.
  *
@@ -34,9 +30,8 @@
  *   blur between two fields would drop the guard at exactly the moment the buffer is full.
  *
  *   Closing the row mid-session would throw the edit away. So unmounting FLUSHES: the ref below
- *   always holds the current draft's writer, and the effect's cleanup calls it. An invalid draft
- *   — only ever an empty title — is dropped there rather than saved, which keeps the old title
- *   and loses nothing anybody meant to keep.
+ *   always holds the current draft's writer, and the effect's cleanup calls it. An invalid draft —
+ *   no title, or no day — is dropped there rather than saved, which keeps the stored values.
  *
  *   The other person's edit to a field you are also editing is lost for the session's duration,
  *   where per-field commits narrowed that to the one field under the finger. Two people editing
@@ -128,14 +123,12 @@ export default function TaskDetail({
       return
     }
     /**
-     * THE FLUSH IS DISARMED BEFORE THE WRITE, and this line is the whole reason the unmount
-     * path is safe. Saving a new DATE re-sorts the plan, so the row moves to a different month
-     * — a different `<section>` — and React deletes the subtree and mounts a fresh one rather
-     * than moving it. That deletion runs this component's cleanup, whose closure still held the
-     * pre-save task and the full draft, so it resolved the same difference a second time and
-     * sent the identical write again: two round trips and two "Saved." toasts for one Done.
-     * Measured over CDP; a ref assignment is immediate, so nulling it here is what the deleted
-     * fiber's cleanup sees.
+     * THE FLUSH IS DISARMED BEFORE THE WRITE, and this line is why the unmount path is safe.
+     * Saving a new DATE re-sorts the plan, so the row moves to a different month — a different
+     * `<section>` — and React deletes the subtree rather than moving it. That deletion runs this
+     * component's cleanup, whose closure still holds the pre-save task and the full draft, so it
+     * would resolve the same difference again and send the identical write twice. A ref assignment
+     * is immediate, so nulling it here is what the deleted fiber's cleanup sees.
      */
     flush.current = null
     setCodes([])
@@ -163,7 +156,7 @@ export default function TaskDetail({
    * DELETING DISARMS THE FLUSH TOO, and for a worse reason than `done`'s.
    *
    * The delete is optimistic: `deletedAt` is stamped synchronously, the row stops being live and
-   * drops out of the plan, so this component unmounts and its cleanup runs — with a closure still
+   * drops out of the plan, so this component unmounts and its cleanup runs with a closure still
    * holding the PRE-DELETE task. `taskFromDraft` spreads that task, so the payload carries an
    * empty `deleted_at`, and `update` rewrites the whole row from the payload. The two writes
    * serialise on one chain, so the resurrection lands second and wins: the task somebody just

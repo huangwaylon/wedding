@@ -18,9 +18,9 @@ import { STORAGE_KEYS, readStored, writeStored } from '../config.js'
 /**
  * `indigo` first: it is the default, and the order is the swatch order.
  *
- * It replaced rose as the default because the accent also paints `.dot--soon`, one of the three
- * 8px discs that carry a row's state — so the default has to be separable from `--good` and
- * `--critical` at that size. See the accent block in `tokens.css`.
+ * The default has to be separable from `--good` and `--critical` at 8px, because the accent also
+ * paints `.dot--soon` — one of the three discs that carry a row's state. See the accent block in
+ * `tokens.css`.
  */
 export const ACCENTS = ['indigo', 'rose', 'sage', 'plum', 'gold']
 

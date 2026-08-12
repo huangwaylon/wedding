@@ -14,3 +14,7 @@ IMG_0509.JPG
 # and the fixture must never reach `dist/` — the service worker precaches whatever is there.
 .env.local
 public/__dev-board.json
+
+# Per-machine agent/sandbox config. Machine-specific, and not something a public repo
+# should carry.
+.claude/

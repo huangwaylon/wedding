@@ -35,20 +35,21 @@ describe('the Code.gs column contract', () => {
   })
 
   it('still escapes a leading formula character on write', () => {
-    // If this helper is ever "tidied" away, a title of "=SUM(A:A)" becomes a live
-    // formula in somebody's spreadsheet and the cell no longer holds what they typed.
+    // If this helper is ever "tidied" away, a title of "=SUM(A:A)" becomes a live formula in
+    // somebody's spreadsheet and the cell stops holding what they typed.
     const source = readFileSync('apps-script/Code.gs', 'utf8')
     expect(source).toMatch(/\/\^\[=\+\\-@\]\/\.test/)
   })
 
   it('keeps parent_id last, because appending is the only safe change', () => {
     // Appending cannot shift an existing column's index, so it is the only edit an older
-    // deployment survives. The guard in `useBoard` no longer reads the last entry ALONE —
-    // see `missingColumnsFor` in test/board.test.js for what that cost.
+    // deployment survives. `missingColumnsFor` compares the WHOLE list, never the last entry
+    // alone — see test/board.test.js.
     expect(TASK_COLUMNS[TASK_COLUMNS.length - 1]).toBe('parent_id')
   })
 
-  it('carries no column the simplification removed', () => {
+  it('carries only the nine columns a task has', () => {
+    // A task is a title, a day and a tick. None of these may come back.
     for (const gone of ['start', 'end', 'all_day', 'notes', 'owner']) {
       expect(TASK_COLUMNS).not.toContain(gone)
     }
@@ -81,18 +82,10 @@ describe('rowToTask', () => {
     })
   })
 
-  it('falls back to `end` so a pre-rename deployment still READS', () => {
-    // A script that predates this column list sends no `due` at all, and without this every task
-    // on the board read as undated — the whole plan looked empty rather than out of date. The old
-    // closing end of the window is what "due by" meant, and its clock half is sliced off.
-    expect(rowToTask({ id: 'a', title: 'x', end: '2027-02-01T23:59' }).due).toBe('2027-02-01')
-    expect(rowToTask({ id: 'a', title: 'x', end: '2027-02-01' }).due).toBe('2027-02-01')
-  })
-
-  it('prefers `due` whenever the deployment sends one', () => {
-    // Both present is what a relaid-out sheet looks like from a script mid-redeploy.
-    const task = rowToTask({ id: 'a', title: 'x', due: '2027-03-09', end: '2027-02-01T23:59' })
-    expect(task.due).toBe('2027-03-09')
+  it('reads the day from `due` and from nowhere else', () => {
+    // One column carries the date. A key the layout does not contain is not a fallback.
+    expect(rowToTask({ id: 'a', title: 'x', due: '2027-03-09' }).due).toBe('2027-03-09')
+    expect(rowToTask({ id: 'a', title: 'x', end: '2027-02-01' }).due).toBe('')
   })
 
   it('never yields the string "undefined" for a missing cell', () => {

@@ -14,9 +14,9 @@
  *
  * `d` IS THE DUE DATE AS CALENDAR DAYS FROM THE WEDDING DAY, negative for before.
  * Days rather than months so `time.addDays` can do plain calendar arithmetic and no
- * month-length or DST edge case exists, and one date rather than a window because a
- * task here is a deadline: the earlier bound was never anything a person set, checked
- * or looked at, and it made every seeded row carry a date nobody had chosen.
+ * month-length or DST edge case exists, and exactly ONE offset per task because a
+ * seeded task is a deadline: a second bound would be a date nobody had chosen sitting
+ * on every row of a fresh board.
  *
  * Seeding writes the titles in the SEEDING DEVICE'S LANGUAGE, and that is the one
  * place a per-device preference reaches the sheet. It is deliberate: a seeded
@@ -25,7 +25,7 @@
  * stored data. Everything else written to the sheet stays language-independent.
  */
 
-import { addDays } from './time.js'
+import { addDays, isValidDay } from './time.js'
 
 /**
  * The category vocabulary both templates draw from, and the default for a fresh
@@ -170,14 +170,18 @@ export function findTemplate(id) {
 /**
  * A template plus a wedding date -> task drafts ready for `createMany`.
  *
+ * The date is CALENDAR-VALIDATED through `isValidDay`, not pattern-matched: a shape check
+ * accepts '2027-02-31', and every offset counted from it would land a whole seeded board a
+ * day into March.
+ *
  * @param {object} template
  * @param {string} weddingDay 'YYYY-MM-DD'
  * @param {object} opts
- * @param {string} opts.locale which title to write
+ * @param {string} opts.locale which title to write; anything with no titles falls back to en
  * @param {() => string} opts.newId injected so tests are deterministic
  */
-export function materialize(template, weddingDay, { locale = 'en', newId }) {
-  if (!template || !/^\d{4}-\d{2}-\d{2}$/.test(String(weddingDay ?? ''))) return []
+export function materialize(template, weddingDay, { locale, newId }) {
+  if (!template || !isValidDay(weddingDay)) return []
 
   return template.tasks.map((item) => ({
     id: newId(),
