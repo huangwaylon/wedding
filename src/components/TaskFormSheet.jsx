@@ -5,10 +5,12 @@
  * a modal is the case where there is nothing on screen to edit yet. Both surfaces buffer a draft
  * and write once — this one's end is Save, the inline one's is Done.
  *
- * THE DATE IS LEFT BLANK, never defaulted to today. Every task typed in a hurry would
- * otherwise be overdue tomorrow, which is the one way this app can put a false number on
- * somebody's screen without anybody typing anything wrong. A dateless task lands in its own
- * group at the foot of the list and waits.
+ * THE DATE IS REQUIRED, AND STILL NOT DEFAULTED. Every task carries a day — `validateTask`
+ * returns `MISSING_DUE` without one — but the field opens BLANK and Save refuses until somebody
+ * picks one, rather than starting on today. Those are two different things: a defaulted date is an
+ * invented date, and every task typed in a hurry would be overdue tomorrow, which is the one way
+ * this app can put a false number on somebody's screen without anybody typing anything wrong.
+ * Refusing asks a question; defaulting answers it wrongly and says nothing.
  *
  * The field set and the validation live in `TaskFields`.
  */

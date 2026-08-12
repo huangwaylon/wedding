@@ -15,10 +15,16 @@
 import { useSyncExternalStore } from 'react'
 import { STORAGE_KEYS, readStored, writeStored } from '../config.js'
 
-/** `rose` first: it is the default, and the order is the swatch order. */
-export const ACCENTS = ['rose', 'sage', 'indigo', 'plum', 'gold']
+/**
+ * `indigo` first: it is the default, and the order is the swatch order.
+ *
+ * It replaced rose as the default because the accent also paints `.dot--soon`, one of the three
+ * 8px discs that carry a row's state — so the default has to be separable from `--good` and
+ * `--critical` at that size. See the accent block in `tokens.css`.
+ */
+export const ACCENTS = ['indigo', 'rose', 'sage', 'plum', 'gold']
 
-export const DEFAULT_ACCENT = 'rose'
+export const DEFAULT_ACCENT = 'indigo'
 
 /**
  * The same hexes the `[data-accent]` blocks in `tokens.css` declare.
@@ -29,9 +35,9 @@ export const DEFAULT_ACCENT = 'rose'
  * changed in one place and not the other, which is otherwise only visible to the eye.
  */
 export const ACCENT_HEX = {
+  indigo: '#3d4e8b',
   rose: '#8f2f50',
   sage: '#385844',
-  indigo: '#3d4e8b',
   plum: '#6b3a6e',
   gold: '#6b4d17',
 }

@@ -16,7 +16,7 @@
 
 import { TEMPLATES } from '../lib/templates.js'
 import { useT } from '../i18n/index.js'
-import { RingsIcon } from './icons.jsx'
+import { PeaksIcon } from './icons.jsx'
 
 export default function EmptyBoard({ canEdit, weddingDay, seeding, onSeed, onOpenSettings }) {
   const { t } = useT()
@@ -24,7 +24,7 @@ export default function EmptyBoard({ canEdit, weddingDay, seeding, onSeed, onOpe
   return (
     <section className="card empty">
       <p aria-hidden="true">
-        <RingsIcon style={{ width: '2rem', height: '2rem', color: 'var(--ink-4)' }} />
+        <PeaksIcon style={{ width: '2rem', height: '2rem', color: 'var(--ink-4)' }} />
       </p>
       <h2 className="empty__title">{t('empty.title')}</h2>
 

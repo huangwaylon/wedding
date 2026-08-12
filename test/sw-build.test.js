@@ -43,6 +43,20 @@ describe('precachePaths', () => {
     ])
   })
 
+  it('never precaches a local artefact copied out of public/', () => {
+    // `public/__dev-board.json` is the board fixture scripts/drive.mjs reads. It is gitignored, so
+    // CI never sees it and the deployed worker was never at risk — but anyone who has driven the
+    // app locally has one, `vite build` copies public/ verbatim, and this walk would then list it:
+    // the worker would precache somebody's fixture board for offline use. The `__` prefix is the
+    // convention for a local artefact.
+    const paths = precachePaths(
+      fixture({ ...TREE, '__dev-board.json': '{}', '__scratch/notes.txt': 'x' }),
+    )
+    expect(paths).not.toContain('__dev-board.json')
+    expect(paths.some((path) => path.startsWith('__'))).toBe(false)
+    expect(paths).toContain('index.html')
+  })
+
   it('excludes the worker itself', () => {
     const paths = precachePaths(fixture({ ...TREE, 'sw.js': 'self' }))
     expect(paths).not.toContain('sw.js')

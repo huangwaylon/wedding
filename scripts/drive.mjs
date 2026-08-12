@@ -7,11 +7,29 @@
  * the one measurement that mattered most in this redesign: whether `input[type=date]` stays
  * inside the row it is drawn in.
  *
+ * IT ALSO COVERS THE TWO THINGS ONLY A CLICK CAN REACH: that ticking a row under a filter does
+ * not make it vanish, and that deleting a task you have just EDITED does not resurrect it. The
+ * second is a POST count, deliberately — the fixture replies with the board as it was before the
+ * write, so a resurrection is invisible in the DOM and visible only in the request list. Reverting
+ * `remove()` in TaskDetail.jsx to a bare `onDelete(task)` makes it print
+ * `["delete:a5:", "update:a5:Edited, then deleted"]`, which is the defect.
+ *
+ * WHAT THE FIXTURE CANNOT SHOW, and do not read these as passes: the optimistic window. The dev
+ * server answers in milliseconds, so `tickUnderFilter.done` and `pendingKeepsTheTick` are measured
+ * after the stale reply has already rolled the tick back. The row STAYING is the real assertion in
+ * the first; the second is pinned as a CSS fact in `test/ui.test.jsx` instead.
+ *
  * No new dependency: `WebSocket` and `fetch` are built into node.
  *
- *   1. npx vite --port 5199 --strictPort
- *   2. VITE_SCRIPT_URL must point at a readable board. A static JSON file under `public/`
- *      works and needs no Apps Script deployment — see the note on the reply below.
+ *   1. npx vite --port 5199 --strictPort --host 127.0.0.1
+ *   2. VITE_SCRIPT_URL must point at a readable board. A static JSON file under `public/` works
+ *      and needs no Apps Script deployment — see the note on the reply below. `.env.local` with
+ *      `VITE_SCRIPT_URL=/wedding/__dev-board.json` is the shape; both that file and the fixture
+ *      are gitignored, and the fixture MUST keep that name, because the service worker precaches
+ *      whatever reaches `dist/`. Its `config` is keyed the way the SHEET is — `wedding_date`,
+ *      `partner1_name` — not the way the client's config object is; `parseConfig` reads
+ *      `CONFIG_FIELDS`, so camelCase keys parse to nothing and the board renders with no wedding
+ *      date, no countdown and no month plaque, all of which look like bugs in the app.
  *   3. cp scripts/drive.mjs /tmp/cdp-wedding.mjs && node /tmp/cdp-wedding.mjs
  *
  * The copy in step 3 is not decoration: the sandbox refuses `connect 127.0.0.1:<port>` unless
@@ -335,6 +353,133 @@ await wait(600)
 report.filterAfterOverdue = await evaluate(`document.querySelector('.chip[aria-pressed=true]')?.textContent`)
 report.rowsAfterFilter = await evaluate(`document.querySelectorAll('.tcard').length`)
 await shot('05-overdue')
+
+/**
+ * TICKING SOMETHING OFF UNDER A FILTER MUST NOT MAKE IT VANISH.
+ *
+ * The highest-frequency gesture in the app meeting its most-used filter. Ticking deliberately
+ * raises no toast, so if the row also leaves the list there is NO feedback at all — the tap
+ * reads as having done nothing. `App` holds the ticked ids for as long as the filter lasts, so
+ * the row stays put wearing its tick while the chip's count drops.
+ *
+ * A static render cannot see any of this: the state is set by a click.
+ */
+const beforeTickUnderFilter = posts.length
+const tickTarget = await evaluate(`
+  (() => {
+    const row = document.querySelector('.tcard')
+    const title = row.querySelector('.tcard__title').textContent
+    row.querySelector('.tcard__check').click()
+    return { title, rowsBefore: document.querySelectorAll('.tcard').length }
+  })()
+`)
+await wait(900)
+report.tickUnderFilter = {
+  ...tickTarget,
+  ...(await evaluate(`
+    (() => {
+      const titles = [...document.querySelectorAll('.tcard__title')].map((n) => n.textContent)
+      return {
+        rowsAfter: titles.length,
+        stillThere: titles.includes(${JSON.stringify(tickTarget.title)}),
+        // Struck through where it stands, which IS the confirmation.
+        done: document.querySelectorAll('.tcard--done').length,
+        chip: document.querySelector('.chip[aria-pressed=true]')?.textContent,
+      }
+    })()
+  `)),
+  writes: posts.length - beforeTickUnderFilter,
+}
+
+/**
+ * AND THE TICK STAYS AT FULL INK WHILE THE WRITE IS IN FLIGHT. Dimming the whole card took the
+ * check with it, so the confirmation of that same gesture faded for ~3s — which reads as
+ * un-pressed. Measured as a computed opacity on the check inside a pending row.
+ */
+report.pendingKeepsTheTick = await evaluate(`
+  (() => {
+    const row = [...document.querySelectorAll('.tcard')].find((c) => c.className.includes('pending'))
+    if (!row) return 'no pending row to measure'
+    return {
+      head: getComputedStyle(row.querySelector('.tcard__head')).opacity,
+      check: getComputedStyle(row.querySelector('.tcard__check')).opacity,
+    }
+  })()
+`)
+
+// Back to everything, which also clears the held rows.
+await evaluate(`[...document.querySelectorAll('.chip')].find(c=>!c.disabled)?.click()`)
+await wait(500)
+
+/**
+ * DELETING A TASK YOU HAVE JUST EDITED MUST NOT BRING IT BACK.
+ *
+ * The defect: `TaskDetail` arms an unmount flush on every render while a session is open, and
+ * only `done()` disarmed it. The optimistic delete drops the row from the plan, the component
+ * unmounts, and the cleanup resolved the buffered draft against the PRE-delete task — a payload
+ * carrying an empty `deleted_at`, which `update` writes over the whole row. The two serialise, so
+ * the resurrection landed second and won: the task returned ~3s later wearing the edit, with its
+ * subtasks gone.
+ *
+ * The only honest check is the POST list. One `delete` and NO `update` for that id.
+ */
+await evaluate(`
+  (() => {
+    const row = [...document.querySelectorAll('.tcard')].find(c => c.querySelector('.tcard__tally'))
+    row.querySelector('.tcard__head').click()
+    row.scrollIntoView({ block: 'center' })
+    return true
+  })()
+`)
+await wait(500)
+await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
+await wait(400)
+await setField('.tcard--open .editor input:not([type=date])', 'Edited, then deleted')
+const beforeDelete = posts.length
+await evaluate(`document.querySelector('.tcard--open .btn--danger-quiet').click()`)
+await wait(500)
+report.deleteAfterEdit = {
+  confirmSheet: await evaluate(`document.querySelectorAll('.sheet').length`),
+  // The session has ended, so there is no buffered draft left to flush.
+  editorStillOpen: await evaluate(`document.querySelectorAll('.tcard--open .editor').length`),
+}
+await evaluate(`[...document.querySelectorAll('.sheet .btn')].find(b=>b.className.includes('danger'))?.click()`)
+await wait(2500)
+report.deleteAfterEdit.posts = posts.slice(beforeDelete)
+report.deleteAfterEdit.rowsNow = await evaluate(`document.querySelectorAll('.tcard').length`)
+report.deleteAfterEdit.titleBack = await evaluate(
+  `[...document.querySelectorAll('.tcard__title')].some(n => n.textContent === 'Edited, then deleted')`,
+)
+await shot('07-deleted')
+
+/**
+ * THE SIGN AND THE TODAY LINE, in the live document rather than a fixture page.
+ *
+ * The line is a boundary, so what has to be true is its POSITION: every row above it is due
+ * before today and the first row below it is not. A line in the wrong place is worse than none.
+ */
+await send('Page.reload', { ignoreCache: true })
+await wait(4000)
+report.sign = await evaluate(`
+  (() => {
+    const now = document.querySelector('.plan__now')
+    if (!now) return 'no today line'
+    const rows = [...document.querySelectorAll('.tcard, .plan__now')]
+    const index = rows.indexOf(now)
+    const label = now.textContent
+    const plaques = [...document.querySelectorAll('.plan__month--day')].map(n => n.textContent)
+    return {
+      label,
+      rowsAbove: index,
+      rowsBelow: rows.length - index - 1,
+      // The heading directly above it, and the one carrying the wedding.
+      weddingPlaques: plaques,
+      tallies: [...document.querySelectorAll('.plan__tally')].map(n => n.textContent),
+      // aria-hidden, so the heading's own name is the month alone.
+      tallyHidden: [...document.querySelectorAll('.plan__tally')].every(n => n.getAttribute('aria-hidden') === 'true'),
+    }
+  })()
+`)
 
 // Horizontal overflow anywhere?
 report.docOverflow = await evaluate(`

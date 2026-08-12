@@ -182,6 +182,8 @@ function BoardView({ locale, canEdit = true, open = true, editing = false }) {
             tasks={tasks}
             canEdit={canEdit}
             categories={CONFIG.categories}
+            today={TODAY}
+            weddingMonth={WEDDING_DAY.slice(0, 7)}
             expanded={new Set(opened ? [opened.id] : [])}
             onExpand={noop}
             onToggle={noop}
@@ -252,6 +254,8 @@ function RowsView({ locale, canEdit = true, editing = false }) {
           tasks={tasks}
           canEdit={canEdit}
           categories={CONFIG.categories}
+          today={TODAY}
+          weddingMonth={WEDDING_DAY.slice(0, 7)}
           expanded={new Set(['r3'])}
           onExpand={noop}
           onToggle={noop}
@@ -261,6 +265,61 @@ function RowsView({ locale, canEdit = true, editing = false }) {
           onAddSubtask={noop}
           onFieldFocus={noop}
           editing={editing}
+        />
+      </div>
+    </Shell>
+  )
+}
+
+/**
+ * The plan around TODAY, and the month the wedding falls in.
+ *
+ * The board fixtures start in May 2026 and the wedding is in April 2027, so the two things the
+ * heading now does — carry a month's tally, and name the one month that is the wedding's — are
+ * both eleven screens down, and the `Today` line between the past and the future is with them.
+ * `to=` does not survive a headless capture, so a page that cannot be screenshotted is a case
+ * nothing protects. This puts all three in the first 400px.
+ */
+function SignView({ locale, unfiltered = true }) {
+  const rows = [
+    { id: 's1', due: '2026-09-20', title: 'Mail the save-the-dates', category: 'Stationery', doneAt: '2026-09-02T00:00:00.000Z' },
+    { id: 's2', due: '2026-09-28', title: 'Book the band or DJ', category: 'Music' },
+    { id: 's3', due: '2026-10-01', title: 'Book the photographer', category: 'Photo', doneAt: '2026-09-30T00:00:00.000Z' },
+    { id: 's4', due: TODAY, title: 'Compare the two venue quotes', category: 'Venue' },
+    { id: 's5', due: '2026-10-11', title: 'Choose the invitation paper', category: 'Stationery' },
+    { id: 's6', due: '2027-04-12', title: 'Final meeting with the planner', category: 'Vendors' },
+    { id: 's7', due: WEDDING_DAY, title: 'Wedding day', category: 'Other' },
+  ]
+  const tasks = withProgress(
+    rows.map((row) => ({
+      category: '',
+      doneAt: '',
+      createdAt: '',
+      updatedAt: '',
+      deletedAt: '',
+      parentId: '',
+      ...row,
+    })),
+    TODAY,
+  )
+  return (
+    <Shell>
+      <div className="view stack">
+        <Plan
+          tasks={tasks}
+          canEdit
+          categories={CONFIG.categories}
+          today={TODAY}
+          weddingMonth={WEDDING_DAY.slice(0, 7)}
+          unfiltered={unfiltered}
+          expanded={new Set()}
+          onExpand={noop}
+          onToggle={noop}
+          onSave={noop}
+          onDelete={noop}
+          canAddSubtask
+          onAddSubtask={noop}
+          onFieldFocus={noop}
         />
       </div>
     </Shell>
@@ -302,7 +361,7 @@ function page(body, { locale, accent }) {
 `
 }
 
-function emit(name, element, { locale = 'en', accent = 'rose' } = {}) {
+function emit(name, element, { locale = 'en', accent = 'indigo' } = {}) {
   setLocale(locale)
   const path = `scripts/preview-${name}.html`
   writeFileSync(path, page(renderToStaticMarkup(element), { locale, accent }))
@@ -320,13 +379,18 @@ emit('en-rows-viewer', <RowsView locale="en" canEdit={false} />)
 emit('ja-rows', <RowsView locale="ja" />, { locale: 'ja' })
 emit('ja-rows-editing', <RowsView locale="ja" editing />, { locale: 'ja' })
 emit('en-empty', <EmptyView />)
+/* The sign, the tally, the wedding month and the Today line — plus the FILTERED version, where
+   every figure that describes a whole month is deliberately withheld. */
+emit('en-sign', <SignView locale="en" />)
+emit('en-sign-filtered', <SignView locale="en" unfiltered={false} />)
+emit('ja-sign', <SignView locale="ja" />, { locale: 'ja' })
 emit('ja', <BoardView locale="ja" />, { locale: 'ja' })
 emit('ja-closed', <BoardView locale="ja" open={false} />, { locale: 'ja' })
 
 // One file per accent, so a preset that breaks a contrast pair is visible rather than
 // merely measured.
 for (const accent of ACCENTS) {
-  if (accent === 'rose') continue
+  if (accent === 'indigo') continue
   emit(`en-${accent}`, <BoardView locale="en" open={false} />, { accent })
 }
 

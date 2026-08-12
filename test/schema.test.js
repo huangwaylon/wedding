@@ -158,26 +158,32 @@ describe('validateTask', () => {
     expect(validateTask({ title: 'x', due: '2027-01-01' }, isValidDay)).toEqual([])
   })
 
-  it('needs only a title', () => {
-    // THE DUE DATE IS OPTIONAL, DELIBERATELY. Forcing one forces a wrong one — during entry
-    // the date is exactly what is not yet known — and an invented date lands straight in the
-    // overdue count and the on-schedule mark.
-    expect(validateTask({ title: 'Find a florist', due: '' }, isValidDay)).toEqual([])
+  it('requires a due date on a task', () => {
+    // EVERY EVENT CARRIES A DAY. Refused rather than defaulted: a defaulted date is an invented
+    // one, and an invented date lands straight in the overdue count and the on-schedule mark. So
+    // the create sheet still opens BLANK and Save refuses until somebody picks a day.
+    expect(validateTask({ title: 'Find a florist', due: '' }, isValidDay)).toEqual(['MISSING_DUE'])
+    expect(validateTask({ title: 'Find a florist' }, isValidDay)).toEqual(['MISSING_DUE'])
   })
 
-  it('names a missing title', () => {
-    expect(validateTask({ title: '   ', due: '' }, isValidDay)).toEqual(['MISSING_TITLE'])
+  it('names a missing title and a missing date together', () => {
+    expect(validateTask({ title: '   ', due: '' }, isValidDay)).toEqual([
+      'MISSING_TITLE',
+      'MISSING_DUE',
+    ])
   })
 
-  it('refuses a hand-typed date that is not a date', () => {
+  it('refuses a hand-typed date that is not a date, and does not also call it missing', () => {
     // Reachable only from the spreadsheet — the UI normalises every value — and silently
-    // rewriting it to "no date" is the one outcome worse than refusing it.
+    // rewriting it to "no date" is the one outcome worse than refusing it. The two codes are
+    // exclusive: a field shows one message.
     expect(validateTask({ title: 'x', due: '2027-02-31' }, isValidDay)).toEqual(['BAD_DUE'])
   })
 
   it('asks nothing of a subtask but a title', () => {
     // A date wheel per checklist item would make entering five in a row unusable on a phone,
-    // and then no parent's progress would ever advance.
+    // and then no parent's progress would ever advance. A subtask is a title and a tick, so
+    // requiring a date on a TASK deliberately does not reach it.
     expect(validateTask({ title: 'x', parentId: 'p1', due: '' }, isValidDay)).toEqual([])
     expect(validateTask({ title: '', parentId: 'p1' }, isValidDay)).toEqual(['MISSING_TITLE'])
   })

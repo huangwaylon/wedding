@@ -62,6 +62,23 @@ const WASHES = {
   'neutral-wash': '#f0ece7',
 }
 
+/**
+ * The five accent washes, which went unmeasured for as long as nothing consumed one.
+ * `.plan__month--day` does now — the wedding's own month wears a tinted plaque — so every
+ * preset's wash is checked against every ink that can land on it.
+ *
+ * THE RESULT IS A RULE: --ink-3 MUST NOT SIT ON AN ACCENT WASH. It measures 4.47:1 on plum,
+ * which fails AA, and 4.56–4.64:1 on the other four, which is no margin worth having. --ink-2
+ * is 6.71:1 at worst. Kanji at low contrast is unreadable in a way Latin is not.
+ */
+const ACCENT_WASHES = {
+  'indigo-wash': '#edeef7',
+  'rose-wash': '#fbecf1',
+  'sage-wash': '#e8f0ea',
+  'plum-wash': '#f2e9f3',
+  'gold-wash': '#f4eee0',
+}
+
 const rows = []
 const add = (label, ratio, floor) =>
   rows.push({
@@ -97,6 +114,14 @@ for (const [name, hex] of Object.entries(STATUS)) {
 // A badge is a wash with INK text on it, never status-coloured text: a status
 // colour light enough to fill a bar is illegible as type.
 for (const [name, hex] of Object.entries(WASHES)) {
+  add(`ink on ${name}`, contrast(INK.ink, hex), 4.5)
+  add(`ink-2 on ${name}`, contrast(INK['ink-2'], hex), 4.5)
+}
+
+// The accent washes carry the month plaque's label and its tally, both at --ink-2. --ink-3 is
+// deliberately NOT a row here: it measures 4.47:1 on plum and would make this script report a
+// permanent failure for a pairing no rule is allowed to write. The rule is in the block above.
+for (const [name, hex] of Object.entries(ACCENT_WASHES)) {
   add(`ink on ${name}`, contrast(INK.ink, hex), 4.5)
   add(`ink-2 on ${name}`, contrast(INK['ink-2'], hex), 4.5)
 }

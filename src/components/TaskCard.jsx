@@ -31,7 +31,7 @@ import { useCategoryLabel, useT } from '../i18n/index.js'
 import DoneToggle from './DoneToggle.jsx'
 import DueLabel from './DueLabel.jsx'
 import TaskDetail from './TaskDetail.jsx'
-import { ChevronRightIcon } from './icons.jsx'
+import { CategoryIcon, ChevronRightIcon } from './icons.jsx'
 
 export default function TaskCard({
   task,
@@ -120,7 +120,15 @@ export default function TaskCard({
                 </span>
               ) : null}
               {task.category ? (
-                <span className="chip chip--static">{categoryLabel(task.category)}</span>
+                /* The glyph LEADS THE WORD, it does not replace it. Fourteen categories is more
+                   than a shape vocabulary anybody learns cold, and a Japanese and an English
+                   reader do not learn the same ones — so the word stays and the glyph is what
+                   makes the chip findable on the second reading. A known category only: an
+                   invented one prints as typed, with no glyph. */
+                <span className="chip chip--static">
+                  <CategoryIcon name={task.category} className="chip__icon" />
+                  {categoryLabel(task.category)}
+                </span>
               ) : null}
             </span>
           ) : null}

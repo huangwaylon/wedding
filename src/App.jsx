@@ -119,13 +119,39 @@ export default function App() {
    */
   const [expanded, setExpanded] = useState(() => new Set())
   /**
-   * True while a field inside an open card has focus — an editor field or the add-a-subtask
-   * field. Two things ride on it: the fixed FAB gets out of the way (it does not move with
-   * the keyboard, and it sat over the trailing end of the add field, where a tap opened the
-   * new-task sheet and discarded what was typed), and a reload is held off, because in-place
-   * editing commits on blur and the text in a focused field exists nowhere else yet.
+   * Rows that have been ticked since the filter was last chosen, and which therefore stay on
+   * screen even though they no longer match it.
+   *
+   * TICKING SOMETHING OFF MUST NOT MAKE IT VANISH. Filter to Overdue, work down the list, tick a
+   * row — and the row left the only list on screen, with no toast (ticking deliberately has
+   * none) and nothing to confirm the tap landed. That is the app's highest-frequency gesture
+   * meeting its most-used filter, and the feedback was total absence. Held here, the row stays
+   * put, wearing its tick and its strikethrough, while the count on the chip beside it drops:
+   * the confirmation is the row changing rather than the row leaving.
+   *
+   * Session state, never `localStorage`, for the same reason `expanded` is.
    */
-  const [typing, setTyping] = useState(false)
+  const [ticked, setTicked] = useState(() => new Set())
+  /**
+   * How many things are holding text that exists nowhere else — an open edit SESSION, or the
+   * add-a-subtask field while it has focus. Two things ride on it being non-zero: the fixed FAB
+   * gets out of the way (it does not move with the keyboard, and it sat over the trailing end of
+   * the add field, where a tap opened the new-task sheet and discarded what was typed), and a
+   * reload is held off, because the text in an open session exists nowhere else yet.
+   *
+   * A COUNT, NOT A FLAG, and that is a fix rather than a tidy-up. Both producers wrote one
+   * boolean and blur was the last writer, so tapping the subtask field inside an open edit
+   * session and then tapping away reported `false` with the session still open and the title
+   * buffer still full — dropping the guard at exactly the moment it is load-bearing. Two rows
+   * open in Edit at once had the same shape: closing either released both. Every producer calls
+   * in balanced pairs (an effect and its cleanup, a focus and its blur); the floor is so an
+   * unbalanced one degrades to "the FAB stays hidden" rather than "the guard never releases".
+   */
+  const [typists, setTypists] = useState(0)
+  const reportTyping = useCallback((on) => {
+    setTypists((count) => Math.max(0, count + (on ? 1 : -1)))
+  }, [])
+  const typing = typists > 0
   const [adding, setAdding] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -147,8 +173,11 @@ export default function App() {
   const overall = useMemo(() => overallProgress(tasks), [tasks])
 
   const shown = useMemo(
-    () => (filter === FILTER_ALL ? tasks : tasks.filter((task) => task.progress.state === filter)),
-    [tasks, filter],
+    () =>
+      filter === FILTER_ALL
+        ? tasks
+        : tasks.filter((task) => task.progress.state === filter || ticked.has(task.id)),
+    [tasks, filter, ticked],
   )
 
   const toggleExpanded = useCallback((id) => {
@@ -162,6 +191,8 @@ export default function App() {
 
   const chooseFilter = useCallback((next) => {
     setFilter(next)
+    // A new slice is a fresh reading, so nothing is held over into it.
+    setTicked(new Set())
     writeStored(STORAGE_KEYS.filter, next)
   }, [])
 
@@ -230,6 +261,9 @@ export default function App() {
   /** Same reasoning: ticking is the highest-frequency action there is, so only a failure talks. */
   const toggleDone = useCallback(
     async (task) => {
+      // Before the write, not after: the optimistic update lands synchronously, so a row whose
+      // state no longer matches the filter has to be held before it can be dropped.
+      setTicked((previous) => new Set(previous).add(task.id))
       if (!(await board.toggleDone(task))) show(t('toast.failed'))
     },
     [board, show, t],
@@ -241,7 +275,10 @@ export default function App() {
         weddingDay: weddingDay(board.config),
         locale,
       })
-      if (count) show(t('empty.seeded', { count }))
+      // A failure has to speak here too: the template card just flips its button back from
+      // "Building the checklist…" over a board that is still empty, which reads as nothing
+      // having happened rather than as a write that was refused.
+      show(count ? t('empty.seeded', { count }) : t('toast.failed'))
     },
     [board, locale, show, t],
   )
@@ -363,6 +400,10 @@ export default function App() {
                     tasks={shown}
                     canEdit={canEdit}
                     categories={board.config.categories}
+                    today={today}
+                    /* So the one heading that is the wedding's own month can say so. */
+                    weddingMonth={day ? day.slice(0, 7) : ''}
+                    unfiltered={filter === FILTER_ALL}
                     expanded={expanded}
                     onExpand={toggleExpanded}
                     onToggle={toggleDone}
@@ -370,7 +411,7 @@ export default function App() {
                     onDelete={setPendingDelete}
                     canAddSubtask={!board.outdatedScript}
                     onAddSubtask={addSubtask}
-                    onFieldFocus={setTyping}
+                    onFieldFocus={reportTyping}
                   />
                 )}
               </div>
@@ -379,8 +420,13 @@ export default function App() {
         </div>
       </div>
 
-      {/* Hidden while a field has focus — see `typing`. */}
-      {canEdit && !typing ? (
+      {/* Hidden while a field has focus — see `typing` — and withheld entirely when the deployed
+          script is out of date. Every row write is refused in that state, so the sheet would take
+          a title, a date and a category and then throw the lot away with a toast. This is the same
+          judgement `canAddSubtask` already makes about the add field; the tick and the Edit toggle
+          deliberately stay live, because withholding those too would leave an editor looking at a
+          view-only board with no explanation attached to the controls that went missing. */}
+      {canEdit && !typing && !board.outdatedScript ? (
         <button
           type="button"
           className="fab"
@@ -416,11 +462,14 @@ export default function App() {
           onRestore={restore}
           onSaveConfig={async (partial) => {
             const ok = await board.saveConfig(partial)
-            if (ok) show(t('settings.saved'))
+            /* Settings is the one surface that WAITS for its write — it has no optimistic half —
+               so somebody is watching this one for ~3s. Without the failure branch it returned to
+               "Save" and said nothing at all, and the board's own notice was behind the sheet. */
+            show(ok ? t('settings.saved') : t('toast.failed'))
             return ok
           }}
           onCompact={async () => {
-            if (await board.compact()) show(t('settings.compacted'))
+            show((await board.compact()) ? t('settings.compacted') : t('toast.failed'))
           }}
           onEnableEditing={(key) => {
             enableEditing(key)

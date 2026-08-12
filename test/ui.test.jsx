@@ -225,6 +225,67 @@ describe('the state table', () => {
   })
 })
 
+describe('the month sign', () => {
+  it('keeps caption ink off the accent wash, which fails AA on one preset', () => {
+    // MEASURED, not stylistic: --ink-3 on plum's --accent-wash is 4.47:1 and fails outright
+    // (4.56–4.64:1 on the other four, which is no margin). The plaque's own label and its
+    // tally therefore both sit at --ink-2, 6.71:1 at worst. Kanji at low contrast is
+    // unreadable in a way Latin is not.
+    expect(ruleFor(app, '.plan__tally')).toMatch(/color: var\(--ink-2\)/)
+    expect(ruleFor(app, '.plan__day')).toMatch(/color: var\(--ink-2\)/)
+    for (const selector of ['.plan__tally', '.plan__day']) {
+      expect(ruleFor(app, selector), selector).not.toMatch(/color: var\(--ink-3\)/)
+    }
+    // And the script has to be measuring the pairing, or the paragraph above stays true while
+    // the app is not.
+    const script = readFileSync('scripts/check-contrast.js', 'utf8')
+    expect(script).toContain('ACCENT_WASHES')
+    for (const accent of ACCENTS) {
+      expect(script, `${accent}-wash unmeasured`).toContain(`${accent}-wash`)
+    }
+  })
+
+  it('never colours a month tally, for the reason a row tally is never coloured', () => {
+    // A whole month in --good would claim something about the month rather than about its
+    // tasks. This figure is deliberately checkable by counting the rows underneath it.
+    expect(ruleFor(app, '.plan__tally')).not.toMatch(/--good|--critical|--accent/)
+  })
+
+  it('tints the wedding month with a wash and never with a hue on the type', () => {
+    // Once per board. A wash, so it does not become a sixth state colour.
+    const plaque = ruleFor(app, '.plan__month--day')
+    expect(plaque, '.plan__month--day rule missing').toBeTruthy()
+    expect(plaque).toMatch(/background-color: var\(--accent-wash\)/)
+    expect(plaque, 'a state or accent hue on type').not.toMatch(/[^-]color: var\(--accent\)/)
+    // The negative margin is what keeps every month name in ONE column: padding alone pushed
+    // the one month that matters 8px right of all the others.
+    expect(plaque).toMatch(/margin-inline: calc\(var\(--space-2\) \* -1\)/)
+  })
+
+  it('draws the today line on the LINE, not as a border on a row', () => {
+    // It belongs to the list rather than to any task, which is what keeps it outside the
+    // one-coloured-mark-per-row budget.
+    expect(ruleFor(app, '.plan__now::after')).toMatch(/background-color: var\(--accent\)/)
+    expect(ruleFor(app, '.plan__now')).toMatch(/color: var\(--ink-2\)/)
+    expect(ruleFor(app, '.plan__now'), 'the line must not tint its own words').not.toMatch(
+      /[^-]color: var\(--accent\)/,
+    )
+  })
+})
+
+describe('an unsettled row', () => {
+  it('dims the head and never the tick that was just pressed', () => {
+    // `opacity: 0.55` on the whole card took the check with it, so the confirmation of the
+    // app's highest-frequency gesture faded for the ~3s the write was in flight — which reads
+    // as un-pressed, the exact opposite of what is true.
+    expect(ruleFor(app, '.tcard--pending .tcard__head')).toMatch(/opacity/)
+    expect(ruleFor(app, '.tcard--pending'), 'the whole card must not be dimmed').toBeNull()
+    // Same for a checklist item: the title recedes, the glyph carrying the tick does not.
+    expect(ruleFor(app, '.subtask--pending .subtask__title')).toMatch(/opacity/)
+    expect(ruleFor(app, '.subtask--pending')).toBeNull()
+  })
+})
+
 describe('typography and Japanese', () => {
   it('has no letter-spacing outside the digits-only hero figure', () => {
     // Tracking inserts a gap between every kana: 「このつき」 becomes 「こ の つ き」.
@@ -334,6 +395,9 @@ describe('elevation', () => {
     expect(month).toMatch(/position: sticky/)
     expect(month).toMatch(/background-color: var\(--bg\)/)
     expect(month).not.toContain('box-shadow')
+    // The rule under it is what makes it read as a sign rather than two labels floating over
+    // the first row. A hairline in --line, the same as every card boundary — never a shadow.
+    expect(month).toMatch(/border-bottom: 1px solid var\(--line\)/)
   })
 
   it('adds no shadow on hover', () => {
@@ -417,6 +481,23 @@ describe('touch ergonomics', () => {
     // beside it: a 28px band of card between two 44px targets is a dead strip in the middle
     // of the one thing on screen worth tapping.
     expect(ruleFor(app, '.tcard__head')).toMatch(/min-height: var\(--tap-target\)/)
+  })
+
+  it('centres the day against the whole row, not against the title’s baseline', () => {
+    // Measured over CDP: with `align-items: baseline` the day's optical centre sat 16.7px above
+    // the centre of the block beside it on any row carrying a meta line, because the baseline
+    // locks it to the TITLE's first line — and what the eye weighs the day against is the whole
+    // right-hand column. `flex-start` had the opposite fault, 6px the other way.
+    const head = ruleFor(app, '.tcard__head')
+    expect(head).toMatch(/align-items: center/)
+    expect(head).not.toMatch(/align-items: (baseline|flex-start)/)
+    // The day column lines up on its trailing EDGE, which is what alignment must not be asked to
+    // do: a fixed width plus `text-align: end`, so one- and two-digit days share a right margin.
+    const day = ruleFor(app, '.tcard__day')
+    expect(day).toMatch(/width: 2rem/)
+    expect(day).toMatch(/text-align: end/)
+    // And the chevron no longer carries the margin that propped it up under baseline.
+    expect(ruleFor(app, '.tcard__chev')).not.toMatch(/margin-top|align-self/)
   })
 
   it('keeps the sheet footer reachable with the keyboard up', () => {
@@ -534,6 +615,19 @@ describe('layout', () => {
     expect(chips, '.chips rule missing').toBeTruthy()
     expect(chips).toMatch(/overscroll-behavior-x: contain/)
     expect(chips).not.toMatch(/overscroll-behavior: contain/)
+  })
+
+  it('shows that the chip row scrolls, and fades one axis only', () => {
+    // Five chips measure ~453px against a 361px card and the overlay scrollbar is hidden, so
+    // two filters were off the right edge of a 320pt phone with nothing saying they existed. A
+    // mask on BOTH axes would clip the focus ring that `padding-block: 2px` exists to keep.
+    const chips = ruleFor(app, '.chips')
+    expect(chips).toMatch(/mask-image: linear-gradient\(to right/)
+    expect(chips).toMatch(/padding-block: 2px/)
+    // And it is removed where the row no longer scrolls, or it would dim a fully visible chip.
+    const wide = blocksOf(app, 48).find((block) => /\.chips \{/.test(block))
+    expect(wide, 'the 48rem block does not touch .chips').toBeTruthy()
+    expect(wide).toMatch(/mask-image: none/)
   })
 })
 

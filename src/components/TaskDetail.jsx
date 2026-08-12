@@ -160,6 +160,32 @@ export default function TaskDetail({
   useEffect(() => () => flush.current?.(), [])
 
   /**
+   * DELETING DISARMS THE FLUSH TOO, and for a worse reason than `done`'s.
+   *
+   * The delete is optimistic: `deletedAt` is stamped synchronously, the row stops being live and
+   * drops out of the plan, so this component unmounts and its cleanup runs — with a closure still
+   * holding the PRE-DELETE task. `taskFromDraft` spreads that task, so the payload carries an
+   * empty `deleted_at`, and `update` rewrites the whole row from the payload. The two writes
+   * serialise on one chain, so the resurrection lands second and wins: the task somebody just
+   * deleted comes back ~3s later, wearing the edit that preceded the delete and missing the
+   * subtasks, whose rows the cascade had already tombstoned and which this write does not touch.
+   *
+   * Only reachable with an edit in the buffer — an unchanged draft resolves to `unchanged` and
+   * sends nothing — which is exactly the "fix the title, then decide it can go" path.
+   *
+   * It ends the SESSION rather than just nulling the ref, because the ref is reassigned on every
+   * render and `editing` would arm it again on the next one. What that costs is one honest thing:
+   * cancelling the confirmation leaves the row read-only showing its stored title, so a typed
+   * edit abandoned in favour of a delete does not survive the cancel. Nothing is written and
+   * nothing says otherwise — against a task that comes back from the dead wearing that edit.
+   */
+  const remove = () => {
+    flush.current = null
+    setDraft(null)
+    onDelete(task)
+  }
+
+  /**
    * The SESSION, not the field, is what holds off a reload. A per-field report drops the guard on
    * every blur between two fields — precisely when the buffer is full and nothing has been sent.
    */
@@ -248,7 +274,7 @@ export default function TaskDetail({
             <button
               type="button"
               className="btn btn--ghost btn--danger-quiet"
-              onClick={() => onDelete(task)}
+              onClick={remove}
             >
               {t('form.deleteThis')}
             </button>

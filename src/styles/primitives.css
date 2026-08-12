@@ -325,6 +325,16 @@
   color: var(--ink-2);
 }
 
+/* The category glyph in front of the word. em-relative, so it tracks the chip's 13px type rather
+   than carrying a size of its own — and a GRAPHIC, so the 13px type floor does not apply to it
+   (the same reasoning as the subtask toggle's glyph). --ink-3 rather than the chip's own --ink-2:
+   the word is the label and the shape is the aid, so the shape is the quieter of the two. */
+.chip__icon {
+  width: 1.05em;
+  height: 1.05em;
+  color: var(--ink-3);
+}
+
 .chip__count {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;

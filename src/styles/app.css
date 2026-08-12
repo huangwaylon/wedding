@@ -229,6 +229,12 @@
    column, so the next month's heading pushes this one out — exactly the wanted behaviour, and
    the reason the heading is inside the group rather than above it.
 
+   IT IS A SIGN, AND THE RULE UNDER IT IS WHAT MAKES IT ONE. A hairline the full width of the
+   column reads as a board somebody planted; without it a heading carrying a figure at its far
+   edge reads as two unrelated labels floating over the first row. The rule cannot be a shadow —
+   see the elevation test — and it is drawn in --line, the same hairline as every card boundary,
+   so it is structure rather than a mark.
+
    No text-transform and no letter-spacing: a short month is Japanese-capable (4月), uppercase
    is a no-op on kanji, and tracking inserts a gap between every kana. Size, weight and ink
    carry the micro-label instead. */
@@ -236,12 +242,89 @@
   position: sticky;
   top: var(--safe-top);
   z-index: 1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
   padding-block: var(--space-2);
+  border-bottom: 1px solid var(--line);
   background-color: var(--bg);
   font-size: var(--fs-caption);
   font-weight: 600;
   line-height: var(--lh-tight);
   color: var(--ink-2);
+}
+
+/* The wedding's own month, marked once in the whole board. A wash rather than a hue on the type:
+   the heading is the one place a plan running to a single fixed day can name its last sign, and it
+   must not become a sixth state colour.
+
+   THE NEGATIVE MARGIN IS WHAT KEEPS THE MONTHS IN ONE COLUMN. Padding alone pushed "April 2027"
+   8px right of every other heading, so the one month that matters was the one that did not line up
+   — the tint bleeds outward instead and the text stays where it was. It stays inside `.view`'s own
+   --space-4, so nothing touches the screen edge. The wash is opaque, so this heading still occludes
+   the rows scrolling under it. */
+.plan__month--day {
+  margin-inline: calc(var(--space-2) * -1);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-xs);
+  background-color: var(--accent-wash);
+}
+
+/* "The day". Weight 400 against the month's 600, because the month is the heading and this is an
+   aside on it. --ink-2 is 6.7:1 or better on every preset's wash. */
+.plan__day {
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+/* The month's own tally. `auto` rather than `space-between` on the container, so the month and
+   the "the day" aside stay together at the leading edge whether or not the figure is rendered —
+   with `space-between` the aside would be flung to the far side on a two-child heading.
+
+   --ink-2, NOT the --ink-3 a quiet figure would otherwise take, and that is a measurement rather
+   than a preference: on the wedding month this sits on --accent-wash, where --ink-3 is 4.47:1
+   under the plum preset and fails AA outright (4.56–4.64:1 on the other four, which is no margin
+   at all). --ink-2 is 6.71:1 on the worst of them. `scripts/check-contrast.js` covers every wash
+   against both inks now that a rule finally consumes one.
+
+   NEVER coloured, for the same reason `.tcard__tally` is not: a whole month in --good would claim
+   something about the month rather than about its tasks, and this figure is deliberately the one
+   thing on screen checkable by counting the rows underneath it. */
+.plan__tally {
+  margin-inline-start: auto;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+/* YOU ARE HERE. One line per board, between two rows, at the boundary between what has passed
+   and what has not.
+
+   The rule is drawn on the LINE rather than as a border on a row, which is what keeps it out of
+   the one-coloured-mark-per-row budget — it belongs to the list, not to any task. --accent for
+   the same reason `.dot--soon` uses it: "now" is this app's own emphasis, not a warning. The
+   flex-basis trick is a hairline that fills whatever the word leaves. */
+.plan__now {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: var(--space-1);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-tight);
+  color: var(--ink-2);
+}
+
+.plan__nowLabel {
+  flex: none;
+  font-weight: 600;
+}
+
+/* The rule itself. A pseudo-element rather than a `border-top` on the paragraph, because the word
+   sits ON the line rather than above it. */
+.plan__now::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background-color: var(--accent);
 }
 
 /* ---- A task row -------------------------------------------------------
@@ -272,8 +355,13 @@
 }
 
 /* An unsaved row. Opacity only — no spinner and no skeleton: the row is real and readable,
-   it just has not landed yet. */
-.tcard--pending {
+   it just has not landed yet.
+
+   THE CHECK IS DELIBERATELY EXCLUDED. Dimming the whole card took the tick with it, so the
+   confirmation of the app's highest-frequency gesture faded for the ~3s the write was in flight
+   — which reads as un-pressed, the exact opposite of what is true. The head recedes; the tick
+   somebody just made stays at full ink. */
+.tcard--pending .tcard__head {
   opacity: 0.55;
 }
 
@@ -312,14 +400,18 @@
 /* ---- The head --------------------------------------------------------
    One target for the whole collapsed row, so a row costs two controls instead of five.
 
-   BASELINE, not flex-start. Both children are column flexes, so their baselines are the day
-   number's and the title's — which are exactly the two things that have to sit on one line.
-   Aligned to the top instead, the title's first line landed 6px above the day's, a mismatch
-   the old meter and node were busy enough to hide. */
+   CENTRED, and it took three tries. `flex-start` put the title's first line 6px above the day's.
+   `baseline` fixed that pair and traded it for a worse imbalance: the day's baseline locks to the
+   TITLE's, so on a row that also carries a meta line the day's optical centre sat 16.7px above the
+   centre of the block beside it — measured over CDP — and read as shifted up, because what the eye
+   weighs the day against is the whole right-hand column, not its first line. Centring costs the day
+   a fixed y (it follows the block's height now), which is not what the day column is for: what has
+   to line up down a month is its trailing EDGE, and that is `width: 2rem` plus `text-align: end`,
+   neither of which alignment touches. */
 .tcard__head {
   grid-column: 2;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-3);
   min-height: var(--tap-target);
   padding-block: var(--space-1);
@@ -413,11 +505,11 @@
   color: var(--ink-2);
 }
 
-/* An SVG has no baseline, so it would otherwise align its bottom margin edge to the text's. */
+/* Centred with everything else in the head. It used to be pinned to the top with a margin, which
+   was a workaround for `align-items: baseline`: an SVG has no baseline, so it aligned its bottom
+   margin edge to the text's and sat too low. With the head centred there is nothing to correct. */
 .tcard__chev {
   flex: none;
-  align-self: flex-start;
-  margin-top: var(--space-2);
   color: var(--ink-3);
   transition: transform var(--transition-fast);
 }
@@ -465,7 +557,10 @@
   min-height: 3rem;
 }
 
-.subtask--pending {
+/* Same reasoning as `.tcard--pending`: the TITLE recedes while the write is in flight, and the
+   glyph carrying the tick does not. Ticking five items down a checklist is what this row is for,
+   and a tick that fades on contact reads as a tap that missed. */
+.subtask--pending .subtask__title {
   opacity: 0.55;
 }
 
@@ -537,13 +632,19 @@
 /* Always last, never moved, never remounted — a changed key or position drops
    the iOS keyboard mid-checklist. Aligned with the item TITLES rather than their
    ticks, so the glyph column stays a clean column and the field reads as "type
-   the next one" instead of as another item. */
+   the next one" instead of as another item.
+
+   THE INDENT IS A CLAMP BECAUSE OF ONE PHONE. At a flat --space-7 the field itself measured
+   ~139px of usable text on a 320pt screen — about ten characters, for the entry this app most
+   needs width for: 288 of viewport, less the view's 32, the card's 22 and its border, the rail's
+   17, this 32, then the 8 gap and the 44px submit. It relaxes to --space-2 there and is
+   unchanged from 393pt up, where the alignment is worth its 32px. */
 .subtask-add {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   padding-block: var(--space-1);
-  padding-inline-start: var(--space-7);
+  padding-inline-start: clamp(var(--space-2), 4vw, var(--space-7));
 }
 
 .subtask-add__field {
@@ -576,6 +677,12 @@
   /* Room for the focus ring, which a scroll container would otherwise clip. */
   padding-block: 2px;
   scroll-padding-inline: var(--space-4);
+  /* THE ONLY SIGN THAT THIS ROW MOVES. Five chips measure ~453px against a 361px card and the
+     overlay scrollbar is hidden below, so on a 320pt phone two of the filters were off the right
+     edge with nothing at all indicating they existed. The fade is horizontal ONLY — a mask on
+     both axes would clip the focus ring the padding above exists to keep. It is removed at 48rem,
+     where the row no longer scrolls. */
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--space-6)), transparent);
 }
 
 /* An overlay scrollbar on touch; hidden on desktop, where the row does not
@@ -586,12 +693,14 @@
 
 @media (min-width: 48rem) {
   /* Past the phone there is room for every chip, so the row stops being a
-     scroller. */
+     scroller — and the fade goes with it, or it would dim a chip that is fully
+     visible. */
   .chips {
     flex-wrap: wrap;
     overflow: visible;
     margin-inline: 0;
     padding-inline: 0;
+    mask-image: none;
   }
 
   /* A row can afford more air once the column is not 361px. Same tokens, no new

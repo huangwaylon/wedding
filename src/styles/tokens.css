@@ -68,11 +68,21 @@
      three properties below and NOTHING else, so a preset cannot reach the
      neutrals or the state colours. Every preset keeps white text at or above
      7.5:1 and sits at or above 6.8:1 against --bg, so buttons, focus rings and
-     the FAB stay compliant whichever one is chosen. */
-  --accent: #8f2f50;
-  --accent-hover: #7a2844;
+     the FAB stay compliant whichever one is chosen.
+
+     INDIGO (藍) IS THE DEFAULT, AND IT USED TO BE ROSE. Two reasons, one of them
+     measurable. The accent paints `.dot--soon`, which is one of three 8px discs
+     that are a row's only coloured mark — so the default has to be separable from
+     `--good` and `--critical` at that size, and a green default is not: sage
+     against good is two mid-dark greens of the same hue family. Indigo is far from
+     both. And it is the truer colour for this board: the cold sky over the ginkgo
+     avenue the hero was shot in, and the colour of Japanese work cloth. What it
+     costs is that nothing on screen says "wedding" by hue any more — rose is one
+     tap away in Settings, per device, and a stored preference is untouched. */
+  --accent: #3d4e8b;
+  --accent-hover: #313f73;
   --accent-text: #ffffff;
-  --accent-wash: #fbecf1;
+  --accent-wash: #edeef7;
   --accent-ring: color-mix(in srgb, var(--accent) 22%, transparent);
   --accent-shadow: color-mix(in srgb, var(--accent) 38%, transparent);
 
@@ -245,8 +255,14 @@
 
    Every one clears AA for white text with a 1.6x margin and clears the 3:1
    non-text floor as a meter fill against --track (5.8:1 or better). */
-/* Rose is spelled out even though :root already carries it, so a swatch can scope
+/* Indigo is spelled out even though :root already carries it, so a swatch can scope
    it locally like any other preset. */
+[data-accent="indigo"] {
+  --accent: #3d4e8b;
+  --accent-hover: #313f73;
+  --accent-wash: #edeef7;
+}
+
 [data-accent="rose"] {
   --accent: #8f2f50;
   --accent-hover: #7a2844;
@@ -257,12 +273,6 @@
   --accent: #385844;
   --accent-hover: #2d4737;
   --accent-wash: #e8f0ea;
-}
-
-[data-accent="indigo"] {
-  --accent: #3d4e8b;
-  --accent-hover: #313f73;
-  --accent-wash: #edeef7;
 }
 
 [data-accent="plum"] {

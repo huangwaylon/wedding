@@ -265,6 +265,28 @@ describe('TaskCard', () => {
     expect(render(quiet)).not.toContain('tcard__meta')
   })
 
+  it('leads a known category with its glyph and still prints the word', () => {
+    // The glyph does not REPLACE the label. Fourteen categories is more than a shape
+    // vocabulary anybody learns cold, and an English and a Japanese reader do not learn the
+    // same ones — so the word stays and the shape is what makes the chip findable twice.
+    const html = render(row)
+    expect(html).toContain('chip__icon')
+    expect(html).toContain('Venue')
+    // aria-hidden, because the word beside it is already the label.
+    expect(/class="chip__icon"[^>]*aria-hidden="true"|aria-hidden="true"[^>]*class="chip__icon"/.test(html)).toBe(
+      true,
+    )
+  })
+
+  it('prints an invented category as typed, with no glyph at all', () => {
+    // The spreadsheet is the source of truth for what a category IS. Pinning an unknown one
+    // under the Other tag would put a claim on it that nobody made.
+    const [odd] = rows([task({ category: 'Campsite' })])
+    const html = render(odd)
+    expect(html).toContain('Campsite')
+    expect(html).not.toContain('chip__icon')
+  })
+
   it('keeps the day slot occupied for an undated task', () => {
     // A dash rather than an invented date, and the slot stays so the titles down a month stay
     // in one column.
@@ -523,6 +545,8 @@ describe('Plan', () => {
     )
 
   const months = (html) => [...html.matchAll(/class="plan__month">([^<]*)</g)].map((m) => m[1])
+  const tallies = (html) =>
+    [...html.matchAll(/class="plan__tally tnum" aria-hidden="true">([^<]*)</g)].map((m) => m[1])
 
   it('groups by the month it is DUE in, and keeps every task', () => {
     const list = rows([
@@ -567,6 +591,75 @@ describe('Plan', () => {
     expect(html.match(/tcard__content/g)).toHaveLength(1)
     // And it is the right one: the content sits inside b's row, not a's.
     expect(html.indexOf('tcard__content')).toBeGreaterThan(html.indexOf('Order invitations'))
+  })
+
+  it('gives each month heading its own tally, counted over that month alone', () => {
+    // The board's tracker gives one figure for four hundred days and a row gives its own
+    // state; "am I finished with January" had no answer anywhere. Checkable by counting the
+    // rows underneath it, which is the whole reason it is allowed on screen.
+    const list = rows([
+      task({ id: 'a', due: '2027-01-10', doneAt: '2027-01-02T00:00:00.000Z' }),
+      task({ id: 'b', title: 'Second', due: '2027-01-20' }),
+      task({ id: 'c', title: 'Third', due: '2027-03-02' }),
+    ])
+    const html = render(list)
+    expect(tallies(html)).toEqual(['1/2', '0/1'])
+  })
+
+  it('withholds every whole-month figure while a filter is on', () => {
+    // THE misleading-number case. `Plan` receives the FILTERED list, so a tally counted over
+    // the overdue slice of a month would read "0/1 done" about a month that is nine tasks long
+    // and mostly finished. The Today line goes with it: a list with holes cannot claim that
+    // everything below a line is still ahead.
+    const list = rows([
+      task({ id: 'a', due: '2026-12-10' }),
+      task({ id: 'b', title: 'Second', due: '2027-03-20' }),
+    ])
+    const html = render(list, { today: TODAY, unfiltered: false })
+    expect(tallies(html)).toEqual([])
+    expect(html).not.toContain('plan__now')
+  })
+
+  it('marks where today falls, once, and only between two rows', () => {
+    // The hero counts down and the tracker carries an on-schedule mark; the list — the screen
+    // people live in — had no "you are here" at all.
+    const list = rows([
+      task({ id: 'past', due: '2026-12-10' }),
+      task({ id: 'future', title: 'Second', due: '2027-03-20' }),
+    ])
+    const html = render(list, { today: TODAY })
+    expect(html.match(/class="plan__now"/g)).toHaveLength(1)
+    // Above the first row that has NOT passed, never above one that has.
+    expect(html.indexOf('plan__now')).toBeGreaterThan(html.indexOf('Book the venue'))
+    expect(html.indexOf('plan__now')).toBeLessThan(html.indexOf('Second'))
+  })
+
+  it('draws no today line when the boundary has nothing on one side of it', () => {
+    // A line above the very first row of a board entirely in the future states nothing, and a
+    // board entirely in the past has no row for it to sit above.
+    const future = rows([task({ id: 'a', due: '2027-03-20' })])
+    expect(render(future, { today: TODAY })).not.toContain('plan__now')
+    const past = rows([task({ id: 'a', due: '2026-12-20' })])
+    expect(render(past, { today: TODAY })).not.toContain('plan__now')
+  })
+
+  it('names the wedding’s own month, once, and leaves the others alone', () => {
+    // A plan that runs to one fixed day should say which sign is the last one.
+    const list = rows([
+      task({ id: 'a', due: '2027-01-10' }),
+      task({ id: 'b', title: 'Second', due: '2027-04-12' }),
+    ])
+    const html = render(list, { weddingMonth: '2027-04' })
+    expect(html.match(/plan__month--day/g)).toHaveLength(1)
+    expect(html).toContain('the day')
+    // On the April heading, not the January one.
+    expect(html.indexOf('plan__month--day')).toBeGreaterThan(html.indexOf('January 2027'))
+  })
+
+  it('puts no plaque on an undated group, whatever the wedding month is', () => {
+    // '' is the undated group's key, and `''.slice(0, 7)` would match an empty weddingMonth.
+    const list = rows([task({ id: 'a', due: '' })])
+    expect(render(list, { weddingMonth: '' })).not.toContain('plan__month--day')
   })
 })
 
@@ -867,9 +960,34 @@ describe('the payload TaskEditor hands to onSave', () => {
     expect(taskFromDraft(draftFrom(legacy), legacy).due).toBe('2027-04-18')
   })
 
-  it('stores no date at all when none was given', () => {
-    // Not today's date. Defaulting to today would make every task typed in a hurry overdue
-    // tomorrow, which is a false number nobody typed.
+  it('stores no date at all when none was given, and lets the validator refuse it', () => {
+    // The draft never INVENTS a date — not today's — because a defaulted date would make every
+    // task typed in a hurry overdue tomorrow, a false number nobody typed. A day is required, so
+    // the empty string here is what `validateTask` turns into MISSING_DUE and the sheet reports on
+    // the field; see test/schema.test.js. Defaulting and requiring are different things.
     expect(taskFromDraft(draftFrom(null)).due).toBe('')
+  })
+
+  it('would RESURRECT a deleted task, which is why the delete disarms the flush', () => {
+    // The mechanism behind a real defect: edit a title, then delete the task. The delete is
+    // optimistic, so the row stops being live and `TaskDetail` unmounts — and its unmount flush
+    // resolves the buffered draft against the PRE-delete task. `base` spreads first, so the
+    // payload carries an empty `deleted_at`; `update` rewrites the whole row from it, and the
+    // two writes serialise, so the resurrection lands second and wins. The task came back ~3s
+    // later wearing the edit, with its subtasks gone — the cascade had tombstoned their rows and
+    // this write does not touch them.
+    //
+    // This pins the payload, which is what makes the fix necessary: `remove()` in TaskDetail
+    // nulls `flush.current` and ends the session so no such payload is ever built. It cannot
+    // pin the handler itself — a static render fires no click.
+    const live = task({ id: 'x', title: 'Old title' })
+    const payload = taskFromDraft({ ...draftFrom(live), title: 'New title' }, live)
+    expect(taskToRow(payload).deleted_at).toBe('')
+
+    // And the same payload built from a task already stamped deleted keeps the tombstone, so
+    // the ONLY thing standing between the two is that the flush never runs.
+    const gone = task({ id: 'x', title: 'Old title', deletedAt: '2027-01-06T00:00:00.000Z' })
+    expect(taskToRow(taskFromDraft({ ...draftFrom(gone), title: 'New title' }, gone)).deleted_at)
+      .toBe('2027-01-06T00:00:00.000Z')
   })
 })

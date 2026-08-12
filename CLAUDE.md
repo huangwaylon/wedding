@@ -75,6 +75,16 @@ their spreadsheet.
   task more finely must not change what the rest of the board is worth.
 - **`SOON_DAYS` is part of the meaning of a state**, not a component's constant: it is what "due
   soon" is, and it is the boundary past which a row prints no urgency at all.
+- **A MONTH HEADING CARRIES ITS OWN TALLY, AND EVERY WHOLE-MONTH FIGURE IS WITHHELD WHILE A FILTER
+  IS ON.** `Plan` is handed the FILTERED list, so a tally counted over the overdue slice of April
+  reads "0/3" about a month that is nine tasks long and mostly done — a misleading number, which is
+  the one defect class that matters here. The `Today` line is withheld for the same reason: a list
+  with holes cannot claim that everything below a line is still ahead. The tally is `aria-hidden`
+  (every row states its own state, and "3 slash 9" inside a heading is worse than silence) and is
+  **never coloured**, exactly as a row's tally is not.
+- **The `Today` line is a BOUNDARY, so it renders only with rows on both sides of it**, never in the
+  undated group, and it lives BETWEEN rows rather than on one — which is what keeps it outside the
+  one-coloured-mark-per-row budget.
 
 ### Subtasks
 
@@ -103,12 +113,22 @@ their spreadsheet.
   cell** — the early return means a date offered there would be saved unvalidated, and it did once
   save an end before a start. **Deleting a parent cascades in the Apps Script**, one lock and one
   reply; `restore` is its exact inverse.
-- **A TASK'S OWN DUE DATE IS OPTIONAL, and `MISSING_DUE` must not come back.** Forcing a date forces
-  a wrong one — during entry the date is exactly what is not known — and an invented date lands
-  straight in the overdue count and in the on-schedule mark. `STATE.NODATE` is reachable, sorts last
-  into its own group, and contributes to neither numerator. For the same reason the create sheet
-  leaves the date BLANK rather than defaulting to today, which would make everything typed in a
-  hurry overdue tomorrow.
+- **EVERY TASK CARRIES A DAY: `validateTask` returns `MISSING_DUE` without one.** This reverses an
+  earlier rule that made the date optional, and it is a product decision — the board is a schedule,
+  so a task with no place in it is not something this app stores.
+- **REQUIRED IS NOT DEFAULTED, and the difference is the whole of the old reasoning.** The create
+  sheet still opens with the date BLANK and Save refuses until somebody picks one; nothing anywhere
+  defaults it to today. An invented date lands straight in the overdue count and in the on-schedule
+  mark, so everything typed in a hurry would read overdue tomorrow — a false figure nobody typed.
+  Refusing asks the question; defaulting answers it wrongly and says nothing.
+- **`STATE.NODATE` MUST KEEP WORKING, and it is no longer reachable from the UI.** A board can
+  already hold undated rows and somebody can empty the cell in the spreadsheet at any time. Such a
+  row still sorts last into its own group and contributes to neither numerator — a row the client
+  refuses to SAVE must still be shown, because hiding one is the worst thing this app can do. The
+  consequence to know: a legacy undated task cannot be renamed until it is given a date, since the
+  whole task goes in one write and that write is validated.
+- **A subtask is exempt.** It is a title and a tick; `validateTask` still returns early for anything
+  with a `parentId`, so requiring a date on a task does not reach a checklist item.
 
 ### The endpoint
 
@@ -157,15 +177,36 @@ the key; a query string reaches Google's logs.
   Edit is on and writes once, on Done or on the row closing; per-field commits on blur cost a ~3s
   round trip *each*. `update` rewrites the row from its payload, so a partial one blanks a cell —
   `parent_id` above all — and nothing is sent when the ROW each would write is unchanged.
-- **`done` MUST DISARM THE UNMOUNT FLUSH.** A new date re-sorts the plan, so the row moves to
-  another month `<section>` and React deletes the subtree rather than moving it — running a cleanup
-  whose closure still held the pre-save task and the whole draft, which sent the identical write
-  twice. `scripts/drive.mjs` counts the POSTs.
+- **`done` MUST DISARM THE UNMOUNT FLUSH, AND SO MUST THE DELETE.** A new date re-sorts the plan, so
+  the row moves to another month `<section>` and React deletes the subtree rather than moving it —
+  running a cleanup whose closure still held the pre-save task and the whole draft, which sent the
+  identical write twice. The delete is the worse half of the same shape: it is optimistic, so the row
+  stops being live and unmounts, and a flush resolved against the PRE-delete task carries an empty
+  `deleted_at` into a write that rewrites the whole row — resurrecting the task ~3s later, wearing
+  the edit that preceded the delete and missing the subtasks the cascade had already tombstoned.
+  Nulling the ref is not enough on its own: it is reassigned every render, so the delete ENDS the
+  session. `scripts/drive.mjs` counts the POSTs and prints the defect when the guard is removed.
 - **An open edit SESSION is the evidence that unsaved text exists**, and it reports up to `App` as
   `typing` for the whole of itself — a per-field focus report drops that guard on every blur
   between two fields, which is exactly when the buffer is full and nothing has been sent. It holds
   off a service-worker reload and moves the fixed FAB out of the way. The add-a-subtask field
-  still reports per-field, because it is outside any session.
+  still reports per-field, because it is outside any session — which is why **`typing` is a COUNT,
+  never a flag**: with one boolean and two producers, blur was the last writer, so touching the
+  subtask field inside an open session and tapping away released the guard with the buffer full.
+- **TICKING SOMETHING OFF UNDER A FILTER MUST NOT MAKE IT VANISH.** Ticking raises no toast by
+  design, so a row that also leaves the list gives no feedback at all for the app's most frequent
+  gesture. `App` holds the ids ticked since the filter was chosen and keeps those rows in `shown`;
+  the confirmation is the row changing in place while the chip's count drops. Session state, never
+  `localStorage`, for the same reason `expanded` is.
+- **A control that cannot work is withheld, not left to fail.** Against an out-of-date deployment
+  every row write is refused, so the FAB goes with the add-a-subtask field — otherwise the sheet
+  takes a title, a date and a category and throws the lot away. The tick and the Edit toggle
+  deliberately stay: withholding those too leaves an editor looking at a view-only board with no
+  explanation attached to the controls that went missing.
+- **Every failed write says so.** `saveConfig`, `compact` and the template seed each had no failure
+  branch, and Settings is the one surface that WAITS for its write — it returned to "Save" and said
+  nothing for ~3s. `toast.failed` must also stand alone: it may not point at a notice, because only
+  TERMINAL codes get one and `busy`/`transient` are deliberately excluded from that set.
 - **Which rows are open is session state, never `localStorage`** — relaunching into twelve expanded
   rows is a board nobody can read.
 - **ONE SCREEN, ONE SCROLLER, NO TAB BAR.** The photograph is the header. A two-tab bar cost 56px
@@ -244,6 +285,29 @@ CSS:
   with `toLocaleUpperCase`, never in CSS, because `text-transform` is a no-op on kana and would apply
   to the Latin half alone. **A row's day does NOT go through `Intl`**: `{ day: 'numeric' }` in `ja`
   returns `18日`, which wraps inside the 2rem column. Nothing below 13px; weights `400|500|600`.
+- **`--ink-3` MUST NOT SIT ON AN ACCENT WASH.** Measured: 4.47:1 under `plum`, which fails AA, and
+  4.56–4.64:1 on the other four, which is no margin. The wedding month's plaque is the only rule
+  consuming `--accent-wash`, and its label and tally are both `--ink-2` (6.71:1 at worst).
+  `scripts/check-contrast.js` covers all five washes; kanji at low contrast is unreadable in a way
+  Latin is not.
+- **The DEFAULT accent is `indigo`, and the default is a legibility decision.** The accent also
+  paints `.dot--soon`, one of three 8px discs that carry a row's whole state, so the default has to
+  be separable from `--good` and `--critical` at that size — a green default is two mid-dark greens
+  of the same hue family. `make-icons.js` hardcodes the same hex for the Home Screen icon and must
+  be re-run (`npm run icons`) when it changes.
+- **COLOUR FOLLOWS STATE; THE CATEGORY CHANNEL IS SHAPE.** Fourteen category hues would make one
+  row's mark carry two claims, so a category gets a monochrome glyph in `CATEGORY_ICONS` instead —
+  **leading the word, never replacing it** (fourteen shapes is more vocabulary than anyone learns
+  cold, and an English and a Japanese reader do not learn the same ones). An unknown category
+  renders as typed with **no glyph at all**: a fallback would put a claim on it nobody made.
+- **The app's mark is two peaks, and a ginkgo leaf is not available.** It was drawn and tested
+  first — the hero is an 銀杏並木 — and at a 1.75 stroke in a 24 box every notched fan reads as a
+  HEART, which is the cliché the mark exists to avoid; dropping the notch leaves a lollipop. Eight
+  variants were rendered at 16/20/32/56px. `PeaksIcon` and `make-icons.js` draw the same mark and
+  must not drift.
+- **An unsettled row dims its HEAD, never its tick.** `opacity` on the whole card faded the
+  confirmation of the highest-frequency gesture in the app for the ~3s the write was in flight,
+  which reads as un-pressed. Same for a checklist item: the title recedes, the glyph does not.
 - **Never a form control below 16px** (mobile Safari zooms on focus and will not zoom back), and
   **`--tap-target` (44px), not `--tap-target-sm`, for anything a thumb aims at.**
   **`role="progressbar"`, never `role="meter"`**: ARIA reserves `meter` for a gauge rather than a
@@ -267,7 +331,10 @@ CSS:
   load-bearing rather than decoration: rows scroll under it. It replaced a vertical spine through a
   node on every row, which cost 24px of the left edge to imply what the heading now states — and it
   is what lets a row print a bare day number instead of restating the month forty times. It sticks
-  inside `.plan__group`, which is a flex column, so the next month's heading pushes it out.
+  inside `.plan__group`, which is a flex column, so the next month's heading pushes it out. The rule
+  beneath it is `--line` and **never a shadow**, and the wedding month's tint bleeds outward on a
+  negative margin so every month name stays in ONE column — padding alone pushed the one month that
+  matters 8px right of all the others.
 - **The FAB is the only fixed chrome**, and `.views` reserves `--fab-size` below its content, once,
   so it can never cover the last row. There is no tab bar to compose around any more.
 - **A subtask is never drawn in the sequence of dates**: no date means no position. It is a row in
@@ -297,10 +364,19 @@ answers `ok: true` while writing the wrong cell.
   iframes rather than a resized window — an iframe gets an honest viewport, while headless Chrome
   reports a different width and every breakpoint reads wrong; that file documents its own options.
 - **`scripts/drive.mjs` covers what no static render can**, over CDP: the accordion, the read/edit
-  toggle, commit-on-blur, and whether the date control stays inside its row. Its header records the
-  two ways it silently verified NOTHING — headless Chrome fires no focus event unless
-  `Emulation.setFocusEmulationEnabled` is on, and a leftover Chrome on the debugging port makes a
-  second run report the first one's board.
+  toggle, commit-on-blur, whether the date control stays inside its row, that ticking under a filter
+  keeps the row on screen, and that deleting a just-edited task sends one `delete` and no
+  resurrecting `update`. Its header records the two ways it silently verified NOTHING — headless
+  Chrome fires no focus event unless `Emulation.setFocusEmulationEnabled` is on, and a leftover
+  Chrome on the debugging port makes a second run report the first one's board — plus a third: the
+  fixture replies with the pre-write board in milliseconds, so **no optimistic state survives long
+  enough to be measured** and anything about it must be pinned elsewhere. Its board fixture is
+  `public/__dev-board.json`, gitignored under that name because the service worker precaches
+  whatever reaches `dist/`, and its `config` is keyed the way the SHEET is (`wedding_date`), not the
+  way the client's config object is.
+- **`to=` in `scripts/harness.html` does not survive a headless capture**, so a surface that only
+  appears mid-scroll needs a preview PAGE of its own — `en-sign` is that, for the month tally, the
+  wedding plaque and the `Today` line. A case the harness cannot show is a case nothing protects.
 
 ## Gotchas
 

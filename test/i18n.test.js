@@ -44,7 +44,7 @@ const RUNTIME_FAMILIES = [
   ...ACCENTS.map((accent) => `accent.${accent}`),
   /* `DueLabel` builds these from the state and the day count. */
   ...['due.ago', 'due.today', 'due.tomorrow', 'due.in'],
-  ...['MISSING_TITLE', 'BAD_DUE'].map((code) => `error.${code}`),
+  ...['MISSING_TITLE', 'MISSING_DUE', 'BAD_DUE'].map((code) => `error.${code}`),
   ...[
     'unconfigured',
     'unauthorized',

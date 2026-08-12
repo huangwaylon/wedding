@@ -72,6 +72,9 @@ export default {
      the only channel. */
   'plan.cardLabel': '{title}: {when}, {state}',
   'plan.cardLabelSubs': '{title}: {when}, {state}, {subs}',
+  /* The one heading in the board that is the wedding's own month. An aside on the month name,
+     not a sentence: it sits inside a 13px sticky heading that already holds a figure. */
+  'plan.theDay': 'the day',
   'list.subtasks': {
     one: '{done} of {count} subtask',
     other: '{done} of {count} subtasks',
@@ -107,6 +110,7 @@ export default {
   'form.deleteThis': 'Delete this task',
 
   'error.MISSING_TITLE': 'Give the task a name.',
+  'error.MISSING_DUE': 'Give the task a due date.',
   'error.BAD_DUE': 'That is not a real date.',
 
   'confirm.deleteTitle': 'Delete this task?',
@@ -169,7 +173,12 @@ export default {
   'status.refresh': 'Refresh',
 
   'toast.saved': 'Saved.',
-  'toast.failed': 'Nothing was saved. See the notice at the top, or try again.',
+  /* IT NO LONGER POINTS AT A NOTICE, because for the failures that produce this toast there is
+     not one. It used to read "See the notice at the top, or try again" — but a persistent notice
+     is rendered only for a TERMINAL code, and `busy` and `transient` are deliberately excluded
+     from that set as the two retryable ones. So the only writes that told somebody to look up
+     were the only ones with nothing up there to look at. */
+  'toast.failed': 'Nothing was saved. Try again.',
   'toast.deleted': 'Task deleted.',
 
   'api.unconfigured': 'This build has no endpoint address',

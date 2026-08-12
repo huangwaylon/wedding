@@ -152,12 +152,18 @@ export function validateTask(task, isValidDay) {
   if (isSubtask(task)) return codes
 
   /**
-   * Unreachable from the UI — `taskFromDraft` runs every day through `normalizeDay`, which
-   * yields '' for anything unparseable — and kept anyway, because this is also the guard on a
-   * cell somebody typed by hand in the spreadsheet. Silently rewriting that to "no date" is
-   * the one outcome worse than refusing it.
+   * A TASK MUST CARRY A DAY. Refused rather than defaulted: the app must never invent a date,
+   * because an invented one lands straight in the overdue count and in the on-schedule mark, and
+   * that is a false figure nobody typed. So the create sheet still opens with the field BLANK and
+   * Save refuses until somebody picks one.
+   *
+   * `STATE.NODATE` survives this and must keep working. It is no longer reachable from the UI, but
+   * a board can already hold undated rows and somebody can empty the cell in the spreadsheet at any
+   * time — and a task the client refuses to SAVE still has to be shown. Anything else hides a row,
+   * which is the worst thing this app can do.
    */
   const due = cellText(task?.due)
-  if (due && !isValidDay(due)) codes.push('BAD_DUE')
+  if (!due) codes.push('MISSING_DUE')
+  else if (!isValidDay(due)) codes.push('BAD_DUE')
   return codes
 }

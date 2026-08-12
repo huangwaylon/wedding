@@ -130,7 +130,10 @@ export function fieldErrors(codes) {
   const first = (...wanted) => wanted.find((code) => codes.includes(code)) ?? ''
   return {
     title: first('MISSING_TITLE'),
-    due: first('BAD_DUE'),
+    /* Mutually exclusive in practice — a blank day cannot also be an unparseable one — and
+       ordered anyway, because a field shows one message and "give it a date" is the more useful
+       of the two if both ever arrived. */
+    due: first('MISSING_DUE', 'BAD_DUE'),
   }
 }
 

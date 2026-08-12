@@ -7,10 +7,15 @@
  * native binaries, which is a lot of install surface for three files that change
  * approximately never — and Node's own `zlib` is all a PNG actually needs.
  *
- * The mark is two interlocking rings, drawn with signed-distance fields and
+ * The mark is a two-peak ridgeline, drawn with signed-distance fields and
  * supersampled 3x3 per pixel. Distance fields rather than a rasterised path because
- * antialiasing falls out of them for free, and a ring at 192px with hard edges looks
- * like a mistake on a Retina Home Screen.
+ * antialiasing falls out of them for free, and a stroke at 192px with hard edges
+ * looks like a mistake on a Retina Home Screen.
+ *
+ * IT HAS TO MATCH `PeaksIcon` in src/components/icons.jsx — that is the same mark in
+ * the empty state, and the two drifting apart means the installed app and the screen
+ * it opens carry different logos. That file records why the ginkgo leaf this replaced
+ * could not be drawn at glyph size.
  *
  * Every icon is drawn FULL-BLEED and also declared `maskable`, so the mark sits
  * inside the safe zone: Android crops a maskable icon to a circle of 80% width, and
@@ -24,8 +29,8 @@ import { join } from 'node:path'
 const SIZES = [180, 192, 512]
 const OUT = join('public', 'icons')
 
-/** --accent (rose) and --accent-text from tokens.css. */
-const BG = [0x8f, 0x2f, 0x50]
+/** --accent (indigo) and --accent-text from tokens.css. */
+const BG = [0x3d, 0x4e, 0x8b]
 const FG = [0xff, 0xff, 0xff]
 
 /** 3x3 per pixel. Enough that a 1px stroke at 180px has no visible stair-stepping. */
@@ -33,35 +38,44 @@ const SAMPLES = 3
 
 /**
  * Everything below is in a 0–1 unit square, so one description scales to every size.
- * The rings sit inside the maskable safe zone: centre 0.5, and the furthest point of
- * either ring is 0.5 + 0.155 + 0.055 + half the stroke, which stays inside the 0.4
- * radius Android crops to.
+ *
+ * The ridge is `PeaksIcon`'s path mapped out of its 24-unit box and centred. That glyph
+ * spans x 2.5–21.5 and y 8–18.5, which is wide and shallow, so it is scaled to about
+ * half the square and sat a little below centre, where a wordless mark reads best. The
+ * furthest point stays inside the 0.4 radius Android crops a maskable icon to.
  */
-const RINGS = [
-  { x: 0.5 - 0.115, y: 0.545, r: 0.215 },
-  { x: 0.5 + 0.115, y: 0.545, r: 0.215 },
+const RIDGE = [
+  [0.25, 0.655],
+  [0.378, 0.36],
+  [0.462, 0.535],
+  [0.558, 0.4],
+  [0.68, 0.655],
 ]
-const STROKE = 0.052
-/** The band above the rings, which reads as the stone setting. */
-const GEM = { x: 0.5, y: 0.2, halfWidth: 0.085, halfHeight: 0.075 }
+const STROKE = 0.055
 
-function ringCoverage(x, y) {
-  for (const ring of RINGS) {
-    const distance = Math.hypot(x - ring.x, y - ring.y)
-    if (Math.abs(distance - ring.r) <= STROKE / 2) return true
+/** Distance from a point to a segment, which is all a stroked polyline needs. */
+function distanceToSegment(x, y, [ax, ay], [bx, by]) {
+  const dx = bx - ax
+  const dy = by - ay
+  const lengthSquared = dx * dx + dy * dy
+  // A degenerate segment is a point; clamping keeps the projection on the segment itself.
+  const t =
+    lengthSquared === 0
+      ? 0
+      : Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / lengthSquared))
+  return Math.hypot(x - (ax + t * dx), y - (ay + t * dy))
+}
+
+/**
+ * The ridge, plus the baseline that closes it: `PeaksIcon`'s path ends in `Z`, so the flat
+ * bottom belongs to the mark rather than being an addition here.
+ */
+function inside(x, y) {
+  const points = [...RIDGE, RIDGE[0]]
+  for (let index = 0; index < points.length - 1; index += 1) {
+    if (distanceToSegment(x, y, points[index], points[index + 1]) <= STROKE / 2) return true
   }
   return false
-}
-
-/** A diamond: |dx| / w + |dy| / h <= 1. */
-function gemCoverage(x, y) {
-  const dx = Math.abs(x - GEM.x) / GEM.halfWidth
-  const dy = Math.abs(y - GEM.y) / GEM.halfHeight
-  return dx + dy <= 1
-}
-
-function inside(x, y) {
-  return ringCoverage(x, y) || gemCoverage(x, y)
 }
 
 /** RGB, no alpha: the icon is opaque, and iOS composites a transparent one onto white. */

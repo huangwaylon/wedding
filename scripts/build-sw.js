@@ -32,11 +32,23 @@ function walk(dir, found = []) {
   return found
 }
 
-/** Every file in the tree except the worker itself, as forward-slash paths. */
+/**
+ * Files that must never be precached, whatever a local `public/` happens to hold.
+ *
+ * `sw.js` is the worker itself. `__dev-board.json` is the board fixture `scripts/drive.mjs` reads
+ * (see its header): it is gitignored, so CI never sees it and the DEPLOYED worker was never at
+ * risk — but anyone who has driven the app locally has one sitting in `public/`, and `vite build`
+ * copies it straight into `dist/`, where this walk would list it and the worker would precache
+ * somebody's fixture board for offline use. The `__` prefix is the convention; anything wearing it
+ * is a local artefact.
+ */
+const NEVER_PRECACHED = (path) => path === 'sw.js' || path.startsWith('__')
+
+/** Every file in the tree except the worker itself and any local artefact, as forward-slash paths. */
 export function precachePaths(distDir) {
   return walk(distDir)
     .map((path) => relative(distDir, path).split(sep).join('/'))
-    .filter((path) => path !== 'sw.js')
+    .filter((path) => !NEVER_PRECACHED(path))
     .sort()
 }
 

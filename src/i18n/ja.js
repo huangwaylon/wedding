@@ -60,6 +60,7 @@ export default {
   'list.showAll': 'すべて表示',
   'plan.cardLabel': '{title}：{when}、{state}',
   'plan.cardLabelSubs': '{title}：{when}、{state}、{subs}',
+  'plan.theDay': '結婚式',
   'list.subtasks': { other: '{count}件中{done}件完了' },
   'list.subtaskAdd': 'サブタスクを追加',
   'list.markDone': '{title}を完了にする',
@@ -89,6 +90,7 @@ export default {
   'form.deleteThis': 'このタスクを削除',
 
   'error.MISSING_TITLE': 'やることを入力してください。',
+  'error.MISSING_DUE': '期限日を入力してください。',
   'error.BAD_DUE': '実在する日付ではありません。',
 
   'confirm.deleteTitle': 'このタスクを削除しますか?',
@@ -148,7 +150,7 @@ export default {
   'status.refresh': '再読み込み',
 
   'toast.saved': '保存しました。',
-  'toast.failed': '保存できませんでした。画面上部のお知らせをご確認ください。',
+  'toast.failed': '保存できませんでした。もう一度お試しください。',
   'toast.deleted': 'タスクを削除しました。',
 
   'api.unconfigured': 'このビルドにはエンドポイントが設定されていません',
