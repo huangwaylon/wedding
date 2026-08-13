@@ -1,10 +1,18 @@
 /**
- * A local endpoint that EXECUTES the real `apps-script/Code.gs` against an in-memory grid.
+ * A local stand-in for BOTH halves of this app's backend, over one in-memory spreadsheet.
  *
- * It serves the same code the deployment runs, so "does the date survive a round trip" is a
- * question with an answer. A static JSON file cannot answer it: a write against one round-trips
- * as a valid reply holding the value from before the edit, which proves the request left and
- * nothing else.
+ *   /                        the real `apps-script/Code.gs`, executed. `doGet` serves the
+ *                            anonymous board; `doPost` mints a token.
+ *   /v4/spreadsheets/...     enough of the Sheets API for `src/lib/sheets.js` to write through.
+ *
+ * BOTH ARE NEEDED NOW, and that is the point. Writes moved off Apps Script, so a stub that only
+ * ran `Code.gs` would leave the entire write path — every range, every row resolution, the header
+ * repair — unexercised by `scripts/drive.mjs`. And a static JSON file can answer even less: a
+ * write against one round-trips as a valid reply holding the value from before the edit, which
+ * proves the request left and nothing else.
+ *
+ * The REST half CHECKS THE BEARER TOKEN against the one the mint issued, so the driver exercises
+ * the real credential flow rather than a bypass.
  *
  *   node scripts/stub-endpoint.mjs [--port 5200]
  *
@@ -16,6 +24,9 @@ import { readFileSync } from 'node:fs'
 
 const SOURCE = readFileSync('apps-script/Code.gs', 'utf8')
 const KEY = 'a'.repeat(64)
+/** What the mint hands out, and what the REST half insists on seeing. */
+const TOKEN = 'stub-token'
+const SHEET_ID = 'stub-sheet'
 const args = process.argv.slice(2)
 const PORT = Number(args[args.indexOf('--port') + 1]) || 5200
 
@@ -152,6 +163,7 @@ function seed() {
     config,
     getSheets: () => sheets,
     getSheetByName: (name) => sheets.find((sheet) => sheet.name === name) ?? null,
+    getId: () => SHEET_ID,
     getSpreadsheetTimeZone: () => 'Asia/Tokyo',
     insertSheet: (name) => {
       const made = makeSheet(name, [[]])
@@ -168,7 +180,7 @@ function load() {
   const globals = {
     SpreadsheetApp: { getActive: () => book },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => KEY }) },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
+    ScriptApp: { getOAuthToken: () => TOKEN },
     ContentService: {
       MimeType: { JSON: 'json' },
       createTextOutput: (text) => ({ setMimeType: () => text }),
@@ -181,25 +193,146 @@ function load() {
 
 const script = load()
 
+// ---------------------------------------------------------------------------
+// Enough of the Sheets API to write through
+// ---------------------------------------------------------------------------
+
+/** 'A' -> 0, 'AA' -> 26. */
+const colOf = (letters) => [...letters].reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0) - 1
+
+/** `tasks!A1:I` / `config!B2` -> the tab and the rectangle. `bottom` null means "to the end". */
+function parseRange(range) {
+  const [tab, a1] = range.split('!')
+  const [, c1, r1, c2, r2] = /^([A-Z]+)(\d*)(?::([A-Z]+)(\d*))?$/.exec(a1)
+  return {
+    tab,
+    left: colOf(c1),
+    top: r1 ? Number(r1) - 1 : 0,
+    right: c2 ? colOf(c2) : colOf(c1),
+    bottom: r2 ? Number(r2) - 1 : null,
+  }
+}
+
+const gridOf = (tab) => book.getSheetByName(tab)?.grid ?? null
+
+function readRange(range) {
+  const { tab, top, left, right, bottom } = parseRange(range)
+  const rows = gridOf(tab)
+  if (!rows) return null
+  const last = bottom == null ? rows.length - 1 : Math.min(bottom, rows.length - 1)
+  const out = []
+  for (let r = top; r <= last; r += 1) {
+    out.push((rows[r] ?? []).slice(left, right + 1).map((cell) => (cell == null ? '' : cell)))
+  }
+  return out
+}
+
+function writeRange(range, values) {
+  const { tab, top, left } = parseRange(range)
+  const rows = gridOf(tab)
+  values.forEach((line, r) => {
+    while (rows.length <= top + r) rows.push([])
+    line.forEach((value, c) => {
+      rows[top + r][left + c] = value
+    })
+  })
+}
+
+/** @returns {{status: number, body: object}} */
+function sheetsApi(method, path, search, body, auth) {
+  // The driver has to carry a real token, or the harness would be proving something the app does
+  // not do.
+  if (auth !== `Bearer ${TOKEN}`) {
+    return { status: 401, body: { error: { message: 'stub: bad or missing bearer token' } } }
+  }
+
+  const after = path.replace(`/v4/spreadsheets/${SHEET_ID}`, '')
+
+  if (method === 'GET' && after === '') {
+    return {
+      status: 200,
+      body: {
+        properties: { timeZone: book.getSpreadsheetTimeZone() },
+        sheets: book
+          .getSheets()
+          .map((sheet, index) => ({ properties: { title: sheet.name, sheetId: 100 + index } })),
+      },
+    }
+  }
+
+  if (method === 'GET' && after === '/values:batchGet') {
+    const ranges = search.getAll('ranges')
+    const values = ranges.map((range) => readRange(range))
+    if (values.some((v) => v === null)) {
+      return { status: 400, body: { error: { message: 'stub: unable to parse range' } } }
+    }
+    return { status: 200, body: { valueRanges: values.map((v) => ({ values: v })) } }
+  }
+
+  if (method === 'POST' && after === '/values:batchUpdate') {
+    for (const entry of body.data) writeRange(entry.range, entry.values)
+    return { status: 200, body: {} }
+  }
+
+  if (method === 'POST' && after.endsWith(':append')) {
+    const range = decodeURIComponent(after.slice('/values/'.length, -':append'.length))
+    const rows = gridOf(parseRange(range).tab)
+    for (const line of body.values) rows.push(line.slice())
+    return { status: 200, body: {} }
+  }
+
+  if (method === 'POST' && after === ':batchUpdate') {
+    const replies = []
+    for (const request of body.requests) {
+      if (request.addSheet) {
+        const made = book.insertSheet(request.addSheet.properties.title)
+        replies.push({
+          addSheet: { properties: { title: made.name, sheetId: 100 + book.getSheets().length } },
+        })
+      } else if (request.deleteDimension) {
+        const { sheetId, startIndex } = request.deleteDimension.range
+        book.getSheets()[sheetId - 100]?.grid.splice(startIndex, 1)
+        replies.push({})
+      } else {
+        replies.push({})
+      }
+    }
+    return { status: 200, body: { replies } }
+  }
+
+  return { status: 404, body: { error: { message: `stub: unhandled ${method} ${after}` } } }
+}
+
 const server = createServer((request, response) => {
   const chunks = []
   request.on('data', (chunk) => chunks.push(chunk))
   request.on('end', () => {
-    const before = book.tasks.calls
-    let text
-    if (request.method === 'POST') {
-      text = script.doPost({ postData: { contents: Buffer.concat(chunks).toString('utf8') } })
+    const raw = Buffer.concat(chunks).toString('utf8')
+    const { pathname, searchParams } = new URL(request.url, `http://127.0.0.1:${PORT}`)
+
+    let status = 200
+    let body
+
+    if (pathname.startsWith('/v4/spreadsheets')) {
+      const result = sheetsApi(
+        request.method,
+        pathname,
+        searchParams,
+        raw ? JSON.parse(raw) : null,
+        request.headers.authorization,
+      )
+      status = result.status
+      body = result.body
+      console.log(`${request.method} ${pathname.replace('/v4/spreadsheets/', '')} -> ${status}`)
+    } else if (request.method === 'POST') {
+      body = JSON.parse(script.doPost({ postData: { contents: raw } }))
+      console.log(`POST /exec (mint) -> ${body.ok ? 'ok' : body.error}`)
     } else {
-      text = script.doGet()
+      body = JSON.parse(script.doGet())
+      console.log(`GET /exec (board) -> ${body.ok ? 'ok' : body.error}`)
     }
-    const body = JSON.parse(text)
-    // A Sheets service call is the unit of cost in Apps Script, so it is the number worth
-    // printing: the arithmetic between them is free and the network floor is not ours to fix.
-    console.log(
-      `${request.method} ${request.method === 'POST' ? JSON.parse(Buffer.concat(chunks).toString('utf8')).op : ''} ` +
-        `-> ${body.ok ? 'ok' : body.error} (${book.tasks.calls - before} sheet calls)`,
-    )
-    response.writeHead(200, {
+
+    response.writeHead(status, {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
     })
@@ -209,5 +342,7 @@ const server = createServer((request, response) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`stub endpoint on http://127.0.0.1:${PORT}`)
+  console.log(`  /                     Code.gs (doGet + mint)`)
+  console.log(`  /v4/spreadsheets/...  the Sheets API`)
   console.log(`key: ${KEY}`)
 })

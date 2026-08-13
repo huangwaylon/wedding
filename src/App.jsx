@@ -21,7 +21,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { STORAGE_KEYS, isConfigured, readStored, weddingDay, writeStored } from './config.js'
 import { isStandalone, markKeyRejected, resolveAccess, writeEditKey } from './lib/access.js'
 import { API_ERROR, isTerminal } from './lib/api.js'
-import { STATE, overallProgress, withProgress } from './lib/progress.js'
+import { forgetToken } from './lib/connection.js'
+import { overallProgress, withProgress } from './lib/progress.js'
 import { resolveTimeZone, todayIn } from './lib/time.js'
 import { setSafeToReload } from './lib/serviceWorker.js'
 import { STATUS, useBoard } from './state/useBoard.js'
@@ -33,7 +34,6 @@ import EmptyBoard from './components/EmptyBoard.jsx'
 import FilterChips, { FILTER_ALL } from './components/FilterChips.jsx'
 import Hero from './components/Hero.jsx'
 import Notice from './components/Notice.jsx'
-import OverallCard from './components/OverallCard.jsx'
 import Plan from './components/Plan.jsx'
 import SettingsSheet from './components/SettingsSheet.jsx'
 import TaskFormSheet from './components/TaskFormSheet.jsx'
@@ -69,15 +69,7 @@ const HINTED = new Set([API_ERROR.UNCONFIGURED, API_ERROR.NOT_EMPTY, API_ERROR.M
  * branches fired and the screen carried "This edit link was rejected" stacked on top of
  * "The edit link was refused". The `access.*` pair wins because it names the recovery.
  */
-const SILENCED = new Set([
-  API_ERROR.UNAUTHORIZED,
-  /**
-   * `outdated` is raised by every refused write, and `board.outdatedScript` already has a
-   * standing notice on screen saying the same thing with the redeploy steps in it. Without this
-   * the two stacked, and the refused write's copy had no instructions.
-   */
-  API_ERROR.OUTDATED,
-])
+const SILENCED = new Set([API_ERROR.UNAUTHORIZED])
 
 /** The retry inside a notice. Two of them, identical, so it is one thing. */
 function RetryButton({ onRetry, label }) {
@@ -170,7 +162,6 @@ export default function App() {
       return next
     })
   }, [])
-  const listTop = useRef(null)
 
   const hasKey = Boolean(editKey) && !rejected
   const canEdit = hasKey && !readOnly
@@ -210,12 +201,6 @@ export default function App() {
     setTicked(new Set())
     writeStored(STORAGE_KEYS.filter, next)
   }, [])
-
-  /** The overdue button on the tracker: filter, then bring the list under the thumb. */
-  const showOverdue = useCallback(() => {
-    chooseFilter(STATE.OVERDUE)
-    listTop.current?.scrollIntoView({ block: 'start' })
-  }, [chooseFilter])
 
   // A reload must not land between a keystroke and a save. Every half matters: an open
   // sheet and a focused inline field both hold text that exists nowhere else, and `saving`
@@ -302,8 +287,13 @@ export default function App() {
    * Both of these clear the read-only preview, because otherwise it outlives the thing it was
    * previewing: pasting a fresh edit link while the flag was still set would appear to do nothing
    * at all, which is the one outcome that makes somebody think their link is broken.
+   *
+   * BOTH ALSO DROP THE MINTED TOKEN. It is derived from the key but outlives it by up to an hour,
+   * so a device that has just revoked its key would otherwise keep writing, and a device pasting a
+   * DIFFERENT key would keep using the old one's token — which is the same bug wearing a hat.
    */
   const enableEditing = useCallback((key) => {
+    forgetToken()
     writeEditKey(key)
     writeStored(STORAGE_KEYS.readOnly, null)
     setReadOnly(false)
@@ -312,6 +302,7 @@ export default function App() {
   }, [])
 
   const revokeEditing = useCallback(() => {
+    forgetToken()
     writeEditKey(null)
     writeStored(STORAGE_KEYS.readOnly, null)
     setReadOnly(false)
@@ -341,18 +332,13 @@ export default function App() {
           config={board.config}
           nowMs={now}
           canEdit={canEdit}
+          overall={overall}
           onOpenSettings={() => setSettingsOpen(true)}
         />
 
         <div className="view stack">
           {rejected ? (
             <Notice tone="warn" title={t('access.rejected')} body={t('access.rejectedHint')} />
-          ) : null}
-
-          {/* A deployment is pinned to a version, so the script can be older than this bundle —
-              and an older one drops a column it has never heard of without erroring. */}
-          {board.outdatedScript ? (
-            <Notice tone="warn" title={t('api.outdated')} body={t('api.outdatedHint')} />
           ) : null}
 
           {/* A failed read never blanks a board that is already on screen: the cached copy is
@@ -396,61 +382,51 @@ export default function App() {
             />
           ) : (
             <>
-              <OverallCard overall={overall} onShowOverdue={showOverdue} />
+              <FilterChips
+                counts={overall}
+                total={overall.total}
+                filter={filter}
+                onFilter={chooseFilter}
+              />
 
-              {/* The scroll target for the overdue button, and the seam between the summary
-                  and the work. */}
-              <div className="stack" ref={listTop}>
-                <FilterChips
-                  counts={overall}
-                  total={overall.total}
-                  filter={filter}
-                  onFilter={chooseFilter}
+              {!shown.length ? (
+                <section className="card empty">
+                  <p className="empty__body">{t('list.emptyFiltered')}</p>
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    onClick={() => chooseFilter(FILTER_ALL)}
+                  >
+                    {t('list.showAll')}
+                  </button>
+                </section>
+              ) : (
+                <Plan
+                  tasks={shown}
+                  canEdit={canEdit}
+                  categories={board.config.categories}
+                  today={today}
+                  /* So the one heading that is the wedding's own month can say so. */
+                  weddingMonth={day ? day.slice(0, 7) : ''}
+                  unfiltered={filter === FILTER_ALL}
+                  expanded={expanded}
+                  onExpand={toggleExpanded}
+                  onToggle={toggleDone}
+                  onSave={save}
+                  onDelete={setPendingDelete}
+                  onAddSubtask={addSubtask}
+                  onFieldFocus={reportTyping}
                 />
-
-                {!shown.length ? (
-                  <section className="card empty">
-                    <p className="empty__body">{t('list.emptyFiltered')}</p>
-                    <button
-                      type="button"
-                      className="btn btn--secondary"
-                      onClick={() => chooseFilter(FILTER_ALL)}
-                    >
-                      {t('list.showAll')}
-                    </button>
-                  </section>
-                ) : (
-                  <Plan
-                    tasks={shown}
-                    canEdit={canEdit}
-                    categories={board.config.categories}
-                    today={today}
-                    /* So the one heading that is the wedding's own month can say so. */
-                    weddingMonth={day ? day.slice(0, 7) : ''}
-                    unfiltered={filter === FILTER_ALL}
-                    expanded={expanded}
-                    onExpand={toggleExpanded}
-                    onToggle={toggleDone}
-                    onSave={save}
-                    onDelete={setPendingDelete}
-                    canAddSubtask={!board.outdatedScript}
-                    onAddSubtask={addSubtask}
-                    onFieldFocus={reportTyping}
-                  />
-                )}
-              </div>
+              )}
             </>
           )}
         </div>
       </div>
 
-      {/* Hidden while a field has focus — see `typing` — and withheld entirely when the deployed
-          script is out of date. Every row write is refused in that state, so the sheet would take
-          a title, a date and a category and then throw the lot away with a toast. This is the same
-          judgement `canAddSubtask` already makes about the add field; the tick and the Edit toggle
-          deliberately stay live, because withholding those too would leave an editor looking at a
-          view-only board with no explanation attached to the controls that went missing. */}
-      {canEdit && !typing && !board.outdatedScript ? (
+      {/* Hidden while a field has focus — see `typing`. The FAB is fixed, so it sat over the
+          trailing end of the add-a-subtask field, where a tap opened the new-task sheet and
+          discarded what was typed. */}
+      {canEdit && !typing ? (
         <button
           type="button"
           className="fab"

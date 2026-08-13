@@ -44,6 +44,52 @@ export const TASK_COLUMNS = [
 export const TASKS_SHEET = 'tasks'
 export const CONFIG_SHEET = 'config'
 
+/** 0 -> 'A'. General rather than a lookup table because `TASK_COLUMNS` may only grow. */
+function letterAt(index) {
+  let letter = ''
+  for (let n = index; n >= 0; n = Math.floor(n / 26) - 1) {
+    letter = String.fromCharCode(65 + (n % 26)) + letter
+  }
+  return letter
+}
+
+/**
+ * A column's position, by name. Throws rather than returning -1: every caller uses the
+ * result to build a range, and a `-1` would silently address the column before A.
+ */
+export function columnIndex(name) {
+  const index = TASK_COLUMNS.indexOf(name)
+  if (index < 0) throw new Error(`columnIndex: no such column ${name}`)
+  return index
+}
+
+export function columnLetter(name) {
+  return letterAt(columnIndex(name))
+}
+
+const LAST_LETTER = letterAt(TASK_COLUMNS.length - 1)
+
+/**
+ * The A1 ranges, all derived from `TASK_COLUMNS` so appending a column widens every one of
+ * them at once. NOTHING outside this file may spell a range: a hardcoded `tasks!A2:I` is a
+ * second place that knows the width, and it goes stale on the very next append.
+ */
+export const TASKS_RANGE = `${TASKS_SHEET}!A1:${LAST_LETTER}`
+export const CONFIG_RANGE = `${CONFIG_SHEET}!A1:B`
+
+/** One whole task row, for a write that rewrites it entirely. */
+export function rowRange(row) {
+  return `${TASKS_SHEET}!A${row}:${LAST_LETTER}${row}`
+}
+
+/**
+ * A span of adjacent columns on one row. `updated_at` and `deleted_at` are neighbours, so
+ * stamping a delete is one range per affected row rather than two.
+ */
+export function spanRange(row, firstColumn, lastColumn) {
+  return `${TASKS_SHEET}!${columnLetter(firstColumn)}${row}:${columnLetter(lastColumn)}${row}`
+}
+
 /** Trim without turning a missing cell into the string "undefined". */
 export function cellText(value) {
   return value == null ? '' : String(value).trim()
@@ -72,11 +118,12 @@ export function rowToTask(row) {
 }
 
 /**
- * The inverse, for the wire. Every value is a string.
+ * The stored fields of a task, as strings, WITHOUT either timestamp.
  *
- * `created_at` and `updated_at` are omitted deliberately: the script stamps both,
- * so a device with a wrong clock cannot backdate a row, and `created_at` on an
- * update is taken from the existing row rather than from the client.
+ * OMITTING THE TIMESTAMPS IS WHAT MAKES THIS A FINGERPRINT. `TaskDetail` stringifies the
+ * result to decide whether an edit session actually changed the row, and skips the write
+ * when it did not — so anything in here that moves on its own, `updated_at` above all,
+ * would make every Done cost a round trip. `taskCells` is what a write uses.
  */
 export function taskToRow(task) {
   if (!task?.id) throw new Error('taskToRow: id is required')
@@ -89,11 +136,38 @@ export function taskToRow(task) {
     done_at: cellText(task.doneAt),
     deleted_at: cellText(task.deletedAt),
     /**
-     * Never omit this. `updateTask` writes the WHOLE row from the payload, so a task object
-     * built without `parentId` blanks the cell and silently promotes a subtask to a task.
+     * Never omit this. A write rewrites the WHOLE row from this, so a task object built
+     * without `parentId` blanks the cell and silently promotes a subtask to a task.
      */
     parent_id: cellText(task.parentId),
   }
+}
+
+/**
+ * One task as the CELLS of its row, in `TASK_COLUMNS` order — what the Sheets API wants.
+ *
+ * THE CLIENT STAMPS BOTH TIMESTAMPS, so a device with a wrong clock can backdate a row. That
+ * is accepted rather than overlooked: only a server can stamp a trustworthy time, and reaching
+ * one costs a second hop on every write. Neither timestamp is load-bearing for anything the app
+ * computes — `due` decides every date question and `done_at` is only ever tested for emptiness —
+ * so the exposure is a wrong number in a column nobody reads. Wanting trustworthy timestamps
+ * means wanting a server on the write path, which is the decision to revisit, not this line.
+ *
+ * `createdAt` is passed in rather than read off the task so the caller can preserve what the
+ * row already holds: a create that is replaying must not restamp a row somebody made
+ * yesterday.
+ *
+ * @param {object} task
+ * @param {{createdAt?: string, updatedAt: string}} stamps
+ * @returns {string[]} one cell per column, in order
+ */
+export function taskCells(task, { createdAt, updatedAt }) {
+  const row = taskToRow(task)
+  return TASK_COLUMNS.map((column) => {
+    if (column === 'created_at') return cellText(createdAt) || updatedAt
+    if (column === 'updated_at') return updatedAt
+    return cellText(row[column])
+  })
 }
 
 /** A task nobody has tombstoned. The client filters; the sheet keeps the row. */

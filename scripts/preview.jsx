@@ -28,7 +28,6 @@ import { findTemplate, materialize } from '../src/lib/templates.js'
 import EmptyBoard from '../src/components/EmptyBoard.jsx'
 import FilterChips, { FILTER_ALL } from '../src/components/FilterChips.jsx'
 import Hero from '../src/components/Hero.jsx'
-import OverallCard from '../src/components/OverallCard.jsx'
 import Plan from '../src/components/Plan.jsx'
 import { PlusIcon } from '../src/components/icons.jsx'
 
@@ -168,33 +167,36 @@ function BoardView({ locale, canEdit = true, open = true, editing = false }) {
   const opened = open ? tasks.find((task) => task.progress.tally) : null
   return (
     <Shell fab={canEdit}>
-      <Hero config={CONFIG} nowMs={NOW} canEdit={canEdit} onOpenSettings={noop} photo={PHOTO} />
+      <Hero
+        config={CONFIG}
+        nowMs={NOW}
+        canEdit={canEdit}
+        overall={overall}
+        onOpenSettings={noop}
+        photo={PHOTO}
+      />
       <div className="view stack">
-        <OverallCard overall={overall} onShowOverdue={noop} />
-        <div className="stack">
-          <FilterChips
-            counts={overall}
-            total={overall.total}
-            filter={FILTER_ALL}
-            onFilter={noop}
-          />
-          <Plan
-            tasks={tasks}
-            canEdit={canEdit}
-            categories={CONFIG.categories}
-            today={TODAY}
-            weddingMonth={WEDDING_DAY.slice(0, 7)}
-            expanded={new Set(opened ? [opened.id] : [])}
-            onExpand={noop}
-            onToggle={noop}
-            onSave={noop}
-            onDelete={noop}
-            canAddSubtask
-            onAddSubtask={noop}
-            onFieldFocus={noop}
-            editing={editing}
-          />
-        </div>
+        <FilterChips
+          counts={overall}
+          total={overall.total}
+          filter={FILTER_ALL}
+          onFilter={noop}
+        />
+        <Plan
+          tasks={tasks}
+          canEdit={canEdit}
+          categories={CONFIG.categories}
+          today={TODAY}
+          weddingMonth={WEDDING_DAY.slice(0, 7)}
+          expanded={new Set(opened ? [opened.id] : [])}
+          onExpand={noop}
+          onToggle={noop}
+          onSave={noop}
+          onDelete={noop}
+          onAddSubtask={noop}
+          onFieldFocus={noop}
+          editing={editing}
+        />
       </div>
     </Shell>
   )
@@ -261,7 +263,6 @@ function RowsView({ locale, canEdit = true, editing = false }) {
           onToggle={noop}
           onSave={noop}
           onDelete={noop}
-          canAddSubtask
           onAddSubtask={noop}
           onFieldFocus={noop}
           editing={editing}
@@ -317,7 +318,6 @@ function SignView({ locale, unfiltered = true }) {
           onToggle={noop}
           onSave={noop}
           onDelete={noop}
-          canAddSubtask
           onAddSubtask={noop}
           onFieldFocus={noop}
         />

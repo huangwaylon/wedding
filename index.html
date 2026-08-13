@@ -61,13 +61,17 @@
     <!--
       An allowlist, not boilerplate. No third-party JavaScript executes in this app at
       all: `script-src 'self'` is possible because there is no Google Identity
-      Services script, no Picker iframe and no Sheets API client — the board is read
-      and written entirely through our own Apps Script endpoint over `fetch`.
+      Services script, no Picker iframe and no Sheets API *client library* — there is
+      no sign-in anywhere, and the Sheets API is reached with a plain `fetch` carrying
+      a token the Apps Script endpoint minted.
 
-      `sheets.googleapis.com` is deliberately ABSENT. The browser never talks to the
-      Sheets API, because it never holds a Google token: that is the whole reason a
-      view-only visitor needs no credential. If you find yourself adding that host
-      back, the architecture has changed and README's security model is now wrong.
+      `sheets.googleapis.com` IS here, and it is the one host that carries a
+      credential. An EDITOR mints a Google token from `/exec` and then reads and
+      writes the spreadsheet directly, because `/exec` costs 1.0-1.6s per request and
+      the Sheets API costs ~0.24s. A view-only visitor still holds no token at all and
+      never reaches that host — their board comes from `doGet`, which is why they need
+      no credential. Removing this host does not make the app safer; it makes every
+      write four times slower.
 
       `script.googleusercontent.com` looks redundant next to `script.google.com` and
       is not: `/exec` answers with a 302 to it. Current Chrome does not re-check
@@ -85,7 +89,8 @@
         default-src 'self';
         script-src 'self';
         frame-src 'none';
-        connect-src 'self' https://script.google.com https://script.googleusercontent.com;
+        connect-src 'self' https://script.google.com https://script.googleusercontent.com
+          https://sheets.googleapis.com;
         img-src 'self' data:;
         style-src 'self' 'unsafe-inline';
         font-src 'self';

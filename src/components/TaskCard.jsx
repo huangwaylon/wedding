@@ -41,7 +41,6 @@ export default function TaskCard({
   onToggle,
   onDelete,
   onSave,
-  canAddSubtask,
   onAddSubtask,
   onFieldFocus,
   categories,
@@ -153,7 +152,6 @@ export default function TaskCard({
             onToggle={onToggle}
             onDelete={onDelete}
             onSave={onSave}
-            canAddSubtask={canAddSubtask}
             onAddSubtask={onAddSubtask}
             onFieldFocus={onFieldFocus}
             editing={editing}

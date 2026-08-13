@@ -2,12 +2,15 @@
    primitives.css; every value comes from tokens.css.
 
    Mobile-first, ONE column at every width, capped at --column-max and centred. The
-   only breakpoint is 48rem, and all it does is spend the extra room: a taller photograph,
-   a chip row that no longer scrolls, and a little more padding on a task row. */
+   only breakpoint is 48rem, and all it does is spend the extra room: rounded corners on
+   the header, a chip row that no longer scrolls, and a little more padding on a task row.
+   The photograph's height is a clamp, not a step, so it needs no query of its own. */
 
 /* ---- Shell -------------------------------------------------------------
-   ONE column, ONE scroller, no fixed chrome but the FAB. `.views` reserves the FAB's
-   clearance below its content, once, so the button can never cover the last row. */
+   ONE column, ONE scroller, and TWO pinned things: the header at the top and the FAB at
+   the bottom. `.views` reserves the FAB's clearance below its content, once, so the button
+   can never cover the last row; the header's own cost is `--hero-height`, which the sticky
+   month heading offsets itself by. */
 .app {
   min-height: 100dvh;
 }
@@ -32,21 +35,36 @@
 }
 
 /* ---- Hero --------------------------------------------------------------
-   A full-bleed photograph with the couple's names over its dense end. It is the
-   header of the one screen, and the first thing on it.
+   THE ONE PINNED THING BESIDES THE FAB, and the reason it is worth pinning is that it
+   answers whose wedding, how many days and how much is done without anybody scrolling back
+   up. A tenth of the viewport is what makes that affordable: at the old 52vh it would have
+   been the whole screen.
 
-   `isolation: isolate` keeps the scrim, the settings control and the type in one
-   local stacking context, so none of them can be raised above the FAB by an
-   ancestor's z-index later. */
+   It is TWO bands. The photograph, whose backdrop is unknown and whose type therefore leans
+   on the scrim; and the progress strip, which is opaque so every measured meter figure in
+   tokens.css still applies to it. Putting the meter over the photo is the tempting version
+   and it is the one where an empty bar disappears into a bright sky.
+
+   `--hero-height` is this element's total occupied height and `.plan__month` offsets by it.
+   Anything added here has to go into that token or the month heading lands under the strip. */
 .hero {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  /* Keeps the scrim, the settings control and the type in one local stacking context, so
+     none of them can be raised above the FAB by an ancestor's z-index later. */
   isolation: isolate;
+}
+
+/* The photograph's own band. `--safe-top` is padding rather than height so the image runs up
+   behind the status bar while the type stays clear of it. */
+.hero__photo {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  /* Tall enough to be a photograph rather than a banner, capped so it never eats a
-     whole laptop screen. A clamp, not a breakpoint. */
-  height: clamp(19rem, 52vh, 30rem);
+  height: var(--hero-photo);
+  padding-top: var(--safe-top);
   overflow: hidden;
 }
 
@@ -56,29 +74,31 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* Above centre. The faces sit at 40–44% of the photograph's own height, so 42% holds
-     them at 40–45% of the band at every width the app has — including the pathological
-     one, a 1248x304 desktop letterbox, where anything higher drops the second face into
-     the scrim's dense end. */
+  /* Above centre, and this is a CROP OF A CROP: the band is short enough that no offset holds
+     the faces in it, so this is not framing them — it is choosing the part of the picture that
+     reads best as texture behind two lines of type, which is the canopy rather than the sky.
+     A percentage here cannot be reasoned about from the source photograph's composition; it has
+     to be looked at, at 393px and at the 48rem plate both. */
   object-position: 50% 42%;
 }
 
-/* The gradient IS the contrast mechanism for every word below — see --photo-scrim in
-   tokens.css for the measured worst case. Not decoration: lighten its end stop and
-   white type over a bright sky fails AA. */
+/* The gradient IS the contrast mechanism for every word over the photograph — see
+   --photo-scrim in tokens.css for the measured worst case. Not decoration: lighten its end
+   stop and white type over a bright sky fails AA. */
 .hero__scrim {
   position: absolute;
   inset: 0;
   background: var(--photo-scrim);
 }
 
-/* On the photograph rather than in a bar of its own: a header band above a full-bleed
-   image would cost a row of chrome to hold one rarely-pressed control. The disc is
-   what lets a white glyph stay legible over an unknown pixel. */
+/* On the photograph rather than in a bar of its own. The disc is what lets a white glyph stay
+   legible over an unknown pixel. Centred vertically in the band rather than pinned to the top:
+   the band is barely taller than the control. */
 .hero__gear {
   position: absolute;
-  top: calc(var(--safe-top) + var(--space-2));
+  top: calc(var(--safe-top) + 50%);
   right: var(--space-3);
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -94,28 +114,27 @@
   background-color: var(--photo-control-hover);
 }
 
+/* Padded off the gear's tap target on the trailing edge, so a long name does not run under it. */
 .hero__text {
   position: relative;
-  padding: var(--space-5) var(--space-4) var(--space-6);
+  min-width: 0;
+  padding: var(--space-2) var(--space-4);
+  padding-right: calc(var(--tap-target) + var(--space-4));
 }
 
-.hero__eyebrow {
-  font-size: var(--fs-caption);
-  font-weight: 500;
-  color: var(--photo-ink-2);
-  text-shadow: var(--photo-shadow);
-}
-
-/* No tracking and no line-height below 1.5, at any size: these are names, and a name
-   here can be Japanese. The size is fluid instead — that is what makes it read as
-   display type without touching either. */
+/* No tracking and no line-height below 1.5, at any size: these are names, and a name here can
+   be Japanese. The size is fluid instead — a clamp, so the desktop plate gets display type
+   without a second breakpoint and the phone band still fits two lines. */
 .hero__title {
-  margin-top: var(--space-1);
-  font-size: clamp(2rem, 9vw, 2.75rem);
+  font-size: clamp(var(--fs-lg), 4.6vw, var(--fs-xl));
   font-weight: 600;
   line-height: var(--lh-tight);
   color: var(--photo-ink);
   text-shadow: var(--photo-shadow);
+  /* One line, always. A wrapped pair of names would push the countdown out of the band. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hero__sub {
@@ -123,23 +142,22 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  margin-top: var(--space-2);
-  font-size: var(--fs-label);
+  font-size: var(--fs-caption);
   color: var(--photo-ink-2);
   text-shadow: var(--photo-shadow);
 }
 
 /* THE COUNTDOWN NEVER WRAPS AND NEVER SHRINKS. It is the one number up here, and with a long
    venue name beside it and the View only badge after that, a wrapped "427 days to go" pushes
-   the names up. */
+   the names out of a band this short. */
 .hero__count {
   flex: none;
   font-weight: 500;
   white-space: nowrap;
 }
 
-/* The venue gives way instead — it is the one part of this row that can be truncated
-   and still say something useful. */
+/* The venue gives way instead — it is the one part of this row that can be truncated and still
+   say something useful. */
 .hero__venue {
   flex: 0 1 auto;
   min-width: 0;
@@ -148,60 +166,52 @@
   white-space: nowrap;
 }
 
+/* ---- The progress strip ------------------------------------------------
+   The whole tracker, on one line, in the one place that is always on screen: the percentage, a
+   bar carrying the on-schedule mark, and the count that makes the percentage checkable by
+   arithmetic. Three small figures earn their room here in a way a card with a 44px number does
+   not — it says the same thing and costs a screenful.
+
+   A FIXED HEIGHT, because --hero-height is derived from it and the sticky month heading offsets
+   by that. Content is centred inside rather than allowed to set the height. */
+.hero__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--hero-strip);
+  padding-inline: var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background-color: var(--surface);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-tight);
+}
+
+/* The bar takes the room; the two figures take what they need. `flex: none` on both, or a long
+   Japanese tally shrinks the bar to nothing. */
+.hero__progress .meter {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hero__percent {
+  flex: none;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hero__tally {
+  flex: none;
+  color: var(--ink-2);
+}
+
 @media (min-width: 48rem) {
-  /* Past the phone the column is centred with paper on both sides, so the photograph
-     stops being edge-to-edge and becomes a plate: taller, and rounded where it meets
-     the content below it. The top stays square — it runs off the top of the screen. */
-  .hero {
-    height: clamp(22rem, 46vh, 34rem);
+  /* Past the phone the column is centred with paper on both sides, so the header stops being
+     edge-to-edge and becomes a plate. The radius goes on the STRIP, which is the bottom of the
+     pinned block; the photograph's own corners stay square because it has the strip beneath it.
+     The top stays square either way — it runs off the top of the screen. */
+  .hero__progress {
     border-radius: 0 0 var(--radius-xl) var(--radius-xl);
   }
-}
-
-/* ---- Overall progress --------------------------------------------------
-   The one hero figure in the app. `container-type: inline-size` is what lets
-   --fs-display be container-relative, so the same card reads correctly in a 320px
-   phone column and at the full 40rem cap. */
-.overall {
-  container-type: inline-size;
-}
-
-.overall__figure {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  margin-bottom: var(--space-1);
-}
-
-.overall__percent {
-  font-size: var(--fs-display);
-  font-weight: 600;
-  /* The single carve-out from the 1.5 line-height floor: this element renders digits
-     and a percent sign, never Japanese. */
-  line-height: var(--lh-flat);
-  /* Proportional figures deliberately, not tabular — see base.css. */
-  letter-spacing: -0.02em;
-}
-
-.overall__unit {
-  font-size: var(--fs-xl);
-  font-weight: 500;
-  color: var(--ink-3);
-}
-
-/* The count that makes the figure above it checkable by arithmetic — the app makes no claim
-   about pace, so this is what the space under the figure says instead. */
-.overall__count {
-  font-size: var(--fs-label);
-  color: var(--ink-2);
-  margin-bottom: var(--space-4);
-}
-
-/* The one call to action on the card, and only when there is one. Spaced off the meter
-   rather than hairlined off it: at one button a rule is heavier than the seam it marks. */
-.overall__alert {
-  margin-top: var(--space-4);
-  justify-content: space-between;
 }
 
 /* ---- The plan ----------------------------------------------------------
@@ -223,10 +233,15 @@
    is what lets a row print a bare `18` instead of restating APR on all forty of them.
 
    Three things it depends on, none of them optional. The background is REQUIRED, not
-   decoration: rows scroll underneath it. `top` is the safe-area inset, so it parks below the
-   Dynamic Island rather than under it. And it sticks within `.plan__group`, which is a flex
-   column, so the next month's heading pushes this one out — exactly the wanted behaviour, and
-   the reason the heading is inside the group rather than above it.
+   decoration: rows scroll underneath it. `top` is `--hero-height`, because the header above it
+   is pinned too — a bare `--safe-top` here parks the heading UNDER the photograph, where it is
+   invisible until you scroll past it, and that token is the header's whole occupied height so
+   the two cannot drift. And it sticks within `.plan__group`, which is a flex column, so the
+   next month's heading pushes this one out — exactly the wanted behaviour, and the reason the
+   heading is inside the group rather than above it.
+
+   ITS z-index STAYS AT 1, below `--z-header`. Both are sticky and they meet: the heading has to
+   slide under the header rather than over it.
 
    IT IS A SIGN, AND THE RULE UNDER IT IS WHAT MAKES IT ONE. A hairline the full width of the
    column reads as a board somebody planted; without it a heading carrying a figure at its far
@@ -239,7 +254,7 @@
    carry the micro-label instead. */
 .plan__month {
   position: sticky;
-  top: var(--safe-top);
+  top: var(--hero-height);
   z-index: 1;
   display: flex;
   align-items: baseline;

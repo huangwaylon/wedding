@@ -15,7 +15,7 @@
  * fixed day should name its last sign.
  *
  * AND THE LIST SAYS WHERE TODAY IS. One line, between two rows, at the boundary between what has
- * passed and what has not. The hero counts down and the tracker carries an on-schedule mark, but
+ * passed and what has not. The header counts down and its strip carries an on-schedule mark, but
  * the list is the screen people live in and it had no "you are here" at all. Both figures are
  * withheld while a filter is on: a slice of a month is not a month, and a list with holes in it
  * cannot claim that everything below a line is still ahead.
@@ -125,7 +125,7 @@ export default function Plan({
             {group.key && group.key === weddingMonth ? (
               <span className="plan__day">{t('plan.theDay')}</span>
             ) : null}
-            {/* aria-hidden: every row states its own state, the tracker states the same
+            {/* aria-hidden: every row states its own state, the header strip states the same
                 arithmetic for the board, and "3 slash 9" read out inside a heading is worse than
                 silence. It is a scanning aid for the eye. */}
             {unfiltered ? (
@@ -136,7 +136,7 @@ export default function Plan({
           </h2>
           {group.tasks.map((task) => (
             <React.Fragment key={task.id}>
-              {/* YOU ARE HERE. The hero counts down and the tracker carries an on-schedule mark;
+              {/* YOU ARE HERE. The header counts down and its strip carries an on-schedule mark;
                   the list — the screen people actually live in — had nothing saying where today
                   falls in it. One per board, and it sits BETWEEN rows rather than on one, so the
                   one-coloured-mark-per-row rule is untouched. */}

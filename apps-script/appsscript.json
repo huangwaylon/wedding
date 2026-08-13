@@ -1,7 +1,7 @@
 {
   "runtimeVersion": "V8",
   "exceptionLogging": "STACKDRIVER",
-  "oauthScopes": ["https://www.googleapis.com/auth/spreadsheets.currentonly"],
+  "oauthScopes": ["https://www.googleapis.com/auth/spreadsheets"],
   "webapp": {
     "executeAs": "USER_DEPLOYING",
     "access": "ANYONE_ANONYMOUS"

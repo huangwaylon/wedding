@@ -34,17 +34,28 @@ describe('the Code.gs column contract', () => {
     expect(source).toContain("var CONFIG_SHEET = 'config'")
   })
 
-  it('still escapes a leading formula character on write', () => {
-    // If this helper is ever "tidied" away, a title of "=SUM(A:A)" becomes a live formula in
-    // somebody's spreadsheet and the cell stops holding what they typed.
-    const source = readFileSync('apps-script/Code.gs', 'utf8')
-    expect(source).toMatch(/\/\^\[=\+\\-@\]\/\.test/)
+  it('writes every value RAW, which is what replaced the formula escape', () => {
+    // `Code.gs` used to prefix a leading =, +, - or @ with an apostrophe, because Apps Script's
+    // `setValues` parsed those as formulas whatever the cell format said. The Sheets API does
+    // not: `valueInputOption: RAW` stores what it is given. So the guard is now "RAW, always" —
+    // and USER_ENTERED anywhere would make a title of "=SUM(A:A)" a live formula in somebody's
+    // spreadsheet and a date get reformatted to the sheet's locale.
+    // Comments stripped: the module's header explains this rule by NAMING what it forbids, so a
+    // raw search matches the prose and passes whatever the code does.
+    const source = readFileSync('src/lib/sheets.js', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^[ \t]*\/\/.*$/gm, '')
+    expect(source).toMatch(/const RAW = 'RAW'/)
+    expect(source, 'a write must never be USER_ENTERED').not.toContain('USER_ENTERED')
+    // Every valueInputOption in the file has to be the constant, never a literal.
+    const options = [...source.matchAll(/valueInputOption: ([^,\s}]+)/g)].map((m) => m[1])
+    expect(options.length).toBeGreaterThan(0)
+    expect([...new Set(options)]).toEqual(['RAW'])
   })
 
   it('keeps parent_id last, because appending is the only safe change', () => {
-    // Appending cannot shift an existing column's index, so it is the only edit an older
-    // deployment survives. `missingColumnsFor` compares the WHOLE list, never the last entry
-    // alone — see test/board.test.js.
+    // Appending cannot shift an existing column's index, and every range in `schema.js` is
+    // derived from the list's length, so an append widens all of them at once.
     expect(TASK_COLUMNS[TASK_COLUMNS.length - 1]).toBe('parent_id')
   })
 
@@ -124,12 +135,14 @@ describe('taskToRow', () => {
     expect(taskToRow(task)).toHaveProperty('parent_id')
   })
 
-  it('omits the timestamps the script owns', () => {
-    // A device with a wrong clock must not be able to backdate a row, and created_at
-    // on an update comes from the existing row rather than from the client.
+  it('omits both timestamps, which is what makes it a FINGERPRINT', () => {
+    // `TaskDetail` stringifies this to decide whether an edit session actually changed the row and
+    // skips the write when it did not. `updated_at` in here would move on every call, so every Done
+    // would cost a round trip. `taskCells` is what a write uses, and it stamps them.
     const row = taskToRow(task)
     expect(row).not.toHaveProperty('created_at')
     expect(row).not.toHaveProperty('updated_at')
+    expect(JSON.stringify(taskToRow(task))).toBe(JSON.stringify(taskToRow({ ...task })))
   })
 
   it('refuses a row that cannot be identified or read', () => {

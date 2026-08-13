@@ -305,13 +305,15 @@ describe('typography and Japanese', () => {
     expect(all).not.toMatch(/text-transform:\s*(uppercase|capitalize)/)
   })
 
-  it('keeps every line-height at or above 1.5, bar the one carve-out', () => {
+  it('keeps every line-height at or above 1.5, with NO carve-out left', () => {
     expect(tokens).toMatch(/--lh-tight: 1\.5/)
     expect(tokens).toMatch(/--lh-body: 1\.6/)
-    // --lh-flat is 1, and only the hero percentage uses it, which renders digits only.
-    expect(tokens).toMatch(/--lh-flat: 1;/)
-    const flatUsers = [...all.matchAll(/([.#][\w-]+)[^{}]*\{[^}]*--lh-flat/g)].map((m) => m[1])
-    expect(flatUsers).toEqual(['.overall__percent'])
+    // There used to be a `1` carve-out for a 44px percentage. That figure is a caption beside a bar
+    // in the pinned header now, so it shares a line with Japanese and the carve-out went with the
+    // card. Nothing may DECLARE or USE a sub-1.5 line-height — comments stripped, because the token
+    // file explains the removal by naming what was removed.
+    expect(code(tokens)).not.toContain('--lh-flat')
+    expect(code(all)).not.toContain('--lh-flat')
   })
 
   it('has no font size below 13px', () => {
@@ -338,9 +340,13 @@ describe('typography and Japanese', () => {
     expect(stack.indexOf('"Yu Gothic Medium"')).toBeLessThan(stack.indexOf('"Yu Gothic"'))
   })
 
-  it('has no display or serif face, including for the hero figure', () => {
+  it('has no display or serif face, and no display type token to reach for', () => {
     expect(tokens).not.toMatch(/font-family:[^;]*serif(?!-)/)
-    expect(/\.overall__percent \{([^}]*)\}/.exec(app)[1]).not.toContain('font-family')
+    // A script or serif face on a wedding app is the obvious temptation, and the figure people
+    // actually read is a caption now — there is no display step in the scale at all, so adding
+    // one means adding a token rather than picking one up.
+    expect(tokens).not.toContain('--fs-display')
+    expect(/\.hero__percent \{([^}]*)\}/.exec(app)[1]).not.toContain('font-family')
   })
 })
 
@@ -568,12 +574,40 @@ describe('layout', () => {
     expect(primitives).toMatch(/@media \(min-width: 48rem\)/)
   })
 
-  it('sizes the hero with a clamp rather than a second breakpoint', () => {
+  it('sizes the hero photo with a clamp rather than a second breakpoint', () => {
     // The photograph is the one thing whose height depends on the viewport, and a stepped height
-    // would want breakpoints of its own. A clamp gets the same result — a band on a phone, a
-    // plate on a monitor — with the single 48rem query doing nothing but the corners.
-    expect(ruleFor(app, '.hero')).toMatch(/height: clamp\(/)
-    expect(tokens).toMatch(/--fs-display: clamp\(/)
+    // would want breakpoints of its own. A clamp gets the same result — a tenth of a phone, a
+    // little more on a monitor — with the single 48rem query doing nothing but the corners.
+    expect(tokens).toMatch(/--hero-photo: clamp\(/)
+    expect(ruleFor(app, '.hero__photo')).toMatch(/height: var\(--hero-photo\)/)
+    expect(ruleFor(app, '.hero__title')).toMatch(/font-size: clamp\(/)
+  })
+
+  it('pins the header and makes the month heading stop BELOW it', () => {
+    // Both are sticky and they meet. A month heading still offsetting by `--safe-top` parks
+    // itself under the photograph, where it is invisible until you have already scrolled past
+    // the month it names — and it has to slide UNDER the header, so its z-index stays lower.
+    const hero = ruleFor(app, '.hero')
+    expect(hero).toMatch(/position: sticky/)
+    expect(hero).toMatch(/top: 0/)
+    expect(hero).toMatch(/z-index: var\(--z-header\)/)
+
+    const month = ruleFor(app, '.plan__month')
+    expect(month).toMatch(/top: var\(--hero-height\)/)
+    expect(month).toMatch(/z-index: 1;/)
+
+    // `--hero-height` is the header's WHOLE occupied height, or the heading lands under the
+    // progress strip. Both bands and the safe area have to be in it.
+    const height = /--hero-height:([^;]*);/.exec(code(tokens))[1]
+    expect(height).toContain('--safe-top')
+    expect(height).toContain('--hero-photo')
+    expect(height).toContain('--hero-strip')
+  })
+
+  it('gives the progress strip a fixed height, because the heading offsets by it', () => {
+    // Content that sets its own height would silently desynchronise `--hero-height` from what
+    // the header actually occupies, and the month heading would overlap the strip.
+    expect(ruleFor(app, '.hero__progress')).toMatch(/height: var\(--hero-strip\)/)
   })
 
   it('drops -webkit-overflow-scrolling, which breaks sticky in the same scroller', () => {
@@ -698,19 +732,29 @@ describe('specificity', () => {
 })
 
 describe('index.html', () => {
-  it('does NOT allow the Sheets API, because the browser never holds a token', () => {
-    // The load-bearing consequence of this architecture: reads go through the script, so
-    // a view-only visitor needs no credential. Adding this host back means the security
-    // model in README is no longer true.
-    expect(csp).not.toContain('sheets.googleapis.com')
+  it('allows the Sheets API, which is where an EDITOR reads and writes', () => {
+    // The host that carries a credential. It is here because `/exec` costs 1.0–1.6s per request
+    // and this costs ~0.24s — removing it does not make the app safer, it makes every write four
+    // times slower. A view-only visitor still holds no token and never reaches it.
+    expect(csp).toContain('https://sheets.googleapis.com')
   })
 
-  it('allows both Apps Script hosts and nothing else', () => {
+  it('allows the two Apps Script hosts and the Sheets API, and nothing else', () => {
     const connect = /connect-src([^;]*);/.exec(csp)[1]
     expect(connect).toContain('https://script.google.com')
     // /exec answers with a 302 to this one, so it is not redundant.
     expect(connect).toContain('https://script.googleusercontent.com')
-    expect(connect.match(/https:\/\//g)).toHaveLength(2)
+    expect(connect).toContain('https://sheets.googleapis.com')
+    expect(connect.match(/https:\/\//g)).toHaveLength(3)
+  })
+
+  it('adds no sign-in host, because there is no sign-in', () => {
+    // The token is minted by the script from its OWN grant, so nothing here talks to
+    // accounts.google.com and no consent screen is ever shown to either editor. If one of these
+    // appears, somebody has replaced the capability link with OAuth.
+    for (const host of ['accounts.google.com', 'apis.google.com', 'gstatic.com']) {
+      expect(csp, host).not.toContain(host)
+    }
   })
 
   it('runs no third-party script and frames nothing', () => {

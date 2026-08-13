@@ -83,7 +83,6 @@ export default function TaskDetail({
   onToggle,
   onDelete,
   onSave,
-  canAddSubtask,
   onAddSubtask,
   onFieldFocus,
   editing: initiallyEditing = false,
@@ -250,7 +249,7 @@ export default function TaskDetail({
         <SubtaskList
           subtasks={subtasks}
           canEdit={canEdit}
-          canAdd={canAddSubtask && !task.promoted}
+          canAdd={!task.promoted}
           canRemove={editing}
           onToggle={onToggle}
           onDelete={onDelete}

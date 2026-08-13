@@ -125,6 +125,24 @@
   --meter-height: 8px;
   --meter-height-lg: 14px;
 
+  /* ---- The pinned header -----------------------------------------------
+     The photograph is a TENTH of the viewport and it does not scroll away, so these
+     three numbers are the app's permanent vertical cost and everything below has to
+     compose from them rather than guess.
+
+     A clamp rather than a bare 10vh: at 10vh alone a short landscape window gives 60px,
+     which cannot hold a name and a countdown, and a tall monitor gives 130px of band for
+     a photograph nobody is looking at. The floor is the real constraint — two lines of
+     type plus the safe area.
+
+     --hero-strip is the progress row's exact height, declared rather than derived,
+     because --hero-height is what the sticky month heading offsets itself by. If the
+     strip's content ever outgrows it the heading overlaps it, so the row sets this as a
+     fixed height and centres inside it. */
+  --hero-photo: clamp(4.5rem, 10vh, 7rem);
+  --hero-strip: 1.875rem;
+  --hero-height: calc(var(--safe-top) + var(--hero-photo) + var(--hero-strip));
+
   /* ---- Radii -----------------------------------------------------------
      Inner radius <= outer radius minus container padding. Never nest equal radii.
      --radius-xl is the ceiling on rectangles; fully pill-shaped rectangular
@@ -174,14 +192,11 @@
   --fs-body: 1rem; /* 16 — also the iOS no-zoom floor for inputs */
   --fs-lg: 1.125rem; /* 18 */
   --fs-xl: 1.5rem; /* 24 */
-  /* The hero percentage, container-relative so the same component fits a 288px
-     phone and the full 40rem column. The only step above --fs-xl. */
-  --fs-display: clamp(2.75rem, 15cqi, 4.25rem);
 
-  /* Nothing below 1.5 can hold Japanese: CJK glyphs fill the em box, and a tighter
-     line turns a wrapped sentence into a solid block. --lh-flat is the single
-     carve-out, for the hero figure, which renders digits exclusively. */
-  --lh-flat: 1;
+  /* Nothing below 1.5, anywhere, and there is no carve-out. CJK glyphs fill the em box, so a
+     tighter line turns a wrapped sentence into a solid block — and the app's one percentage is
+     caption-sized, on the same line as its Japanese tally. Do not add a sub-1.5 token without an
+     element that renders digits EXCLUSIVELY and never shares a line. */
   --lh-tight: 1.5;
   --lh-body: 1.65;
 
@@ -225,7 +240,11 @@
   --transition-fast: 120ms ease;
   --transition-base: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
-  /* ---- Stacking order --------------------------------------------------- */
+  /* ---- Stacking order ---------------------------------------------------
+     The header is pinned and the month headings scroll under it, so it has to outrank
+     them — `.plan__month` carries a bare `z-index: 1` inside its own group. Everything
+     that overlays the whole app still outranks the header. */
+  --z-header: 100;
   --z-fab: 200;
   --z-sheet: 300;
   --z-toast: 400;

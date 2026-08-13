@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CATALOGS, DEFAULT_LOCALE, LOCALE_LABELS, SUPPORTED } from '../src/i18n/catalogs.js'
 import { getLocale, interpolate, setLocale, t, translate } from '../src/i18n/index.js'
+import { API_ERROR } from '../src/lib/api.js'
 import { STATE, STATE_ORDER } from '../src/lib/progress.js'
 import { CATEGORIES, TEMPLATE_IDS } from '../src/lib/templates.js'
 import { ACCENTS } from '../src/lib/theme.js'
@@ -45,15 +46,11 @@ const RUNTIME_FAMILIES = [
   /* `DueLabel` builds these from the state and the day count. */
   ...['due.ago', 'due.today', 'due.tomorrow', 'due.in'],
   ...['MISSING_TITLE', 'MISSING_DUE', 'BAD_DUE'].map((code) => `error.${code}`),
-  ...[
-    'unconfigured',
-    'unauthorized',
-    'not_empty',
-    'misconfigured',
-    'busy',
-    'not_found',
-    'transient',
-  ].map((code) => `api.${code}`),
+  /* `App` builds these as `api.${board.error}`. DERIVED from the taxonomy rather than listed,
+     so deleting a code — `busy` went with the script lock — deletes its key requirement too,
+     and the unused-key scan then finds the catalog entry nobody can reach. A hand-kept copy of
+     this list is how `api.busy` survived its own error code. */
+  ...Object.values(API_ERROR).map((code) => `api.${code}`),
   'api.unconfiguredHint',
   'api.not_emptyHint',
   'api.misconfiguredHint',

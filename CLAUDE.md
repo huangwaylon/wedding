@@ -5,9 +5,15 @@ the symbol that enforces each one and the test that pins it, and explains nothin
 file carries its own reasoning in comments — WHY, not what, at the existing density, in the present
 tense, never narrating a past version.
 
-Vite + React 19, plain ESM JavaScript, vitest, no runtime dependency but `react`/`react-dom`. The
-whole backend is one container-bound Apps Script web app over one spreadsheet: `doGet` is anonymous
-and read-only, `doPost` needs `APP_KEY` in the body.
+Vite + React 19, plain ESM JavaScript, vitest, no runtime dependency but `react`/`react-dom`.
+
+**TWO BACKENDS, AND WHICH ONE IS USED DEPENDS ONLY ON WHETHER THE DEVICE HOLDS AN EDIT KEY.** A
+container-bound Apps Script web app over one spreadsheet serves the anonymous read (`doGet`, no
+credential — that is the feature) and mints a Google access token for anyone presenting `APP_KEY`
+in a POST body (`doPost`). An editor mints once an hour and then does every read and write against
+`sheets.googleapis.com` directly. Measured: `/exec` costs 1.0–1.6s before the script runs a line —
+the 302 hop plus a container start — and the Sheets API costs ~0.24s. `api.js` is the dispatcher,
+`connection.js` the token cache, `sheets.js` the REST client.
 
 `npm test` must pass before any commit; also `npm run dev|build|preview`, `npm run contrast` after
 any colour change, `npx vite-node scripts/preview.jsx` for the visual harness.
@@ -29,17 +35,33 @@ their spreadsheet.
 - **A TASK IS A TITLE, A DAY AND A TICK.** No start, no clock time, no all-day flag, no owner, no
   memo. Each one costs a control on a 393px screen and a column somebody has to understand in the
   spreadsheet, and a percentage that advances without a tick — see **Progress**.
-- **Columns are resolved by NAME on the read and by POSITION on the write.** `readTasks` indexes from
-  row 1, which is what lets `doGet` — anonymous, and forbidden from writing — read a grid whose header
-  somebody has edited. `relayout()` is the repair: on the first write, under the lock, it moves values
-  by name, rewrites the header to `TASK_COLUMNS` and clears anything past that width. Removing either
-  half breaks a live board silently, in opposite directions.
-- **Cells are formatted as text BEFORE values are written**, or `setValues` parses a timestamp into a
-  Date and the sheet's locale decides what comes back. `textCell` also escapes a leading `=`, `+`, `-`
-  or `@`, which `setValue` treats as a formula whatever the format says. Everything crossing the wire
-  is a string, and `readCell` recovers a cell the Sheets UI coerced to a Date.
+- **Columns are resolved by NAME on the read and by POSITION on the write, on BOTH sides of the
+  wire.** `tasksFrom` exists twice — in `Code.gs` for the anonymous read and in `sheets.js` for the
+  editor's — because a planner and an editor must see the same board even when somebody has moved a
+  column in the Sheets UI and no editor has written since. `relayout()` in `sheets.js` is the repair:
+  on the next write it moves values by name and rewrites the header to `TASK_COLUMNS`. It does NOT
+  clear anything past column I and must not start: every range is derived from `TASK_COLUMNS`, so a
+  stray column is invisible and cannot shift an index — and wiping it would delete the column a newer
+  deployment appends.
+- **Every write is `valueInputOption: RAW`, and `schema.js` owns every range.** RAW stores what it is
+  given, which is what retired `Code.gs`'s apostrophe escape — `setValues` parsed a leading `=`, `+`,
+  `-` or `@` as a formula whatever the number format said, and RAW does not. `ensureStructure` still
+  sets the `@` format once per column so the Sheets *UI* cannot coerce a hand-typed date, and
+  `readCell` still recovers one that was. Nothing outside `schema.js` may spell a range: a hardcoded
+  `tasks!A2:I` is a second place that knows the width and goes stale on the next append.
+- **The CLIENT stamps `created_at` and `updated_at` now**, so a device with a wrong clock can
+  backdate a row. That guarantee was given up deliberately for a write that costs one hop instead of
+  two; neither timestamp is load-bearing for anything the app computes. `created_at` is still read
+  off the existing ROW rather than from the payload, so a replayed create cannot restamp it.
+  `taskToRow` omits both — that is what makes it usable as `TaskDetail`'s change fingerprint —
+  and `taskCells` is what a write uses.
 - **Deletes are soft, confirmed and reversible**, so rows never move. `compact()` is the only hard
-  delete and must `deleteRow` **descending**, or it takes the wrong rows.
+  delete and its `deleteDimension` requests must go **descending**, or it takes the wrong rows.
+- **NO LOCK EXISTS ANY MORE, so a write may touch only the cells its edit is about.** The script held
+  a script-wide lock, which is what made rewriting untouched cells with values read a moment earlier
+  safe. Without it that is how one editor's save erases the other's. Each gesture is therefore one
+  `values:batchUpdate` naming only the affected rows, which Google applies as a unit — a cascade
+  delete included. Two people editing different rows now never contend at all.
 
 ### Time
 
@@ -63,7 +85,8 @@ their spreadsheet.
   else 0. Nothing may make a percentage advance without somebody ticking something.
 - **`percent` and `duePassed` are different claims over the same denominator and must not be merged.**
   `percent` is work done and is countable; `expected` (the mean of `duePassed`) is the share of dates
-  that have passed. The gap between them is drawn as a fill against a mark.
+  that have passed. The gap between them is drawn as a fill against a mark, in the hero's progress
+  strip — the one meter in the app.
 - **THERE IS NO PACE VERDICT.** Two tasks late plus two future tasks finished early sum to a pace of
   exactly zero, so any single figure subtracting the two reports "on schedule" with two things late.
   The graphic declines to claim it and `overdue` states the fact on its own. `test/progress.test.js`
@@ -79,7 +102,7 @@ their spreadsheet.
   ON.** `Plan` receives the FILTERED list, so a tally counted over the overdue slice of April would
   read `0/3` about a month that is nine tasks long and mostly done. The `Today` line goes with it: a
   list with holes cannot claim everything below a line is still ahead.
-- **The tally is `aria-hidden` and never coloured.** Every row states its own state and the tracker
+- **The tally is `aria-hidden` and never coloured.** Every row states its own state and the header strip
   states the same arithmetic, so "3 slash 9" inside a heading is worse than silence; a month in
   `--good` would claim something about the month rather than about its tasks.
 - **The `Today` line is a BOUNDARY, so it renders only with rows on both sides of it**, never in the
@@ -109,8 +132,9 @@ their spreadsheet.
   `parentId`: a date wheel per item would make entering five unusable on a phone, and then no
   parent's progress would advance. No meter, no urgency label, and the whole row is the toggle. The
   inline editor therefore renders no date field for one and never writes its `due` cell — the early
-  return means a date offered there would be stored unvalidated. **Deleting a parent cascades in the
-  Apps Script**, one lock and one reply; `restore` is its exact inverse.
+  return means a date offered there would be stored unvalidated. **Deleting a parent cascades in ONE
+  `values:batchUpdate`** — N separate calls can half-fail, leaving some children tombstoned and some
+  not; `restore` is its exact inverse.
 
 ### Dates are required
 
@@ -125,89 +149,80 @@ their spreadsheet.
   client refuses to SAVE must still be shown. The consequence to know: an undated task cannot be
   renamed until it is given a date, because the whole task goes in one validated write.
 
-### The endpoint
+### The two backends
 
-`Code.gs` and `api.js` state the two biggest rules in their own headers: **neither handler may throw**
-(Google's HTML error page reads as transient, so a throw on the reject path is a silent retry loop)
-and **the reply is always HTTP 200**, so the BODY is the only signal. `api.js`'s `TERMINAL` set decides
-retryability — only `busy` and `transient` may be retried. Never read `e.parameter` for the key; a
-query string reaches Google's logs.
+`Code.gs`, `connection.js`, `sheets.js` and `api.js` each state their own rules in their headers.
+The ones that cost something to rediscover:
 
-- **`send` RETRIES A NON-TERMINAL FAILURE, and something has to.** The endpoint's first request after
-  an idle spell comes back as a Sheets service error, an HTML error page or nothing at all often
-  enough that leaving the retry to the person holding the phone *was* the app's most visible defect:
-  the first save said "Nothing was saved. Try again.", and tapping Save again worked because the
-  container was warm by then. **What makes it safe is that EVERY op is idempotent**, not that a retry
-  only follows a failure proving nothing was written — a write abandoned at its deadline may be
-  committing as it is abandoned, which is exactly why that deadline exceeds `LOCK_WAIT_MS`.
-  `ATTEMPTS` and `RETRY_BUDGET_MS` bound it, because a save that never resolves is worse than one
-  that admits it failed.
-- **`create` IS AN UPSERT ON THE CLIENT'S ID, and that is what buys the retry.** The id is generated
-  in the browser, so the same create twice is one row twice; `createTasks` resolves it and rewrites
-  that row through `writeRows` rather than appending a twin nothing could distinguish from a real
-  second task. `keepCreated` is the one home for "created_at belongs to the row", shared with
-  `resolveRow`. Every other op already rewrote by id.
-
-- **`doGet` never writes** — it is anonymous, so an anonymous request must not cause a write. An
-  unbuilt spreadsheet answers `needsSetup` WITH its `schema`, or a brand-new board warns about itself;
-  an editor's first write builds the tabs. **Every mutation holds a script lock**, or two simultaneous
-  appends resolve the same next row, and **no cached row number is ever trusted**. The read carries a
-  cache-buster in its query string; the edit key never can, and rides in the POST body.
-- **The POST is `text/plain`, and its method is never forced through the 302 that `/exec` returns.**
-  `api.js` explains why, and why there is no `doOptions`.
-- **A Sheets service call is the unit of cost; arithmetic between them is free.** Each request takes ONE
-  read of each tab — the grid through `openTasks`, which folds in the layout repair — and **the reply is
-  composed from that read with the write folded into it, never from a second one**, so the whole board it
-  carries costs nothing; `test/script.test.js` pins that it says what a fresh read would.
-  `stampDeleted` writes `updated_at` and `deleted_at` as ONE span, so a cascade costs what one row does,
-  and the LOCK is what makes rewriting untouched cells safe — the values came from a read taken inside
-  it. **Ask by NAME, not by counting rows**: `openSession` settles both tabs on two `getSheetByName`
-  lookups rather than a `getSheets()` per write, and `configFrom`/`setConfig` use `getDataRange`. An
-  update is three calls on the tasks grid — read, format, write — and seven in all; an `updateMany` is
-  those same three per RUN of consecutive rows, whatever the batch's size.
-  `scripts/stub-endpoint.mjs` prints the count.
-- **Every read reports `schema: TASK_COLUMNS`, and the client compares the WHOLE list** —
-  `missingColumnsFor` in `useBoard`, which every write that touches a row goes through. Comparing only
-  the last entry is unsound: a rename leaves a stale deployment holding it. `null` means "nothing read
-  yet" and never flags; `[]` is a script that sends no schema at all.
-- **Every reply also reports `ops`, and `supports` FALLS THE OPPOSITE WAY TO `missingColumnsFor`.**
-  `schema` names columns; `ops` names what `apply` can dispatch, which is the only way a client newer
-  than a pinned deployment can tell that an op would come back `bad_op`. So an unknown schema must NOT
-  refuse a write — `missingColumnsFor(null)` is `[]`, or a cold start locks itself out before its first
-  read — while an unknown op must NOT be sent: `supports(null, op)` and `supports([], op)` are both
-  false, because not-knowing and not-having both mean "use the shape every deployment understands".
-  `OPS` must name exactly what `apply` dispatches; `test/script.test.js` posts every name in the list
-  and fails if one answers `bad_op`, and `test/board.test.js` parses `OPS` out of `Code.gs` so a rename
-  there fails in CI rather than on somebody's phone.
+- **`doGet` is anonymous and never writes.** Building tabs is a write, so an unbuilt spreadsheet
+  answers `needsSetup` and an editor's first write builds them — from the client, through
+  `ensureStructure`, which still refuses a spreadsheet that already looks like somebody's work.
+- **The `/exec` reply is always HTTP 200**, because `ContentService` cannot set a status, so the
+  BODY is the only signal. Branch on the body, never on `response.ok`. **Neither handler may throw**:
+  Google's HTML error page reads as transient, so a throw on the reject path is a silent retry loop.
+  Never read `e.parameter` for the key — a query string reaches Google's logs.
+- **The mint is `text/plain` and its method is never forced through the 302.** `text/plain` keeps it
+  a CORS simple request; a preflight would be answered with that redirect and die, which is also why
+  there is no `doOptions`. `fetch` downgrades POST to GET across the hop and Apps Script serves the
+  computed reply from the echo URL.
+- **The Sheets API states its failures properly, and that is what the retry rule reads.**
+  `RETRYABLE_STATUS` is 429 and 5xx; every other 4xx is TERMINAL and maps to `misconfigured` — a bad
+  range, a scope too narrow, a wrong id. A 401 never reaches `api.js` at all: `sheets.js` re-mints
+  and retries it **exactly once**, because a revoked grant would otherwise loop forever.
+- **`busy` is gone with the lock that produced it**, and it was never reachable anyway: the script
+  waited 25s on that lock while the client abandoned retrying at 20s, so a contended write got one
+  attempt and rolled its row back on screen. `test/api.test.js` pins that `TRANSIENT` is now the only
+  non-terminal code.
+- **`send` retries a non-terminal failure, and what makes that safe is that EVERY op is idempotent** —
+  not that a failure proves nothing was written. A write abandoned mid-flight may be committing as it
+  is abandoned. `updateTasks`, `setDeleted` and `setConfig` rewrite by id and always did; **`create`
+  is an UPSERT on the client's id**, resolving it and rewriting that row rather than appending a twin
+  nothing could distinguish from a real second task.
+- **A write returns nothing but success.** The old reply carried the whole board, which is how one
+  device picked up the other's edits; a Sheets write answers with the ranges it touched. So the
+  optimistic state IS the state until the throttled focus refresh re-reads. One round trip per save
+  instead of the two a re-read would cost.
+- **The token is a write-capable bearer credential in `localStorage`, and it outlives the key.** Up to
+  an hour, so `enableEditing` and `revokeEditing` both call `forgetToken()` — otherwise a device just
+  demoted to view-only keeps writing, and a device pasting a *different* key keeps using the old
+  one's token. `connection.js`'s **generation counter** is why a 401 recovers: a mint that began
+  before the 401 may carry the token Google just rejected, and handing it to the no-retry attempt
+  turns a blip into a hard failure.
+- **Nothing signs in, and no host may be added for it.** The token is the script's own grant, so
+  there is no consent screen for either editor and `accounts.google.com` must never appear in the
+  CSP. If it does, somebody has replaced the capability link with OAuth.
 
 ### Client state
 
 - **Every mutation goes through `run()` in `useBoard` and there is exactly one of it**, pinned by
-  `test/board.test.js`. **Writes serialise on a chain and only the LAST write in flight may replace
-  the board**: every reply carries the whole board as of that write, so an earlier one describes a
-  sheet without the later edits and accepting it wipes them off screen. `refresh` is skipped while a
-  write is pending or overlaps one — the same clobber from the other direction.
-- **The task sheets close before the write lands, and a failure has a toast of its own.** A round trip
-  is a couple of seconds and those mutations are optimistic, so waiting buys nothing — but with the panel
-  gone a rolled-back row is invisible unless said out loud. Settings WAITS: `saveConfig` has no optimistic
-  half, so closing early would show a stale zone and countdown for that whole time.
+  `test/board.test.js`. **`fail()` is the one place a failure is classified**, because a READ can also
+  be told the key is dead — an editor reads through the Sheets API and a rotated key mints nothing —
+  and a second copy is how one of the two stops flagging it. **Writes serialise on a queue**, and
+  `refresh` is skipped while a write is pending or overlaps one: a read's board predates an unsaved
+  edit, so accepting it wipes the edit off screen.
+- **Rows are settled on an EMPTY QUEUE, never by a per-op ledger.** The queue dispatches one request
+  at a time, so once it is empty nothing is outstanding and no row may still claim to be pending.
+  Tracking ids per op is how a row ends up dimmed forever.
+- **The task sheets close before the write lands, and a failure has a toast of its own.** Those
+  mutations are optimistic, so waiting buys nothing — but with the panel gone a rolled-back row is
+  invisible unless said out loud. Settings WAITS: `saveConfig` has no optimistic half, so closing
+  early would show a stale zone and countdown. **`saveConfig`, `compact` and `seedTemplate` each
+  force a refresh afterwards**, because none of them can be applied optimistically and a write no
+  longer returns a board — without it the sheet is right and the screen is not.
 - **ONE WRITE PER EDIT SESSION, and the whole task goes in it.** `TaskDetail` buffers a draft while
   Edit is on and writes once, on Done or on the row closing; per-field commits cost a round trip *each*.
   `update` rewrites the row from its payload, so a partial one blanks a cell — `parent_id` above all —
   and nothing is sent when the ROW it would write is unchanged.
 - **AN UNDISPATCHED WRITE IS FOLDED INTO THE ONE BEHIND IT, AND A DISPATCHED ONE NEVER IS.** The queue
   holds plans as DATA so they can be inspected; `foldWrite` merges only the TAIL, so a fold can never
-  reorder anything already sent. It never crosses an op boundary — `update`+`delete` is refused, which is
-  the resurrection defect arriving by another route — and cross-row folding is gated on `supports`.
-  **Only the newest caller of a folded job is handed a board**; the others get `null` and cannot accept,
-  which is what preserves last-write-wins. On failure the callers settle newest-first so the OLDEST
-  rollback lands last, that being the only snapshot predating the whole batch. A batch is atomic on
-  resolution: one row deleted by hand mid-burst fails all of it, and the screen returns to exactly the
-  pre-batch board rather than to a half-applied one nothing can describe.
-- **`api.js`'s write timeout must exceed `Code.gs`'s `LOCK_WAIT_MS`.** Below it, a contended write is
-  abandoned by the client and then committed by the script: the row rolls back, a failure toast goes up
-  for an edit that landed, and `busy` — the one code that proves nothing was written — is unreachable.
-  `test/api.test.js` reads the constant out of `Code.gs` so the two cannot drift.
+  reorder anything already sent. It never crosses an op boundary — `update`+`delete` is refused, which
+  is the resurrection defect arriving by another route. **`create` and `update` each always carry a
+  LIST**, which is what retired the `update`/`updateMany` pair and the capability check that decided
+  between them: the client is the writer now, so a batch always lands. On failure the callers settle
+  newest-first so the OLDEST rollback lands last, that being the only snapshot predating the whole
+  batch. A batch is atomic on resolution: one row deleted by hand mid-burst fails all of it, and the
+  screen returns to exactly the pre-batch board rather than to a half-applied one nothing can
+  describe.
 - **`refresh` must re-check for an overlapping write AFTER its await, not only before.** A read takes
   seconds, so a tick landing inside one is a write whose board the read predates; accepting it un-ticks
   the row until the write's own reply puts it back. `pending` cannot see a write that both started and
@@ -230,15 +245,10 @@ query string reaches Google's logs.
   so a row that also leaves the list gives no feedback at all for the app's most frequent gesture.
   `App` holds the ids ticked since the filter was chosen and keeps those rows in `shown`; the
   confirmation is the row changing in place while the chip's count drops.
-- **A control that cannot work is withheld, not left to fail.** Against an out-of-date deployment
-  every row write is refused, so the FAB goes with the add-a-subtask field — otherwise the sheet takes
-  a title, a date and a category and throws the lot away. The tick and the Edit toggle deliberately
-  stay: withholding those too leaves an editor looking at a view-only board with no explanation
-  attached to the controls that went missing.
 - **Every failed write says so**, `saveConfig`, `compact` and the template seed included. `toast.failed`
-  must stand alone and may not point at a notice: only TERMINAL codes get one, and `busy`/`transient`
-  are deliberately excluded from that set — and by the time either reaches a toast, `send` has already
-  spent its retries on it.
+  must stand alone and may not point at a notice: only TERMINAL codes get one, and `transient` is
+  deliberately excluded from that set — and by the time it reaches a toast, `send` has already spent
+  its retries on it.
 - **`canEdit` is what renders; `hasKey` is what this device can do.** The read-only view toggle moves
   only the first, so an editor previewing the guest view keeps their key, keeps Settings' revoke
   control rather than being shown a paste field, and gets back with one tap. Enabling or revoking a
@@ -262,13 +272,18 @@ query string reaches Google's logs.
 - **Refreshes on focus are throttled** (30s floor); every read spends the owner's quota. **The hash is
   stripped only when standalone**, so *Add to Home Screen* records a URL still carrying the key, and
   `manifest.webmanifest` omits `start_url` for the same reason.
-- **The snapshot's version is a DROP marker, never a migration**, and the service worker never touches
-  a cross-origin request.
+- **The snapshot's version is a DROP marker, never a migration.** **The service worker never touches a
+  cross-origin request**, and that is an explicit early `return` as the first statement of its `fetch`
+  handler rather than a property of scope — scope decides which *clients* are controlled, not which
+  *requests* are seen, so both the token endpoint and the Sheets API arrive there. A `<meta>` CSP does
+  not cover a worker's own context and Pages sends no CSP header, so a worker answering either would
+  be an uncovered proxy in front of a bearer token.
 - **Nothing written to the sheet is localized** bar one exception, a seeded template's titles, which
   are content from then on.
-- **`sheets.googleapis.com` must not appear in the CSP** — the browser never holds a Google token,
-  which is why a view-only visitor needs no credential. **There is no client-side migration code**;
-  the only layout repair is `relayout()` in `Code.gs`.
+- **`sheets.googleapis.com` IS in the CSP, and removing it does not make the app safer — it makes
+  every write four times slower.** An editor holds a token and reaches that host; a view-only visitor
+  holds nothing and never does, which is still why they need no credential. **There is no migration
+  code**; the only layout repair is `relayout()` in `sheets.js`.
 
 ## Conventions
 
@@ -347,6 +362,19 @@ carries its constraint as a comment.
   token because the backdrop is a photograph, so it is measured against the worst case the scrim
   allows — the dense end composited over a blown-out white sky. Lightening `--photo-scrim`'s end stop
   takes white type from 9.08:1 to 4.07:1 and fails.
+- **THE HEADER IS PINNED, AND IT IS TWO BANDS.** The photograph is `--hero-photo` (a clamp around
+  10vh — a bare `10vh` gives 60px in a short landscape window, which cannot hold a name and a
+  countdown), and the progress strip sits BELOW it on `--surface`. The strip is outside the
+  photograph on purpose: every measured meter figure — the fill against `--track`, the hairline that
+  identifies an empty one — is against opaque tokens, and a photograph is the one backdrop that
+  cannot be measured. **`--hero-height` is the header's whole occupied height and `.plan__month`
+  offsets its `sticky` top by it**; anything added to the header has to go into that token, or the
+  month heading lands under the strip. The strip therefore takes a FIXED height rather than letting
+  content set it. `.plan__month`'s `z-index` stays below `--z-header` so it slides under.
+- **`object-position: 50% 42%` is no longer holding faces in frame** — at a tenth of the viewport the
+  band is too short for that at any offset. It chooses the part of the picture that reads best as
+  texture behind two lines of type. Do not restate the old faces-at-40-45% reasoning; it stopped
+  being true when the band shrank.
 - **The card accordion is NOT animated.** `height` and `max-height` are layout properties, a mount is
   not a transition, and `max-height` slips past the "never transition width/height" test while being
   exactly the thrash that test forbids. The chevron carries the motion.
@@ -358,10 +386,10 @@ carries its constraint as a comment.
   narrowing the type is not an option — 16px is the no-zoom floor and is *why* the control is wide.
 - **The month heading is `position: sticky` with an OPAQUE background**, and that background is
   load-bearing: rows scroll under it. It sticks inside `.plan__group`, which is a flex column, so the
-  next month's heading pushes it out. The rule beneath it is `--line` and **never a shadow**, and the
+  next month's heading pushes it out, and it parks at `--hero-height` rather than at `--safe-top`. The rule beneath it is `--line` and **never a shadow**, and the
   wedding month's tint bleeds outward on a negative margin so every month name stays in ONE column.
-- **The FAB is the only fixed chrome**, and `.views` reserves `--fab-size` below its content, once, so
-  it can never cover the last row.
+- **The FAB and the header are the only pinned chrome**, and `.views` reserves `--fab-size` below its
+  content, once, so the button can never cover the last row.
 - **A subtask is never drawn in the sequence of dates**: no date means no position. It is a row in its
   parent's checklist, and what reaches the parent is a `3/5` tally. **No
   `-webkit-overflow-scrolling: touch` anywhere**: a no-op since iOS 13 that breaks `position: sticky`
@@ -370,9 +398,19 @@ carries its constraint as a comment.
 ## Testing
 
 `ui.test.jsx` reads the stylesheets as TEXT, so its helpers strip comments, anchor whole selectors and
-brace-count media blocks — each of those mistakes makes a test that always passes. `script.test.js`
-EXECUTES `Code.gs` against a fake Sheets service, because the write path is exactly the kind that
-answers `ok: true` while writing the wrong cell.
+brace-count media blocks — each of those mistakes makes a test that always passes.
+
+**ANY ASSERTION ABOUT AN ABSENCE MUST STRIP COMMENTS FIRST.** Every file here explains its rules by
+NAMING what it forbids — "never `USER_ENTERED`", "no `--lh-flat`", "never `e.parameter`" — so a raw
+search matches the prose and passes whatever the code does. `code()` in `ui.test.jsx` and `CODE` in
+`script.test.js` exist for exactly that, and three assertions were written wrong this way before the
+rule was worth stating.
+
+`script.test.js` EXECUTES `Code.gs` and `sheets.test.js` drives the REST client against a fake that
+parses A1 ranges for real, because both are the kind of code that succeeds while writing the wrong
+cell. `connection.test.js` covers the mint, where every failure is invisible: `/exec` always answers
+200, so a rotated key reported as a blip hides behind retries forever and a blip reported as a bad key
+sends somebody hunting for their edit link.
 
 - **A static render never runs an effect and never fires a blur**, so opening a card and every
   commit-on-blur path are invisible to `render.test.jsx` and to the harness. Every default must be
@@ -406,13 +444,24 @@ answers `ok: true` while writing the wrong cell.
   `npm install --registry=https://registry.npmjs.org`; `test/lockfile.test.js` verifies.
 - **A deployment is pinned to a version.** Editing `Code.gs` changes nothing on the live board until
   **Deploy → Manage deployments → New version**; the app detects this and refuses unsafe writes.
-- **The script must stay container-bound.** `spreadsheets.currentonly` only works for a script created
-  from the sheet via *Extensions › Apps Script*; from `script.new`, `getActive()` returns null and
-  everything answers `misconfigured`.
+- **The script must stay container-bound**, or `getActive()` returns null and everything answers
+  `misconfigured`. It has to be created from the sheet via *Extensions › Apps Script*.
+- **THE SCOPE IS `spreadsheets`, NOT `spreadsheets.currentonly`, AND THAT IS THE PRICE OF THE SPEED.**
+  `currentonly` is an Apps-Script-runtime scope: the REST API rejects a bearer token carrying only
+  it, so a usable token means the wide scope — and the wide scope reaches **every spreadsheet the
+  owning account can see**. Container binding still confines the SCRIPT; it no longer confines the
+  TOKEN. So the account owning this sheet should own nothing else, which is a standing condition the
+  code cannot enforce (README's security model states it). It also means an attached Cloud project
+  with a **published** consent screen: in Testing, authorization expires after 7 days and the symptom
+  is indistinguishable from a quota problem.
 - **`vite.config.js`** defaults `base` to `/wedding/` because project Pages sites serve from
-  `/<repo>/`; sets `test.env.VITE_SCRIPT_URL`, which `config.js` captures at module load; and proxies
-  `/wedding/__endpoint` to `127.0.0.1:5200` in DEV ONLY, which is what lets `drive.mjs` exercise the
-  real write path against `scripts/stub-endpoint.mjs` without widening the production CSP.
+  `/<repo>/`; sets `test.env.VITE_SCRIPT_URL`, which `config.js` captures at module load; and in DEV
+  ONLY proxies **two** routes to `127.0.0.1:5200` — `/wedding/__endpoint` for `/exec` and
+  `/wedding/__sheets` for the Sheets API. Both are needed because the app has two backends, and
+  `scripts/stub-endpoint.mjs` now serves both over one in-memory grid: it applies REST writes and
+  serves `doGet` from the same rows, so "was it stored" finally has an answer without a deployment.
+  `VITE_SHEETS_BASE` is the only reason `sheets.js`'s base URL is overridable, and it must never be
+  set in a shipped build.
 - **The board is world-readable and that is the design.** Do not put anything private in it.
 - **The hero is a derived crop and the camera original is not kept.** `public/hero.jpg` is 1280x1600
   at ~290KB; regenerate it from a new photo with two `sips` passes, not one — combining `-c` with

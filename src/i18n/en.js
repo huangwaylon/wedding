@@ -41,12 +41,11 @@ export default {
   'countdown.unset': 'No wedding date set',
 
   'overall.title': 'Overall progress',
-  /* The count that makes the figure above it checkable by arithmetic, and what replaced a
-     pace sentence that could be wrong — see OverallCard. No noun is counted, so this is a
-     plain string rather than a plural object. */
+  /* The count that makes the percentage beside it checkable by arithmetic, and what replaced a
+     pace sentence that could be wrong — see `Hero`. No noun is counted, so this is a plain
+     string rather than a plural object. */
   'overall.summary': '{done} of {count} done',
   'overall.expected': '{count} of {total} dates have passed',
-  'overall.overdue': { one: '{count} overdue', other: '{count} overdue' },
 
   'state.done': 'Done',
   'state.overdue': 'Overdue',
@@ -188,20 +187,16 @@ export default {
   'api.unconfigured': 'This build has no endpoint address',
   'api.unconfiguredHint':
     'VITE_SCRIPT_URL was empty when the site was built. See README.md.',
-  'api.outdated': 'Saving is paused: the spreadsheet’s script is out of date',
-  /* It must name NO specific field: a renamed column leaves a stale script holding every other
-     one, so what it cannot store is whatever this version has that it does not. Nothing that
-     touches a task is written until it is redeployed. */
-  'api.outdatedHint':
-    'It cannot store every field this version writes, so nothing on the board can be saved until it is updated — a save would drop the values it has never heard of. In the sheet: Extensions › Apps Script, paste the current Code.gs, then Deploy › Manage deployments › New version.',
   'api.unauthorized': 'The edit link was refused',
   'api.not_empty': 'That spreadsheet already has other tabs',
   'api.not_emptyHint':
     'The script refused to add its tabs to a spreadsheet somebody is using. Bind it to an empty one.',
-  'api.misconfigured': 'The script is not attached to a spreadsheet',
+  /* One code for every way the deployment itself can be wrong: a script bound to no spreadsheet,
+     a scope too narrow for the Sheets API, or an id that names nothing. All three are a setup
+     mistake rather than bad luck, so the hint points at the setup rather than offering a retry. */
+  'api.misconfigured': 'The board could not be opened',
   'api.misconfiguredHint':
-    'It has to be created from the sheet via Extensions › Apps Script. See README.md.',
-  'api.busy': 'Somebody else was saving. Try again.',
+    'The script’s spreadsheet or its permissions are not set up correctly. It has to be created from the sheet via Extensions › Apps Script, with the spreadsheets scope. See README.md.',
   'api.not_found': 'That task is no longer in the sheet.',
   'api.transient': 'Could not reach the board.',
 }

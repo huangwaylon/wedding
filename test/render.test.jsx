@@ -27,7 +27,6 @@ import FilterChips, { FILTER_ALL } from '../src/components/FilterChips.jsx'
 import Hero, { coupleTitle } from '../src/components/Hero.jsx'
 import Meter from '../src/components/Meter.jsx'
 import Notice from '../src/components/Notice.jsx'
-import OverallCard from '../src/components/OverallCard.jsx'
 import Plan from '../src/components/Plan.jsx'
 import SettingsSheet from '../src/components/SettingsSheet.jsx'
 import TaskCard from '../src/components/TaskCard.jsx'
@@ -142,69 +141,6 @@ describe('DueLabel', () => {
     expect(render(STATE.LATER, 200)).toBe('')
     expect(render(STATE.DONE, -30)).toBe('')
     expect(render(STATE.NODATE, null)).toBe('')
-  })
-})
-
-describe('OverallCard', () => {
-  const overallOf = (list) => overallProgress(rows(list))
-
-  it('shows the hero figure, the countable line and the meter', () => {
-    const html = renderToStaticMarkup(
-      <OverallCard
-        overall={overallOf([task({ id: 'a', doneAt: '2027-01-02T00:00:00.000Z' }), task({ id: 'b' })])}
-        onShowOverdue={noop}
-      />,
-    )
-    expect(html).toContain('overall__percent')
-    expect(html).toContain('role="progressbar"')
-    // The count is what makes the percentage above it checkable by arithmetic. The card claims
-    // no pace: a single figure for that can be wrong, and a count cannot.
-    expect(html).toMatch(/class="overall__count tnum">1 of 2 done</)
-  })
-
-  it('carries the on-schedule mark, which is the whole pace signal', () => {
-    // No words: the distance between the fill and the mark IS the comparison, and unlike a
-    // sentence it declines to pick a verdict it could get wrong.
-    const level = overallOf([task({ id: 'a' }), task({ id: 'b' })])
-    expect(renderToStaticMarkup(<OverallCard overall={level} onShowOverdue={noop} />)).toContain(
-      'meter__mark',
-    )
-  })
-
-  it('names the mark in the spoken value, its only other channel', () => {
-    const overall = overallOf([task({ id: 'a', due: '2026-12-01' }), task({ id: 'b' })])
-    const html = renderToStaticMarkup(<OverallCard overall={overall} onShowOverdue={noop} />)
-    expect(html).toMatch(/aria-valuetext="[^"]*1 of 2 dates have passed"/)
-  })
-
-  it('offers the overdue count as an ACTION, and only when there is one', () => {
-    const clean = overallOf([task({ id: 'a' })])
-    expect(renderToStaticMarkup(<OverallCard overall={clean} onShowOverdue={noop} />)).not.toContain(
-      'overall__alert',
-    )
-
-    const late = overallOf([task({ id: 'a', due: '2026-12-01' }), task({ id: 'b', due: '2026-12-02' })])
-    const html = renderToStaticMarkup(<OverallCard overall={late} onShowOverdue={noop} />)
-    expect(html).toContain('overall__alert')
-    expect(html).toContain('2 overdue')
-  })
-
-  it('never reads as a finished plan when nothing is finished', () => {
-    // The old model's most dangerous reading, kept as a regression: every date passed and
-    // nothing done must not report 100%.
-    const late = overallOf(
-      Array.from({ length: 8 }, (_, index) => task({ id: `t${index}`, due: '2026-12-01' })),
-    )
-    const html = renderToStaticMarkup(<OverallCard overall={late} onShowOverdue={noop} />)
-    expect(html).toMatch(/class="overall__percent">0</)
-    expect(html).toContain('8 overdue')
-  })
-
-  it('renders nothing at all for an empty board rather than a 0% card', () => {
-    // `EmptyBoard` says what an empty board means; a hero figure measuring nothing does not.
-    expect(
-      renderToStaticMarkup(<OverallCard overall={overallProgress([])} onShowOverdue={noop} />),
-    ).toBe('')
   })
 })
 
@@ -426,14 +362,15 @@ describe('the checklist inside an open row', () => {
     expect(html).toContain('subtask-add__field')
   })
 
-  it('offers no add field when the deployment cannot store a subtask', () => {
-    // The banner tells somebody their script is out of date; leaving a live field under it invites
-    // them to type a checklist that will be refused. The existing items stay fully live — an old
-    // script ticks and deletes them correctly, it just cannot write `parent_id`.
+  it('offers no add field on a PROMOTED row, which is the only thing that withholds it', () => {
+    // A row the read could not place is drawn as a task, but a child of it would be a grandchild
+    // and the next read would promote that one too — so the field would invite somebody to type a
+    // checklist that walks out of the row. The existing items stay fully live.
     const row = parented([sub('p', 1), sub('p', 2)])
     expect(render(row, { open: true })).toContain('subtask-add__field')
 
-    const withheld = render(row, { open: true, canAddSubtask: false })
+    const promoted = { ...row, promoted: true }
+    const withheld = render(promoted, { open: true })
     expect(withheld).not.toContain('subtask-add__field')
     expect(withheld.match(/<li class="subtask/g) ?? []).toHaveLength(2)
     expect(withheld).toContain('subtask__toggle')
@@ -721,6 +658,65 @@ describe('the read-only view toggle', () => {
 })
 
 describe('Hero', () => {
+  const overallOf = (list) => overallProgress(rows(list))
+  const heroWith = (overall, extra = {}) =>
+    renderToStaticMarkup(
+      <Hero
+        config={mergeConfig({ weddingDate: '2027-04-18' })}
+        nowMs={NOW}
+        canEdit
+        overall={overall}
+        onOpenSettings={noop}
+        {...extra}
+      />,
+    )
+
+  it('carries the percentage, the bar and the countable tally in the strip', () => {
+    const html = heroWith(
+      overallOf([task({ id: 'a', doneAt: '2027-01-02T00:00:00.000Z' }), task({ id: 'b' })]),
+    )
+    expect(html).toContain('hero__progress')
+    expect(html).toMatch(/class="hero__percent tnum">50%</)
+    expect(html).toContain('role="progressbar"')
+    // The tally is what makes the percentage beside it checkable by arithmetic. The app claims
+    // no pace: a single figure for that can be wrong, and a count cannot.
+    expect(html).toMatch(/class="hero__tally tnum">1 of 2 done</)
+  })
+
+  it('carries the on-schedule mark, which is the whole pace signal', () => {
+    // No words: the distance between the fill and the mark IS the comparison, and unlike a
+    // sentence it declines to pick a verdict it could get wrong.
+    expect(heroWith(overallOf([task({ id: 'a' }), task({ id: 'b' })]))).toContain('meter__mark')
+  })
+
+  it('names the mark in the spoken value, its only other channel', () => {
+    const html = heroWith(overallOf([task({ id: 'a', due: '2026-12-01' }), task({ id: 'b' })]))
+    expect(html).toMatch(/aria-valuetext="[^"]*1 of 2 dates have passed"/)
+  })
+
+  it('never reads as a finished plan when nothing is finished', () => {
+    // The old model's most dangerous reading, kept as a regression: every date passed and
+    // nothing done must not report 100%.
+    const late = overallOf(
+      Array.from({ length: 8 }, (_, index) => task({ id: `t${index}`, due: '2026-12-01' })),
+    )
+    expect(heroWith(late)).toMatch(/class="hero__percent tnum">0%</)
+  })
+
+  it('withholds the strip entirely on an empty board rather than showing a 0% bar', () => {
+    // `EmptyBoard` says what an empty board means; a bar measuring nothing does not. And the
+    // strip is part of `--hero-height`, so an empty board must not reserve it either.
+    const html = heroWith(overallOf([]))
+    expect(html).not.toContain('hero__progress')
+    expect(html).not.toContain('role="progressbar"')
+    // Withheld when the prop is absent altogether, too — the preview harness renders it that way.
+    expect(
+      renderToStaticMarkup(
+        <Hero config={mergeConfig({})} nowMs={NOW} canEdit onOpenSettings={noop} />,
+      ),
+    ).not.toContain('hero__progress')
+  })
+
   it('shows both names, the countdown and the venue', () => {
     const config = mergeConfig({
       partner1Name: 'Aoi',
@@ -754,8 +750,8 @@ describe('Hero', () => {
       <Hero config={mergeConfig({})} nowMs={NOW} canEdit onOpenSettings={noop} />,
     )
     expect(html).toContain('No wedding date set')
-    // And no placeholder date in the eyebrow: a made-up date on a wedding hero is worse
-    // than a gap.
+    // The spelled-out date went with the tall band — there is no room for it in a tenth of the
+    // viewport, and a made-up one would have been worse than the gap it left.
     expect(html).not.toContain('hero__eyebrow')
   })
 
@@ -922,9 +918,9 @@ describe('Japanese', () => {
           config={mergeConfig({ weddingDate: '2027-04-18' })}
           nowMs={NOW}
           canEdit={false}
+          overall={overall}
           onOpenSettings={noop}
         />
-        <OverallCard overall={overall} onShowOverdue={noop} />
         <Plan
           tasks={rows([task()])}
           canEdit

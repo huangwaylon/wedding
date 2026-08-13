@@ -21,6 +21,18 @@ export const STORAGE_KEYS = {
    */
   editKey: 'wd.editKey',
   editKeyRejected: 'wd.editKeyRejected',
+  /**
+   * The minted Google access token and the id of the spreadsheet it reaches, cached so a
+   * relaunch does not spend an Apps Script round trip before its first read. Both are
+   * derived from the edit key and are worthless without it; `forgetToken` drops them.
+   *
+   * The token is a WRITE-CAPABLE bearer credential with an hour of life, which is the one
+   * thing in this app's storage that is genuinely dangerous. It is here rather than in
+   * memory only because a cold launch that had to mint first would pay ~1.5s before
+   * painting — and the origin-scoping note above applies to it with more force.
+   */
+  token: 'wd.token',
+  spreadsheetId: 'wd.sheetId',
   /** Last successful read, so a cold launch paints before any network call. */
   snapshot: 'wd.snapshot',
   locale: 'wd.locale',

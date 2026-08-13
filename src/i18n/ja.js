@@ -40,7 +40,6 @@ export default {
   'overall.title': '全体の進捗',
   'overall.summary': '{count}件中{done}件完了',
   'overall.expected': '{total}件中{count}件が期限を過ぎています',
-  'overall.overdue': { other: '期限切れ{count}件' },
 
   'state.done': '完了',
   'state.overdue': '期限切れ',
@@ -158,17 +157,13 @@ export default {
 
   'api.unconfigured': 'このビルドにはエンドポイントが設定されていません',
   'api.unconfiguredHint': 'ビルド時に VITE_SCRIPT_URL が空でした。README.md を参照してください。',
-  'api.outdated': '保存を停止中：スプレッドシートのスクリプトが古いままです',
-  'api.outdatedHint':
-    'このバージョンが書き込む項目をすべて保存できないため、更新するまでボードへの保存は行いません（保存すると未知の項目が失われます）。シートの「拡張機能 › Apps Script」で最新の Code.gs を貼り付け、「デプロイ › デプロイを管理 › 新バージョン」を実行してください。',
   'api.unauthorized': '編集リンクが拒否されました',
   'api.not_empty': 'そのスプレッドシートには既に他のシートがあります',
   'api.not_emptyHint':
     '使用中のスプレッドシートにシートを追加することは拒否されました。空のファイルに紐付けてください。',
-  'api.misconfigured': 'スクリプトがスプレッドシートに紐付いていません',
+  'api.misconfigured': 'ボードを開けませんでした',
   'api.misconfiguredHint':
-    'シートの「拡張機能 › Apps Script」から作成する必要があります。README.md を参照してください。',
-  'api.busy': '他の保存が進行中でした。もう一度お試しください。',
+    'スクリプトのスプレッドシートまたは権限の設定が正しくありません。シートの「拡張機能 › Apps Script」から作成し、spreadsheets スコープを付与してください。README.md を参照してください。',
   'api.not_found': 'そのタスクはシートに存在しません。',
   'api.transient': 'ボードに接続できませんでした。',
 }

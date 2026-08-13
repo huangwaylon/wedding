@@ -26,26 +26,27 @@
  *
  * No new dependency: `WebSocket` and `fetch` are built into node.
  *
- *   1. npx vite --port 5199 --strictPort --host 127.0.0.1
- *   2. VITE_SCRIPT_URL must point at a readable board. A static JSON file under `public/` works
- *      and needs no Apps Script deployment — see the note on the reply below. `.env.local` with
- *      `VITE_SCRIPT_URL=/wedding/__dev-board.json` is the shape; both that file and the fixture
- *      are gitignored, and the fixture MUST keep that name, because the service worker precaches
- *      whatever reaches `dist/`. Its `config` is keyed the way the SHEET is — `wedding_date`,
- *      `partner1_name` — not the way the client's config object is; `parseConfig` reads
- *      `CONFIG_FIELDS`, so camelCase keys parse to nothing and the board renders with no wedding
- *      date, no countdown and no month plaque, all of which look like bugs in the app.
+ *   1. node scripts/stub-endpoint.mjs
+ *   2. npx vite --port 5199 --strictPort --host 127.0.0.1
  *   3. cp scripts/drive.mjs /tmp/cdp-wedding.mjs && node /tmp/cdp-wedding.mjs
+ *
+ * THE STUB IS NOT OPTIONAL ANY MORE. A static JSON fixture could stand in for the old endpoint
+ * because every read and write went to one URL; an editor now mints a token and writes to the
+ * Sheets API, so a fixture would leave the whole write path unexercised and every count below at
+ * zero. `.env.local` has to carry BOTH routes, and `vite.config.js` proxies them:
+ *
+ *     VITE_SCRIPT_URL=/wedding/__endpoint
+ *     VITE_SHEETS_BASE=/wedding/__sheets
  *
  * The copy in step 3 is not decoration: the sandbox refuses `connect 127.0.0.1:<port>` unless
  * the command matches an allowlist entry, and the sanctioned pattern for CDP drivers is
  * `node /tmp/cdp-*`.
  *
- * WHAT A STATIC FIXTURE CANNOT TELL YOU. The dev server answers a POST to a `.json` file with
- * the file, so a write round-trips as a valid board reply that happens to contain the value
- * before the edit. That is enough to prove the write LEFT — the optimistic row, the toast and
- * the reply being accepted are all real — and it is not enough to prove anything was stored.
- * Persistence needs a deployed script.
+ * WHAT THE STUB DOES AND DOES NOT PROVE. It applies writes to a real in-memory grid and serves
+ * `doGet` from that same grid, so "was it stored" is now a question with an answer — a write, then
+ * a refresh, then the new value on screen. What it cannot prove is anything about Google: the
+ * ranges are parsed by our own code in both directions, so a range the real API would reject can
+ * still pass here. A deployed script and a real spreadsheet are the only check for that.
  */
 
 import { spawn } from 'node:child_process'
@@ -110,17 +111,61 @@ await send('Page.enable')
 await send('Emulation.setFocusEmulationEnabled', { enabled: true })
 await send('Emulation.setDeviceMetricsOverride', { width: 393, height: 900, deviceScaleFactor: 2, mobile: true })
 /**
- * COUNT THE REQUESTS. "One write per edit session" is the claim this file exists to check, and
+ * COUNT THE WRITES. "One write per edit session" is the claim this file exists to check, and
  * counting toasts or watching the row cannot check it — the version before this batched nothing
- * and looked identical on screen while costing one ~3s round trip per field.
+ * and looked identical on screen while costing a whole round trip per field.
+ *
+ * THE OP IS NO LONGER IN THE BODY, so it is read off the RANGE instead. Writes go to the Sheets
+ * API now, whose request says what cells it touches rather than what the app meant:
+ *
+ *   append                 a create
+ *   tasks!A{r}:I{r}        a whole-row write — an update, or a create replayed in place
+ *   tasks!G{r}:H{r}        the updated_at/deleted_at span — a delete if the second cell is set,
+ *                          a restore if it is blank
+ *   config!B{r}            a settings write
+ *
+ * That is enough for every count below, AND for the one assertion that needs more than a count:
+ * the resurrection check wants "one delete-span write and no whole-row write for that row", which
+ * the ranges state exactly. The mint is excluded — it is not a write.
  */
 await send('Network.enable')
 const posts = []
+
+/** One Sheets write -> a label, or null for anything that is not a write. */
+function labelWrite(url, raw) {
+  if (url.includes('__endpoint')) return null
+  let body
+  try {
+    body = JSON.parse(raw ?? '{}')
+  } catch {
+    return null
+  }
+
+  if (url.includes(':append')) {
+    const ids = (body.values ?? []).map((line) => line[0]).join(',')
+    return `create:${ids}`
+  }
+  if (url.includes(':batchUpdate') && Array.isArray(body.data)) {
+    return body.data
+      .map((entry) => {
+        const range = entry.range ?? ''
+        const cells = entry.values?.[0] ?? []
+        if (/^config!/.test(range)) return `config:${range}`
+        const row = /(\d+)/.exec(range.split('!')[1] ?? '')?.[1] ?? '?'
+        if (/![A-F]\d*:[A-Z]/.test(range)) return `update:row${row}:${cells[0] ?? ''}:${cells[1] ?? ''}`
+        return `${cells[1] ? 'delete' : 'restore'}:row${row}`
+      })
+      .join(' + ')
+  }
+  if (url.includes(':batchUpdate')) return 'compact'
+  return null
+}
+
 ws.addEventListener('message', (event) => {
   const msg = JSON.parse(event.data)
   if (msg.method === 'Network.requestWillBeSent' && msg.params.request.method === 'POST') {
-    const body = JSON.parse(msg.params.request.postData ?? '{}')
-    posts.push(`${body.op}:${body.payload?.task?.id ?? body.payload?.id ?? ''}:${body.payload?.task?.title ?? ''}`)
+    const label = labelWrite(msg.params.request.url, msg.params.request.postData)
+    if (label) posts.push(label)
   }
 })
 
@@ -426,7 +471,8 @@ await wait(500)
  * the resurrection landed second and won: the task returned ~3s later wearing the edit, with its
  * subtasks gone.
  *
- * The only honest check is the POST list. One `delete` and NO `update` for that id.
+ * The only honest check is the write list. ONE delete-span write for that row, and NO whole-row
+ * write after it — the ranges say which is which, so a resurrecting `update` cannot hide.
  */
 await evaluate(`
   (() => {
