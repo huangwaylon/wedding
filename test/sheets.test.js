@@ -281,6 +281,22 @@ describe('every write', () => {
     await sheets.updateTasks(ID, [task('p1')])
     for (const call of api.log) expect(call.auth).toBe('Bearer token-1')
   })
+
+  it('carries a timeout, so a connection that never closes cannot wedge the app', async () => {
+    /**
+     * `fetch` has no limit of its own, and `useBoard` holds `reading` for the life of a read and
+     * `saving` for the life of a write — so one socket that never closes blocks every later
+     * refresh, or leaves a row dimmed with nothing able to settle it. Invisible from a passing
+     * suite, which is why it is pinned here rather than trusted.
+     */
+    const api = makeApi({ tabs: gridOf(FAMILY) })
+    await sheets.loadBoard(ID)
+    await sheets.updateTasks(ID, [task('p1')])
+    expect(api.fetch.mock.calls.length).toBeGreaterThan(0)
+    for (const [, init] of api.fetch.mock.calls) {
+      expect(init.signal, 'every Sheets call needs a ceiling').toBeInstanceOf(AbortSignal)
+    }
+  })
 })
 
 describe('update', () => {

@@ -22,7 +22,7 @@ import { copyFileSync, writeFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { mergeConfig } from '../src/config.js'
 import { overallProgress, withProgress } from '../src/lib/progress.js'
-import { ACCENTS } from '../src/lib/theme.js'
+import { ACCENTS, DEFAULT_ACCENT } from '../src/lib/theme.js'
 import { setLocale } from '../src/i18n/index.js'
 import { findTemplate, materialize } from '../src/lib/templates.js'
 import EmptyBoard from '../src/components/EmptyBoard.jsx'
@@ -387,10 +387,11 @@ emit('ja-sign', <SignView locale="ja" />, { locale: 'ja' })
 emit('ja', <BoardView locale="ja" />, { locale: 'ja' })
 emit('ja-closed', <BoardView locale="ja" open={false} />, { locale: 'ja' })
 
-// One file per accent, so a preset that breaks a contrast pair is visible rather than
-// merely measured.
+// One file per NON-DEFAULT accent, so a preset that breaks a contrast pair is visible rather
+// than merely measured. The default is skipped because every other page above already renders
+// it — a duplicate would be one more file to look at saying nothing new.
 for (const accent of ACCENTS) {
-  if (accent === 'indigo') continue
+  if (accent === DEFAULT_ACCENT) continue
   emit(`en-${accent}`, <BoardView locale="en" open={false} />, { accent })
 }
 

@@ -7,7 +7,7 @@ and one figure rolls that up across the whole plan.
 **The site is public and looks it**: a planner opens the URL and gets a read-only board — no sign-in, no
 password, no prompt, no dismissable gate. The two people planning the wedding open the same site with a
 secret in the URL fragment, captured once and never needed again, so nobody ever types a credential.
-[Setup](#setup) takes about five minutes; [CLAUDE.md](CLAUDE.md) holds the invariants that fail silently
+[Setup](#setup) takes about fifteen minutes; [CLAUDE.md](CLAUDE.md) holds the invariants that fail silently
 when broken.
 
 ## How progress works
@@ -85,7 +85,7 @@ be one stray tap from a renamed task.
 
 **Editing is three fields and ONE write** — title, due date, category, buffered while Edit is on and sent
 once on Done, or on the row closing mid-edit, which flushes rather than discards. Nothing is sent when the
-row would be unchanged, and every write carries the *whole* row: the script rewrites a row from its
+row would be unchanged, and every write carries the *whole* row: a write rewrites a row from its
 payload, so a partial one blanks `parent_id` and silently promotes a subtask.
 
 **A task needs a day, and it is refused rather than defaulted.** The create sheet opens with the date
@@ -123,18 +123,22 @@ One spreadsheet, two tabs — `tasks` and `config` — laid out in exactly one p
 | H | `deleted_at` | *(empty)* | A timestamp here soft-deletes the row |
 | I | `parent_id` | *(empty)* | This row's parent. Empty for a task, set for a subtask; see the promotion rule above |
 
-**Row 1 is authoritative on the read, and the write repairs it.** Reads resolve every column by its *name*
-in row 1, so an anonymous request can read a board whose header somebody reordered in the Sheets UI — and
-an anonymous request must never cause a write. The first write after that puts the header back into the
-order above, under the script's lock, carrying each value across by name and clearing the columns past the
-list's width. Every write also forces its cells to plain text, so a note of `=SUM(A:A)` stays literal and
-a date is never reformatted to the sheet's locale.
+**Row 1 is authoritative on the read, and the next write repairs it.** Reads resolve every column by its
+*name* in row 1 — on both sides of the wire, because `tasksFrom` exists once in `Code.gs` and once in
+`sheets.js` — so an anonymous request can read a board whose header somebody reordered in the Sheets UI,
+and an anonymous request never causes a write. An editor's next write puts the header back into the order
+above, carrying each value across by the name its own header cell gave it. It does **not** touch anything
+past the last column: every range is derived from the column list, so a stray column J is invisible to
+this app and cannot shift an index, and clearing it would wipe whatever a newer deployment appends. Cells
+go in with `valueInputOption: RAW` and the two tabs are built with the plain-text format, so a note of
+`=SUM(A:A)` stays literal and a date is never reformatted to the sheet's locale.
 
-**A deployment older than the bundle is refused, not worked around.** A deployment is pinned to a version,
-so the browser can be newer than the script — and an older script writes rows by looping its OWN column
-list, silently dropping a field it has never heard of. Every read reports the columns the deployed script
-knows, the client compares that against its **whole** list, and if anything is missing no write that
-touches a task leaves the device. Reads still work, so nobody is locked out meanwhile.
+**A deployment older than the bundle can no longer drop a field, because the script no longer writes.**
+A deployment is pinned to a version, so the browser can be newer than the script — but the browser holds
+the column list and does every write itself, and a stale script serves only a slightly older *read*,
+which resolves columns by name and is correct anyway. So appending a column is a Pages deploy, not an
+Apps Script one. **The scope in `appsscript.json` is the exception and does need a new script version**,
+or every write comes back 403 — see [Operations](#operations).
 
 **`due` is a calendar day, with no zone and no time.** It means that date on a calendar *at the wedding*:
 whether it has passed is decided against the board's configured `timezone`, never the device's, because
@@ -145,8 +149,9 @@ strings, so the zone is used for exactly one thing — deciding today's date.
 **Deletes are soft** — `deleted_at` is stamped and the row filtered out client-side — because a hard delete
 shifts every row below it. Deleting confirms first and is reversible from the **Deleted** list in Settings
 › Maintenance, beside the purge that empties it, which is the only hard delete. It **cascades to the
-checklist** in the script, under one lock and in one reply: from the browser it would be N requests that
-can half-fail. Restore is the exact inverse.
+checklist in one request**, a single `values:batchUpdate` naming the parent's row and each child's, which
+Google applies as a unit: a call per child would be N round trips that can half-fail, leaving some
+children tombstoned and some not. Restore is the exact inverse.
 
 ### `config` tab
 
@@ -283,7 +288,8 @@ APIs enabled, so a token it mints could not call the REST API.
 consent screen is in Testing has its authorization **expire after 7 days**, so the endpoint dies about a
 week later and the symptom is indistinguishable from a quota problem.
 
-1. **APIs & Services › OAuth consent screen**. Fill in an app name and your own address as the support
+1. **APIs & Services › OAuth consent screen** — newer consoles file the same pages under **Google Auth
+   Platform › Branding** and **› Audience**. Fill in an app name and your own address as the support
    and developer contact. **Add no scopes here** — `ScriptApp.getOAuthToken()` does not route through
    this screen.
 2. **Publish app**. With one user and a sensitive scope on an unverified app, Google shows a warning
@@ -390,7 +396,7 @@ read-only view, which the same section toggles.
 ## Deploy
 
 Pushing to `main` runs [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml): `npm ci`, `npm
-test`, build, upload a Pages artifact, deploy. It needs the two repository settings in step 5, each with
+test`, build, upload a Pages artifact, deploy. It needs the two repository settings in step 7, each with
 the tell for when it is wrong. `vite.config.js` sets `base` to `/wedding/`, because a project Pages site
 serves from `/<repo>/`; rename the repo without updating it and the page is blank with console 404s for
 `/assets/index-*.js`. Build with `VITE_BASE=/` for a user site or a custom domain — `scripts/build-sw.js`

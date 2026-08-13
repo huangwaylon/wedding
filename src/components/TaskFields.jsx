@@ -38,11 +38,12 @@ function skinOf(name) {
 /**
  * The handlers every control in this file shares.
  *
- * `onEnter` IS NOT `onBlur`, and blur must never be the commit: at ~3s a round trip, committing
- * per blur costs one per field. A caller buffers a draft and ends the session itself, so Return
- * means "I am done with the whole thing" and blur means nothing at all. `preventDefault` because
- * this markup can sit inside a `<form>`, where Return would submit it, and `blur()` because
- * dropping the iOS keyboard is what somebody pressing Return is asking for.
+ * `onEnter` IS NOT `onBlur`, and blur must never be the commit: a write is ~0.5s and they
+ * serialise, so committing per blur costs one round trip and one whole-row rewrite per field. A
+ * caller buffers a draft and ends the session itself, so Return means "I am done with the whole
+ * thing" and blur means nothing at all. `preventDefault` because this markup can sit inside a
+ * `<form>`, where Return would submit it, and `blur()` because dropping the iOS keyboard is what
+ * somebody pressing Return is asking for.
  *
  * `onFocusChange` survives for the ADD-A-SUBTASK field, which is genuinely per-field: it is
  * outside any edit session, so nothing else is holding off a reload while it has text in it.
@@ -80,9 +81,9 @@ export function draftFrom(task) {
     category: task.category,
     /**
      * Normalised on the way IN, not just on the way out. A cell can hold '2027-04-18T23:59' —
-     * the Sheets UI coerces a date, and `readCell` hands back exactly that — and `type=date`
-     * renders anything unparseable as BLANK, so without this the wheel opens empty and the first
-     * commit clears a date still visible on the row.
+     * the Sheets UI coerces a date, and `Code.gs`'s `readCell` hands the anonymous read exactly
+     * that shape — and `type=date` renders anything unparseable as BLANK, so without this the
+     * wheel opens empty and the first commit clears a date still visible on the row.
      */
     due: normalizeDay(task.due),
   }
@@ -92,7 +93,7 @@ export function draftFrom(task) {
  * The draft plus whatever it was built from -> the WHOLE task to store.
  *
  * `base` spreads before the fields so the id, `parentId`, `doneAt` and `deletedAt` survive:
- * `updateTask` writes the whole row from this payload, and one built without `parentId` blanks
+ * `updateTasks` writes the whole row from this payload, and one built without `parentId` blanks
  * the cell and silently promotes a subtask to a task. The three empty strings above it are what
  * a brand-new task needs and an existing one overrides.
  *

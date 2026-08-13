@@ -388,9 +388,9 @@
    it just has not landed yet.
 
    THE CHECK IS DELIBERATELY EXCLUDED. Dimming the whole card takes the tick with it, so the
-   confirmation of the app's highest-frequency gesture fades for the ~3s the write is in flight
-   — which reads as un-pressed, the exact opposite of what is true. The head recedes; the tick
-   somebody just made stays at full ink. */
+   confirmation of the app's highest-frequency gesture fades for as long as the write is in
+   flight — which reads as un-pressed, the exact opposite of what is true. The head recedes; the
+   tick somebody just made stays at full ink. */
 .tcard--pending .tcard__head {
   opacity: var(--dim);
 }

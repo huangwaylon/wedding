@@ -76,7 +76,7 @@ export function partitionSubtasks(tasks) {
 }
 
 /**
- * The order a checklist is read is the order it was typed. `createMany` stamps one timestamp
+ * The order a checklist is read is the order it was typed. `createTasks` stamps one timestamp
  * for a whole batch, so ties fall back to sheet order via `Array.sort`'s stability.
  */
 function byCreated(a, b) {

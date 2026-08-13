@@ -12,9 +12,9 @@
  *
  * ONE SCROLL, AND THE PHOTOGRAPH IS THE HEADER. No tabs and no fixed bar but the FAB: a phone
  * cannot spare a permanent 56px plus its safe-area inset on the vertical axis, the standing
- * notices are global (the out-of-date script is the reason a control is missing from a row, so
- * that warning has to be visible wherever the row is), and there is exactly one document
- * scroller. Returning to the photograph is one tap on the status bar.
+ * notices are global (a refused edit link and a board that could not be read are facts about the
+ * whole app, not about a row), and there is exactly one document scroller. Returning to the
+ * photograph is one tap on the status bar.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -349,9 +349,9 @@ export default function App() {
             </Notice>
           ) : null}
 
-          {/* Only a TERMINAL failure earns a persistent notice. A transient one — or a held
-              lock — is a thing to retry, and the stale banner above already covers the case
-              where there is cached data to fall back on. */}
+          {/* Only a TERMINAL failure earns a persistent notice. A transient one is a thing to
+              retry, and the stale banner above already covers the case where there is cached
+              data to fall back on. */}
           {board.error && !board.stale && isTerminal(board.error) && !SILENCED.has(board.error) ? (
             <Notice
               tone="warn"
@@ -469,8 +469,9 @@ export default function App() {
           onSaveConfig={async (partial) => {
             const ok = await board.saveConfig(partial)
             /* Settings is the one surface that WAITS for its write — it has no optimistic half —
-               so somebody is watching this one for ~3s. Without the failure branch it returned to
-               "Save" and said nothing at all, and the board's own notice was behind the sheet. */
+               so somebody is watching the button for the write plus the read after it. Without
+               the failure branch it returned to "Save" and said nothing at all, and the board's
+               own notice was behind the sheet. */
             show(ok ? t('settings.saved') : t('toast.failed'))
             return ok
           }}

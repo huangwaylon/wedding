@@ -154,7 +154,7 @@ export function PeaksIcon(props) {
    the usual shortcuts: no currency sign for Budget (a wallet), no church for Venue (a pavilion
    roof, which reads as 式場 or as a hall), no cake for Food (a steaming bowl). */
 
-export function WalletIcon(props) {
+function WalletIcon(props) {
   return (
     <svg {...base} {...props}>
       <path d="M3.5 8a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z" />
@@ -163,7 +163,7 @@ export function WalletIcon(props) {
   )
 }
 
-export function PavilionIcon(props) {
+function PavilionIcon(props) {
   return (
     <svg {...base} {...props}>
       <path d="M3 10 12 4.5 21 10" />
@@ -173,7 +173,7 @@ export function PavilionIcon(props) {
   )
 }
 
-export function GuestsIcon(props) {
+function GuestsIcon(props) {
   return (
     <svg {...base} {...props}>
       <circle cx="9.5" cy="8.5" r="3.25" />
@@ -183,7 +183,7 @@ export function GuestsIcon(props) {
   )
 }
 
-export function StorefrontIcon(props) {
+function StorefrontIcon(props) {
   return (
     <svg {...base} {...props}>
       <path d="M3 9.5 4.8 5.5h14.4L21 9.5Z" />
@@ -193,7 +193,7 @@ export function StorefrontIcon(props) {
   )
 }
 
-export function HangerIcon(props) {
+function HangerIcon(props) {
   return (
     <svg {...base} {...props}>
       <path d="M12 10.2V8.4a2.1 2.1 0 1 1 2.1 2.1" />
@@ -202,7 +202,7 @@ export function HangerIcon(props) {
   )
 }
 
-export function BowlIcon(props) {
+function BowlIcon(props) {
   return (
     <svg {...base} {...props}>
       <path d="M3.5 11.5h17a8.5 8.5 0 0 1-17 0Z" />
@@ -212,7 +212,7 @@ export function BowlIcon(props) {
   )
 }
 
-export function EnvelopeIcon(props) {
+function EnvelopeIcon(props) {
   return (
     <svg {...base} {...props}>
       <path d="M3.5 6.5h17v11h-17z" />
@@ -221,7 +221,7 @@ export function EnvelopeIcon(props) {
   )
 }
 
-export function CameraIcon(props) {
+function CameraIcon(props) {
   return (
     <svg {...base} {...props}>
       <path d="M4.5 8.5h2.7l1.5-2.2h6.6l1.5 2.2h2.7a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z" />
@@ -230,7 +230,7 @@ export function CameraIcon(props) {
   )
 }
 
-export function NotesIcon(props) {
+function NotesIcon(props) {
   return (
     <svg {...base} {...props}>
       <circle cx="8" cy="17.5" r="2.4" />
@@ -245,7 +245,7 @@ export function NotesIcon(props) {
  * ブライダルエステ. Not a hand mirror, which is a circle on a stem with a crossbar and therefore
  * the Venus symbol.
  */
-export function ScissorsIcon(props) {
+function ScissorsIcon(props) {
   return (
     <svg {...base} {...props}>
       <circle cx="6.2" cy="18" r="2.6" />
@@ -257,7 +257,7 @@ export function ScissorsIcon(props) {
 
 /** The bow is what makes this a gift rather than a cabinet: the lid seam plus the ribbon alone
     read as two drawers. */
-export function GiftIcon(props) {
+function GiftIcon(props) {
   return (
     <svg {...base} {...props}>
       <path d="M12 9C9.8 9 7.6 8.4 7.6 7 7.6 5.6 10.4 6.2 12 9Z" />
@@ -268,7 +268,7 @@ export function GiftIcon(props) {
   )
 }
 
-export function DocumentIcon(props) {
+function DocumentIcon(props) {
   return (
     <svg {...base} {...props}>
       <path d="M6.5 3.5h7L18 8v12.5H6.5Z" />
@@ -278,7 +278,7 @@ export function DocumentIcon(props) {
   )
 }
 
-export function PaperPlaneIcon(props) {
+function PaperPlaneIcon(props) {
   return (
     <svg {...base} {...props}>
       <path d="M21.5 3.5 2.5 11.9l7.7 2.5 2.4 7.6Z" />
@@ -287,7 +287,7 @@ export function PaperPlaneIcon(props) {
   )
 }
 
-export function TagIcon(props) {
+function TagIcon(props) {
   return (
     <svg {...base} {...props}>
       <path d="M4.6 10.9 11 4.5h6.3a2.2 2.2 0 0 1 2.2 2.2V13l-6.4 6.4a2 2 0 0 1-2.8 0l-5.7-5.7a2 2 0 0 1 0-2.8Z" />
@@ -305,7 +305,7 @@ export function TagIcon(props) {
  * a category IS; this is decoration on top of a known one, so it must never be the thing that
  * decides whether a category can be shown.
  */
-export const CATEGORY_ICONS = {
+const CATEGORY_ICONS = {
   budget: WalletIcon,
   venue: PavilionIcon,
   guests: GuestsIcon,

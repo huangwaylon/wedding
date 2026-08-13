@@ -6,10 +6,10 @@
  * stay identical and in the same order; `test/schema.test.js` parses the .gs file
  * and fails the build when they drift. Nothing else anywhere may name a column.
  *
- * Everything crossing the wire is a STRING. The sheet stores text (the script
- * forces the '@' number format), so a task's fields are strings here too and are
- * parsed at the point of use — `done_at` is the only one that carries meaning as
- * anything but text, and it is decoded here.
+ * Everything crossing the wire is a STRING. The sheet stores text (`ensureStructure`
+ * sets the '@' number format on every column it builds), so a task's fields are
+ * strings here too and are parsed at the point of use — `done_at` is the only one
+ * that carries meaning as anything but text, and it is decoded here.
  *
  * A TASK IS A TITLE, A DAY AND A TICK. There is no start, no clock time, no
  * all-day flag, no owner and no memo: a wedding checklist is read as "what is due
@@ -24,9 +24,9 @@
  * unambiguous and the .gs comparison is a plain array equality.
  *
  * APPEND, never rename or reorder. Appending is the only change that cannot shift an
- * existing index. `useBoard` compares this WHOLE list against the `schema` every read
- * carries — never just the last entry, which a rename leaves in place while breaking
- * everything before it.
+ * existing index: every write addresses cells by position, `relayout` repairs a header by
+ * NAME against this list, and a rename would leave every value under the old label
+ * unreachable while looking correct in the Sheets UI.
  */
 export const TASK_COLUMNS = [
   'id',
@@ -63,7 +63,7 @@ export function columnIndex(name) {
   return index
 }
 
-export function columnLetter(name) {
+function columnLetter(name) {
   return letterAt(columnIndex(name))
 }
 

@@ -11,7 +11,7 @@
 
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { ACCENTS, ACCENT_HEX, DEFAULT_ACCENT } from '../src/lib/theme.js'
+import { ACCENTS, ACCENT_HEX, BG_HEX, DEFAULT_ACCENT } from '../src/lib/theme.js'
 import { STATE } from '../src/lib/progress.js'
 
 const tokens = readFileSync('src/styles/tokens.css', 'utf8')
@@ -112,6 +112,20 @@ describe('accent presets', () => {
       const declared = [...block.matchAll(/--[a-z-]+:/g)].map((match) => match[0])
       expect(declared.sort(), accent).toEqual(['--accent-hover:', '--accent-wash:', '--accent:'])
     }
+  })
+
+  it('spells the page background the same way in all four places', () => {
+    /**
+     * `--bg`, the `theme-color` meta, and the manifest's two colours are one value in four
+     * files, and nothing at runtime reads across them: a retheme that misses one ships an app
+     * whose splash screen or status bar is a different colour from its page, which only shows
+     * up on a real installed launch. `BG_HEX` is the name they are pinned against.
+     */
+    expect(tokens.toLowerCase()).toContain(`--bg: ${BG_HEX}`)
+    expect(html.toLowerCase()).toContain(`name="theme-color" content="${BG_HEX}"`)
+    const manifest = JSON.parse(readFileSync('public/manifest.webmanifest', 'utf8'))
+    expect(manifest.background_color.toLowerCase()).toBe(BG_HEX)
+    expect(manifest.theme_color.toLowerCase()).toBe(BG_HEX)
   })
 
   it('derives the ring and the shadow rather than restating channels', () => {

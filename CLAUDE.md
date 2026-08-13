@@ -45,10 +45,19 @@ their spreadsheet.
   deployment appends.
 - **Every write is `valueInputOption: RAW`, and `schema.js` owns every range.** RAW stores what it is
   given, which is what retired `Code.gs`'s apostrophe escape — `setValues` parsed a leading `=`, `+`,
-  `-` or `@` as a formula whatever the number format said, and RAW does not. `ensureStructure` still
-  sets the `@` format once per column so the Sheets *UI* cannot coerce a hand-typed date, and
-  `readCell` still recovers one that was. Nothing outside `schema.js` may spell a range: a hardcoded
-  `tasks!A2:I` is a second place that knows the width and goes stale on the next append.
+  `-` or `@` as a formula whatever the number format said, and RAW does not. `ensureStructure` sets the
+  `@` format once per column so the Sheets *UI* cannot coerce a hand-typed date in the first place.
+  Nothing outside `schema.js` may spell a range: a hardcoded `tasks!A2:I` is a second place that knows
+  the width and goes stale on the next append.
+- **ONLY THE ANONYMOUS READ RECOVERS A DATE CELL SOMEBODY REFORMATTED BY HAND, and that asymmetry is
+  known rather than fixed.** `Code.gs`'s `readCell` renders a real Date back to `YYYY-MM-DD` against the
+  sheet's zone; the editor's `batchGet` takes the API default of `FORMATTED_VALUE`, so the same cell
+  arrives in the *sheet's locale* (`2027/04/18`) and `normalizeDay` — which only slices a clock time off
+  — reads it as no date at all. It takes someone changing a column's number format away from `@` in the
+  Sheets UI, and the row still renders, in the **No date** group. Fixing it means either decoding
+  `SERIAL_NUMBER` (a second date model, on the hot read path) or guessing at a locale; neither is worth
+  it for a cell nothing in the app produces. **A planner and an editor can therefore disagree about one
+  hand-mangled date** — the only place in the app where they see different boards.
 - **The CLIENT stamps `created_at` and `updated_at` now**, so a device with a wrong clock can
   backdate a row. That guarantee was given up deliberately for a write that costs one hop instead of
   two; neither timestamp is load-bearing for anything the app computes. `created_at` is still read
@@ -169,6 +178,13 @@ The ones that cost something to rediscover:
   `RETRYABLE_STATUS` is 429 and 5xx; every other 4xx is TERMINAL and maps to `misconfigured` — a bad
   range, a scope too narrow, a wrong id. A 401 never reaches `api.js` at all: `sheets.js` re-mints
   and retries it **exactly once**, because a revoked grant would otherwise loop forever.
+- **EVERY NETWORK PATH CARRIES A CEILING, and all three are hang-stops rather than latency budgets.**
+  `sheets.js` 20s per call, `api.js` 20s on the anonymous read, `connection.js` 15s on the mint —
+  because `fetch` has no limit of its own and `useBoard` holds `reading` for the life of a read and
+  `saving` for the life of a write. One socket that never closes therefore blocks every later refresh
+  or leaves a row dimmed with nothing able to settle it, and none of that is visible from a passing
+  suite: `test/sheets.test.js` pins the signal instead. An abort has no `.status`, so it classifies
+  as TRANSIENT and is retried, which is only sound because every op is idempotent.
 - **`busy` is gone with the lock that produced it**, and it was never reachable anyway: the script
   waited 25s on that lock while the client abandoned retrying at 20s, so a contended write got one
   attempt and rolled its row back on screen. `test/api.test.js` pins that `TRANSIENT` is now the only
@@ -474,7 +490,10 @@ sends somebody hunting for their edit link.
   as "Exit handler never called!", and a repo `.npmrc` cannot outrank an env var. Use
   `npm install --registry=https://registry.npmjs.org`; `test/lockfile.test.js` verifies.
 - **A deployment is pinned to a version.** Editing `Code.gs` changes nothing on the live board until
-  **Deploy → Manage deployments → New version**; the app detects this and refuses unsafe writes.
+  **Deploy → Manage deployments → New version**. Nothing detects that any more and nothing needs to:
+  the script only reads and mints, so a stale one serves a slightly older *read* — resolved by column
+  name, so still correct — and cannot drop a field. `appsscript.json`'s scope is the exception, and a
+  stale one there fails every write with a 403.
 - **The script must stay container-bound**, or `getActive()` returns null and everything answers
   `misconfigured`. It has to be created from the sheet via *Extensions › Apps Script*.
 - **THE SCOPE IS `spreadsheets`, NOT `spreadsheets.currentonly`, AND THAT IS THE PRICE OF THE SPEED.**

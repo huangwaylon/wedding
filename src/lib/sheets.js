@@ -53,6 +53,17 @@ const BASE_URL =
 
 const RAW = 'RAW'
 
+/**
+ * A CEILING ON ONE CALL, NOT A LATENCY BUDGET. The API answers in ~0.24s; this exists only so a
+ * connection that never closes cannot wedge the app, which is the one failure `fetch` has no
+ * limit of its own for. The cost of going without is not abstract: `useBoard` holds `reading`
+ * for the life of a read and `saving` for the life of a write, so a single hung request blocks
+ * every later refresh or leaves a row dimmed with nothing able to settle it. An abort throws
+ * with no `.status`, which `api.js` classifies as TRANSIENT and retries — sound because every op
+ * here is idempotent. `/exec` has its own ceiling, in `api.js`, for the same reason.
+ */
+const TIMEOUT_MS = 20_000
+
 /** Plain text, so the Sheets UI cannot coerce a hand-typed date into a real Date. */
 const TEXT_FORMAT = '@'
 
@@ -92,9 +103,11 @@ async function request(path, { method = 'GET', params, body, allowRetry = true }
         ...(body ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     })
   } catch (cause) {
-    // No status at all: DNS, offline, a dropped connection. Always worth retrying.
+    // No status at all: DNS, offline, a dropped connection, or the ceiling above. Always
+    // worth retrying.
     const error = new Error('Could not reach the Sheets API.')
     error.cause = cause
     throw error

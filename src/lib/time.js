@@ -108,9 +108,9 @@ export function isValidDay(day) {
 /**
  * Accept what a person or a long-lived row might hold and return the stored shape.
  *
- * The `slice(0, 10)` is not cosmetic: a cell somebody hand-edited in the Sheets UI comes
- * back through `readCell` as "2027-04-18T00:00", and rows out on live boards can carry a
- * clock time of their own. Both mean that day.
+ * The `slice(0, 10)` is not cosmetic: a cell somebody hand-edited in the Sheets UI reaches the
+ * anonymous read through `Code.gs`'s `readCell` as "2027-04-18T00:00", and rows out on live
+ * boards can carry a clock time of their own. Both mean that day.
  */
 export function normalizeDay(text) {
   const raw = String(text ?? '')

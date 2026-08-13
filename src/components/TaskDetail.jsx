@@ -17,11 +17,11 @@
  *
  * ONE WRITE PER EDIT SESSION, AND THAT IS THE POINT OF OWNING THE DRAFT HERE.
  *
- * A round trip is ~3s and writes serialise, so committing each field on its own blur costs one
- * per field nose to tail — ten seconds of a row flickering through three optimistic states for one
- * edit. The Edit toggle gives the session a beginning and an end: the draft lives exactly as long
- * as the mode does and goes out once, when Done is pressed. `draft === null` IS read mode; there
- * is no second flag that can disagree with it.
+ * A write is ~0.5s and writes serialise, so committing each field on its own blur costs one round
+ * trip per field nose to tail — a row flickering through three optimistic states for one edit, and
+ * three whole-row rewrites where one would do. The Edit toggle gives the session a beginning and an
+ * end: the draft lives exactly as long as the mode does and goes out once, when Done is pressed.
+ * `draft === null` IS read mode; there is no second flag that can disagree with it.
  *
  * WHAT IT COSTS, and how each part is paid for:
  *
@@ -112,7 +112,8 @@ export default function TaskDetail({
 
   /**
    * The one write. Not awaited: the mutation is optimistic so the row on screen is already
-   * right, and `App` reports a failure as a toast — waiting would freeze the row for ~3s.
+   * right, and `App` reports a failure as a toast — waiting would freeze the row for the
+   * ~0.5s the write is in flight.
    */
   const done = () => {
     const outcome = resolve(draft)
@@ -159,7 +160,7 @@ export default function TaskDetail({
    * holding the PRE-DELETE task. `taskFromDraft` spreads that task, so the payload carries an
    * empty `deleted_at`, and `update` rewrites the whole row from the payload. The two writes
    * serialise on one chain, so the resurrection lands second and wins: the task somebody just
-   * deleted comes back ~3s later, wearing the edit that preceded the delete and missing the
+   * deleted comes back a moment later, wearing the edit that preceded the delete and missing the
    * subtasks, whose rows the cascade had already tombstoned and which this write does not touch.
    *
    * Only reachable with an edit in the buffer — an unchanged draft resolves to `unchanged` and

@@ -16,7 +16,7 @@ import { useSyncExternalStore } from 'react'
 import { STORAGE_KEYS, readStored, writeStored } from '../config.js'
 
 /**
- * `indigo` first: it is the default, and the order is the swatch order.
+ * `tarn` first: it is the default, and the order is the swatch order.
  *
  * The default has to be separable from `--good` and `--critical` at 8px, because the accent also
  * paints `.dot--soon` — one of the three discs that carry a row's state. See the accent block in
@@ -27,6 +27,14 @@ export const ACCENTS = ['tarn', 'pine', 'rosehip']
 export const DEFAULT_ACCENT = 'tarn'
 
 /**
+ * The page background, which `tokens.css` declares as `--bg`, `index.html` as `theme-color`, and
+ * the manifest twice. Named here so all four spellings are greppable from one place and can be
+ * pinned against each other; no preset changes it, which is why it is a constant of its own
+ * rather than part of `ACCENT_HEX`.
+ */
+export const BG_HEX = '#faf8f3'
+
+/**
  * The same hexes the `[data-accent]` blocks in `tokens.css` declare.
  *
  * Not read at runtime — a swatch paints itself by scoping the preset locally, which is
@@ -34,13 +42,6 @@ export const DEFAULT_ACCENT = 'tarn'
  * each other: `test/ui.test.jsx` parses the stylesheet and fails when a preset's hex is
  * changed in one place and not the other, which is otherwise only visible to the eye.
  */
-/**
- * The page background, which `index.html` also declares as `theme-color` and the manifest
- * declares twice. Named here so the four spellings are greppable from one place; no preset
- * changes it, which is why this is a constant rather than part of `ACCENT_HEX`.
- */
-export const BG_HEX = '#faf8f3'
-
 export const ACCENT_HEX = {
   tarn: '#1c4b74',
   pine: '#23503a',
