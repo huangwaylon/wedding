@@ -80,17 +80,6 @@ export default function Hero({ config, nowMs, canEdit, overall, onOpenSettings, 
         />
         <span className="hero__scrim" aria-hidden="true" />
 
-        {/* On the photograph rather than in a bar of its own: a header band above the image
-            would cost a row of chrome to hold one rarely-pressed control. */}
-        <button
-          type="button"
-          className="hero__gear"
-          onClick={onOpenSettings}
-          aria-label={t('common.settings')}
-        >
-          <GearIcon />
-        </button>
-
         <div className="hero__text">
           <h1 className="hero__title">{coupleTitle(config, t('app.name'))}</h1>
           <p className="hero__sub">
@@ -104,6 +93,24 @@ export default function Hero({ config, nowMs, canEdit, overall, onOpenSettings, 
             {canEdit ? null : <span className="badge">{t('access.viewOnly')}</span>}
           </p>
         </div>
+
+        {/* On the photograph rather than in a bar of its own: a header band above the image would
+            cost a row of chrome to hold one rarely-pressed control.
+
+            IT MUST COME AFTER `.hero__text` IN THE DOM. Both are positioned and neither carries a
+            z-index, so paint order — and therefore hit-testing — is document order. With the gear
+            first, the full-width text block sits on top of it and swallows every tap: Settings is
+            the only route to the language, the accent, the wedding date, the read-only preview,
+            restore and the edit key, and on a phone all of it became unreachable while the button
+            stayed perfectly visible and perfectly keyboard-focusable. */}
+        <button
+          type="button"
+          className="hero__gear"
+          onClick={onOpenSettings}
+          aria-label={t('common.settings')}
+        >
+          <GearIcon />
+        </button>
       </div>
 
       {overall?.total ? (

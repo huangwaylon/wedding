@@ -152,11 +152,9 @@ export default {
   'settings.compacted': 'Deleted tasks purged.',
   'settings.saved': 'Settings saved.',
 
-  'accent.rose': 'Rose',
-  'accent.sage': 'Sage',
-  'accent.indigo': 'Indigo',
-  'accent.plum': 'Plum',
-  'accent.gold': 'Gold',
+  'accent.tarn': 'Tarn',
+  'accent.pine': 'Pine',
+  'accent.rosehip': 'Rosehip',
 
   'category.budget': 'Budget',
   'category.venue': 'Venue',

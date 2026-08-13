@@ -94,10 +94,17 @@ known, and an invented one lands straight in the overdue count and the on-schedu
 none. A row already in the sheet with an empty `due` still renders, in a **No date** group at the foot of
 the list — refusing to save a row is no reason to hide it.
 
-**The accent is one of five presets**, indigo by default, per-device rather than in the sheet. The app's
-mark is a two-peak ridgeline: `PeaksIcon`, the same shape rasterised into the Home Screen PNGs by
-`scripts/make-icons.js` and drawn inline as `index.html`'s favicon. Those PNGs bake indigo in, so
-changing the *default* accent means re-running `npm run icons`.
+**The look is unbleached canvas and lichen** — the colour of a cotton tent and of granite in the
+open, kept low-chroma because the board is read for hours at a stretch. The accent is one of three
+presets, per-device rather than in the sheet: **tarn** (a cold mountain lake, and the default),
+**pine**, and **rosehip** for whoever wants a wedding to look like a wedding. Tarn is the default for
+a measured reason rather than a taste — it is the only one an 8px state dot stays separable from both
+the green "done" and the red "overdue" in; see [CLAUDE.md](CLAUDE.md).
+
+The app's mark is a two-peak ridgeline: `PeaksIcon`, the same shape rasterised into the Home Screen
+PNGs by `scripts/make-icons.js` and drawn inline as `index.html`'s favicon. The generator reads the
+default accent out of `tokens.css`, so changing it means re-running `npm run icons` — the PNGs are
+committed.
 
 ## Data model
 

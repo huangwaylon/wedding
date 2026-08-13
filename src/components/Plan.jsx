@@ -35,7 +35,7 @@
 
 import React from 'react'
 import { STATE } from '../lib/progress.js'
-import { formatDayMonth } from '../lib/time.js'
+import { firstOfMonth, formatDayMonth, monthOf } from '../lib/time.js'
 import { useT } from '../i18n/index.js'
 import TaskCard from './TaskCard.jsx'
 
@@ -53,7 +53,7 @@ function groupByMonth(tasks) {
   const groups = []
   let current = null
   for (const task of tasks) {
-    const key = task.progress.state === STATE.NODATE ? '' : task.due.slice(0, 7)
+    const key = task.progress.state === STATE.NODATE ? '' : monthOf(task.due)
     if (!current || current.key !== key) {
       current = { key, tasks: [], done: 0 }
       groups.push(current)
@@ -121,7 +121,7 @@ export default function Plan({
           <h2
             className={`plan__month${group.key && group.key === weddingMonth ? ' plan__month--day' : ''}`}
           >
-            {group.key ? formatDayMonth(`${group.key}-01`, { locale }) : t('state.nodate')}
+            {group.key ? formatDayMonth(firstOfMonth(group.key), { locale }) : t('state.nodate')}
             {group.key && group.key === weddingMonth ? (
               <span className="plan__day">{t('plan.theDay')}</span>
             ) : null}

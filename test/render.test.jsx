@@ -101,7 +101,7 @@ describe('Meter', () => {
 
   it('draws the mark only when one is given', () => {
     expect(renderToStaticMarkup(<Meter value={0.4} label="x" />)).not.toContain('meter__mark')
-    const marked = renderToStaticMarkup(<Meter value={0.4} mark={0.6} large label="x" />)
+    const marked = renderToStaticMarkup(<Meter value={0.4} mark={0.6} label="x" />)
     expect(marked).toContain('meter__mark')
     expect(marked).toContain('left:60%')
   })

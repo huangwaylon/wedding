@@ -9,14 +9,18 @@
  * not a date must be refused rather than silently rolled into the next month.
  */
 
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   FALLBACK_TIME_ZONE,
   addDays,
   daysBetween,
   daysUntil,
+  dayOfMonth,
+  firstOfMonth,
   formatDay,
   formatDayMonth,
+  monthOf,
   isValidDay,
   isValidTimeZone,
   normalizeDay,
@@ -201,5 +205,52 @@ describe('formatting', () => {
     expect(formatDay('', { locale: 'en' })).toBe('')
     expect(formatDay('2027-02-31', { locale: 'en' })).toBe('')
     expect(formatDayMonth('', { locale: 'en' })).toBe('')
+  })
+})
+
+describe('taking a day apart', () => {
+  it('is the only place that knows where the hyphens are', () => {
+    // A `slice(0, 7)` in a component is a second file that knows the layout, and there were four
+    // such integers across three components before these existed.
+    const source = readFileSync('src/App.jsx', 'utf8')
+    for (const file of ['src/App.jsx', 'src/components/Plan.jsx', 'src/components/TaskCard.jsx']) {
+      const text = readFileSync(file, 'utf8')
+      expect(text, `${file} slices a day string`).not.toMatch(/\.slice\(0, 7\)|\.slice\(8, 10\)/)
+    }
+    expect(source).toContain('monthOf(')
+  })
+
+  it('reads the month key, the day number and the first of a month', () => {
+    expect(monthOf('2027-04-18')).toBe('2027-04')
+    expect(dayOfMonth('2027-04-18')).toBe(18)
+    expect(firstOfMonth('2027-04')).toBe('2027-04-01')
+  })
+
+  it('normalises a clock time off first, like every other helper here', () => {
+    // A cell somebody hand-edited comes back as "2027-04-18T00:00", and rows on live boards carry
+    // a clock time of their own.
+    expect(monthOf('2027-04-18T23:59')).toBe('2027-04')
+    expect(dayOfMonth('2027-04-18T23:59')).toBe(18)
+  })
+
+  it('returns an EMPTY month for junk rather than a group of its own', () => {
+    // `Plan` groups on the key, so an unusable date has to land with the undated rows — a partial
+    // key would make a heading nobody can read out of a cell somebody mistyped.
+    for (const bad of ['', '   ', 'nonsense', '2027-13-01', '2027-02-31', null, undefined]) {
+      expect(monthOf(bad), JSON.stringify(bad)).toBe('')
+    }
+  })
+
+  it('returns 0 for a day number it cannot read, never NaN', () => {
+    // NaN reaches the row's day column and renders as "NaN".
+    for (const bad of ['', 'nonsense', '2027-02-31', null]) {
+      expect(dayOfMonth(bad), JSON.stringify(bad)).toBe(0)
+    }
+  })
+
+  it('refuses a month key that is not one', () => {
+    for (const bad of ['', '2027', '2027-13', 'nope', null]) {
+      expect(firstOfMonth(bad), JSON.stringify(bad)).toBe('')
+    }
   })
 })

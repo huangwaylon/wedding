@@ -16,7 +16,7 @@
 
 import { TEMPLATES } from '../lib/templates.js'
 import { useT } from '../i18n/index.js'
-import { PeaksIcon } from './icons.jsx'
+import { ICON_SIZE, PeaksIcon } from './icons.jsx'
 
 export default function EmptyBoard({ canEdit, weddingDay, seeding, onSeed, onOpenSettings }) {
   const { t } = useT()
@@ -24,7 +24,7 @@ export default function EmptyBoard({ canEdit, weddingDay, seeding, onSeed, onOpe
   return (
     <section className="card empty">
       <p aria-hidden="true">
-        <PeaksIcon style={{ width: '2rem', height: '2rem', color: 'var(--ink-4)' }} />
+        <PeaksIcon className="empty__mark" style={ICON_SIZE.display} />
       </p>
       <h2 className="empty__title">{t('empty.title')}</h2>
 

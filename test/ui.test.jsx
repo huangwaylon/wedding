@@ -229,21 +229,26 @@ describe('the state table', () => {
 
 describe('the month sign', () => {
   it('keeps caption ink off the accent wash, which fails AA on one preset', () => {
-    // MEASURED, not stylistic: --ink-3 on plum's --accent-wash is 4.47:1 and fails outright
-    // (4.56–4.64:1 on the other four, which is no margin). The plaque's own label and its
-    // tally therefore both sit at --ink-2, 6.71:1 at worst. Kanji at low contrast is
-    // unreadable in a way Latin is not.
+    // MEASURED, not stylistic: --ink-3 on an accent wash is 4.59–4.71:1, which is no margin at
+    // 13px. The plaque's own label and its tally therefore both sit at --ink-2, 6.60:1 at worst.
+    // Kanji at low contrast is unreadable in a way Latin is not.
     expect(ruleFor(app, '.plan__tally')).toMatch(/color: var\(--ink-2\)/)
     expect(ruleFor(app, '.plan__day')).toMatch(/color: var\(--ink-2\)/)
     for (const selector of ['.plan__tally', '.plan__day']) {
       expect(ruleFor(app, selector), selector).not.toMatch(/color: var\(--ink-3\)/)
     }
-    // And the script has to be measuring the pairing, or the paragraph above stays true while
-    // the app is not.
+    // And the harness has to be measuring the pairing, or the paragraph above stays true while
+    // the app is not. It DERIVES the wash list from the `[data-accent]` blocks rather than listing
+    // them, which is why this asserts the derivation and not the names: a hand-kept list is how a
+    // preset gets added and never measured.
     const script = readFileSync('scripts/check-contrast.js', 'utf8')
     expect(script).toContain('ACCENT_WASHES')
+    expect(script).toMatch(/PRESETS\.map\(\(name\) => \[`\$\{name\}-wash`/)
+    expect(script).toMatch(/\[\.\.\.TOKENS\.matchAll\(\/\\\[data-accent=/)
     for (const accent of ACCENTS) {
-      expect(script, `${accent}-wash unmeasured`).toContain(`${accent}-wash`)
+      expect(tokens, `${accent} declares no wash`).toMatch(
+        new RegExp(`\\[data-accent="${accent}"\\][^}]*--accent-wash:`),
+      )
     }
   })
 
@@ -579,8 +584,30 @@ describe('layout', () => {
     // would want breakpoints of its own. A clamp gets the same result — a tenth of a phone, a
     // little more on a monitor — with the single 48rem query doing nothing but the corners.
     expect(tokens).toMatch(/--hero-photo: clamp\(/)
-    expect(ruleFor(app, '.hero__photo')).toMatch(/height: var\(--hero-photo\)/)
     expect(ruleFor(app, '.hero__title')).toMatch(/font-size: clamp\(/)
+  })
+
+  it('ADDS the safe-area inset to the photo band rather than eating into it', () => {
+    // Everything is `border-box`, so `height: var(--hero-photo)` with `padding-top:
+    // var(--safe-top)` takes the inset OUT of the band. On an iPhone that leaves 26px of content
+    // box: the names render under the clock, `overflow: hidden` clips the gear to a sliver, and
+    // `--hero-height` — which DOES count the inset — ends up 59px taller than the header really
+    // is, so the month heading parks in mid-air with rows scrolling through the gap.
+    //
+    // This is a weak test on purpose, and it says so: the token composition below already passed
+    // while the layout silently disagreed with it, because an iframe reports a 0px inset and no
+    // static render can see any of this. The real check is `scripts/drive.mjs`, which fakes an
+    // inset and asserts the gear's rect is inside the band's.
+    const photo = ruleFor(app, '.hero__photo')
+    expect(photo).toMatch(/height: calc\(var\(--safe-top\) \+ var\(--hero-photo\)\)/)
+    expect(photo).toMatch(/padding-top: var\(--safe-top\)/)
+  })
+
+  it('scroll-pads the document by the pinned header’s height', () => {
+    // `scrollIntoView({ block: 'nearest' })` measures against the scrollport and calls anything in
+    // the top band already visible, so a focused field there sits behind the photograph. This
+    // corrects both callers AND the UA's own focus scrolling, which no JS change can reach.
+    expect(ruleFor(base, 'html')).toMatch(/scroll-padding-top: var\(--hero-height\)/)
   })
 
   it('pins the header and makes the month heading stop BELOW it', () => {
@@ -839,10 +866,12 @@ describe('the hero', () => {
     }
     expect(tokens).toMatch(/--photo-ink: #ffffff/)
 
-    // And scripts/check-contrast.js must be modelling THIS alpha. The measurement and the
-    // token drifting apart is how the paragraph above stays true while the app is not.
+    // And scripts/check-contrast.js must be modelling THIS alpha. It now READS the last stop off
+    // the token rather than restating it, so the two cannot drift at all — which is the stronger
+    // form of what this used to assert by string-matching the number.
     const script = readFileSync('scripts/check-contrast.js', 'utf8')
-    expect(script).toContain(`const SCRIM_ALPHA = ${dense[4]}`)
+    expect(script).toMatch(/SCRIM_STOPS = \[\.\.\.token\('photo-scrim'\)/)
+    expect(script).toMatch(/SCRIM_ALPHA = Number\(DENSE\[4\]\)/)
 
     // And it has to cover the whole photograph. A scrim that loses its `inset: 0` collapses to
     // nothing and takes every measurement above with it, silently: the type is still white and
@@ -888,8 +917,13 @@ describe('the open row', () => {
   it('gives the read-mode fact a label that clears AA at 13px', () => {
     // --ink-3 is documented as the lightest ink that does. A label is information, so it does
     // not get the --ink-4 placeholder treatment.
-    expect(ruleFor(app, '.tcard__factLabel')).toMatch(/color: var\(--ink-3\)/)
-    expect(ruleFor(app, '.tcard__factLabel')).toMatch(/font-size: var\(--fs-caption\)/)
+    // The type treatment is shared with `.editor__label` — one quiet label, two places it sits —
+    // so it is declared on a group and `ruleFor`, which anchors on a single selector, cannot see
+    // it. Read the group instead: a per-class copy is exactly what this consolidated.
+    const quietLabel = /\.editor__label,\n\.tcard__factLabel \{([^}]*)\}/.exec(code(app))
+    expect(quietLabel, 'the shared quiet-label rule is missing').toBeTruthy()
+    expect(quietLabel[1]).toMatch(/color: var\(--ink-3\)/)
+    expect(quietLabel[1]).toMatch(/font-size: var\(--fs-caption\)/)
   })
 })
 

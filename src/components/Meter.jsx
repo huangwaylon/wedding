@@ -26,15 +26,14 @@ import { toPercent } from '../lib/progress.js'
  * @param {object} props
  * @param {number} props.value 0–1
  * @param {number} [props.mark] 0–1; the on-schedule reference
- * @param {boolean} [props.large]
  * @param {string} props.label an accessible name — the bar is never self-explanatory
  * @param {string} [props.valueText] overrides the spoken value
  */
-export default function Meter({ value, mark, large = false, label, valueText }) {
+export default function Meter({ value, mark, label, valueText }) {
   const percent = toPercent(value)
   return (
     <div
-      className={`meter${large ? ' meter--lg' : ''}${mark == null ? '' : ' meter--marked'}`}
+      className={`meter${mark == null ? '' : ' meter--marked'}`}
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}

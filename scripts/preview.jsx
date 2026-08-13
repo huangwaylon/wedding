@@ -29,7 +29,7 @@ import EmptyBoard from '../src/components/EmptyBoard.jsx'
 import FilterChips, { FILTER_ALL } from '../src/components/FilterChips.jsx'
 import Hero from '../src/components/Hero.jsx'
 import Plan from '../src/components/Plan.jsx'
-import { PlusIcon } from '../src/components/icons.jsx'
+import { ICON_SIZE, PlusIcon } from '../src/components/icons.jsx'
 
 const TOKYO = 'Asia/Tokyo'
 const WEDDING_DAY = '2027-04-18'
@@ -144,7 +144,7 @@ function Shell({ children, fab = false }) {
       <div className="views">{children}</div>
       {fab ? (
         <span className="fab" aria-hidden="true">
-          <PlusIcon style={{ width: '1.5em', height: '1.5em' }} />
+          <PlusIcon style={ICON_SIZE.fab} />
         </span>
       ) : null}
     </div>

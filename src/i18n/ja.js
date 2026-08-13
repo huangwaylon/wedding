@@ -126,11 +126,9 @@ export default {
   'settings.compacted': '削除済みを消しました。',
   'settings.saved': '設定を保存しました。',
 
-  'accent.rose': '薔薇',
-  'accent.sage': '若草',
-  'accent.indigo': '藍',
-  'accent.plum': '紫根',
-  'accent.gold': '山吹',
+  'accent.tarn': '湖',
+  'accent.pine': '松',
+  'accent.rosehip': '野薔薇',
 
   'category.budget': '予算',
   'category.venue': '会場',

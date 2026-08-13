@@ -8,6 +8,24 @@
  * keeps the glyph out of the accessibility tree.
  */
 
+/**
+ * The three sizes anything outside this file is allowed to ask for, so a glyph size is a NAME
+ * rather than a pair of literals repeated at five call sites.
+ *
+ * `em` for the two that sit inside type — they track the control's own size, which is the whole
+ * reason the icons are em-relative — and `rem` for the one decorative glyph, which sits in no
+ * control and must not shrink with the caption it happens to be near.
+ *
+ *   INLINE  beside 13px label text, in a `.btn--sm` or a row control
+ *   FAB     the one 24px glyph, in the floating action button
+ *   DISPLAY the empty board's wordless mark
+ */
+export const ICON_SIZE = {
+  inline: { width: '1em', height: '1em' },
+  fab: { width: '1.5em', height: '1.5em' },
+  display: { width: '2rem', height: '2rem' },
+}
+
 const base = {
   width: '1.25em',
   height: '1.25em',

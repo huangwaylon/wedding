@@ -56,7 +56,7 @@ import {
   fieldErrors,
   taskFromDraft,
 } from './TaskFields.jsx'
-import { PencilIcon } from './icons.jsx'
+import { ICON_SIZE, PencilIcon } from './icons.jsx'
 
 /**
  * The row this task would be written as, as one comparable string.
@@ -284,7 +284,7 @@ export default function TaskDetail({
               t('common.editDone')
             ) : (
               <>
-                <PencilIcon style={{ width: '1em', height: '1em' }} />
+                <PencilIcon style={ICON_SIZE.inline} />
                 {t('common.edit')}
               </>
             )}

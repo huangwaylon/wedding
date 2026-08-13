@@ -184,8 +184,8 @@ const shot = async (name) => {
 
 const report = {}
 report.rows = await evaluate(`document.querySelectorAll('.tcard').length`)
-report.headline = await evaluate(`document.querySelector('.overall__percent')?.textContent`)
-report.count = await evaluate(`document.querySelector('.overall__count')?.textContent`)
+report.headline = await evaluate(`document.querySelector('.hero__percent')?.textContent`)
+report.count = await evaluate(`document.querySelector('.hero__tally')?.textContent`)
 report.fab = await evaluate(`Boolean(document.querySelector('.fab'))`)
 report.months = await evaluate(`[...document.querySelectorAll('.plan__month')].map(n=>n.textContent)`)
 report.stickyMonth = await evaluate(`getComputedStyle(document.querySelector('.plan__month')).position`)
@@ -397,8 +397,26 @@ await shot('04-sheet')
 await evaluate(`document.querySelector('.sheet .btn--secondary').click()`)
 await wait(400)
 
-// The overdue button: does it filter and scroll?
-await evaluate(`document.querySelector('.overall__alert')?.click()`)
+/**
+ * THE OVERDUE FILTER. There is no overdue BUTTON any more — the chip is the control, which is the
+ * whole claim behind deleting the card that used to hold one.
+ *
+ * `filterBefore` is recorded so this cannot pass by accident: the previous version clicked
+ * `.overall__alert`, which stopped existing, and optional-chained into a no-op — so it reported
+ * the chip that was already pressed and the unfiltered row count, and looked like a pass.
+ */
+report.overdueChip = await evaluate(`
+  (() => {
+    const chip = [...document.querySelectorAll('.chip')].find(c => c.querySelector('.chip__count--alert'))
+    if (!chip) return null
+    return { text: chip.textContent, pressed: chip.getAttribute('aria-pressed'),
+             alertInk: getComputedStyle(chip.querySelector('.chip__count')).color }
+  })()
+`)
+report.filterBefore = await evaluate(`document.querySelector('.chip[aria-pressed=true]')?.textContent`)
+await evaluate(`
+  [...document.querySelectorAll('.chip')].find(c => c.querySelector('.chip__count--alert'))?.click()
+`)
 await wait(600)
 report.filterAfterOverdue = await evaluate(`document.querySelector('.chip[aria-pressed=true]')?.textContent`)
 report.rowsAfterFilter = await evaluate(`document.querySelectorAll('.tcard').length`)
@@ -541,6 +559,63 @@ report.docOverflow = await evaluate(`
       if (r.width && r.right > document.documentElement.clientWidth + 1) bad.push(el.className || el.tagName)
     }
     return [...new Set(bad)].slice(0, 12)
+  })()
+`)
+
+/**
+ * THE GEAR IS REACHABLE. Two positioned siblings with no z-index paint in DOM order, so putting
+ * the full-width text block after the button makes the button unhittable while leaving it
+ * perfectly visible AND perfectly keyboard-focusable — the worst possible failure profile, and one
+ * that no screenshot and no static render can see. Settings is the only route to the language, the
+ * accent, the wedding date, the read-only preview, restore and the edit key.
+ */
+report.gearReachable = await evaluate(`
+  (() => {
+    const gear = document.querySelector('.hero__gear')
+    if (!gear) return 'no gear'
+    const r = gear.getBoundingClientRect()
+    const at = (x, y) => document.elementFromPoint(x, y)?.closest('.hero__gear') ? 'gear' : 'blocked'
+    // Sampled INSIDE the circle. The corners of a fully-rounded bounding box are not part of the
+    // control, so a hit test there correctly reports whatever sits behind it -- asserting on them
+    // would fail forever for the wrong reason. (No backticks in here: this string IS a template
+    // literal, and one would close it.)
+    const inset = r.width * 0.15
+    return {
+      centre: at(r.left + r.width / 2, r.top + r.height / 2),
+      nearTop: at(r.left + r.width / 2, r.top + inset),
+      nearLeft: at(r.left + inset, r.top + r.height / 2),
+      nearBottom: at(r.left + r.width / 2, r.bottom - inset),
+      size: [Math.round(r.width), Math.round(r.height)],
+    }
+  })()
+`)
+
+/**
+ * THE SAFE-AREA GEOMETRY, with a faked inset — an iframe and a headless viewport both report 0px,
+ * so `--safe-top` is the one token whose consequences the harness structurally cannot show.
+ *
+ * `border-box` means a `padding-top` on a fixed-height band comes OUT of the band: the names end
+ * up under the clock, `overflow: hidden` clips the gear, and `--hero-height` (which counts the
+ * inset) exceeds the header's real height, so the sticky month heading parks in mid-air.
+ */
+report.safeArea = await evaluate(`
+  (() => {
+    const style = document.createElement('style')
+    style.textContent = ':root { --safe-top: 59px }'
+    document.head.appendChild(style)
+    const band = document.querySelector('.hero__photo').getBoundingClientRect()
+    const gear = document.querySelector('.hero__gear').getBoundingClientRect()
+    const title = document.querySelector('.hero__title').getBoundingClientRect()
+    const header = document.querySelector('.hero').getBoundingClientRect()
+    const month = getComputedStyle(document.querySelector('.plan__month')).top
+    style.remove()
+    return {
+      bandHeight: Math.round(band.height),
+      gearInsideBand: gear.bottom <= band.bottom + 0.5 && gear.top >= band.top - 0.5,
+      titleClearsInset: Math.round(title.top) >= 59,
+      monthTop: month,
+      headerBottom: Math.round(header.bottom),
+    }
   })()
 `)
 

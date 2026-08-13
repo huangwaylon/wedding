@@ -15,6 +15,13 @@ html {
   /* Kinsoku shori: keeps 、。」 from being orphaned at the start of a line.
      Harmless for Latin, load-bearing for Japanese. */
   line-break: strict;
+  /* THE HEADER IS PINNED, SO THE TOP OF THE SCROLLPORT IS NOT THE TOP OF WHAT CAN BE SEEN.
+     `scrollIntoView({ block: 'nearest' })` measures against the scrollport and calls anything in
+     that top band already visible — so a date field or an add-a-subtask field there is left sitting
+     behind the photograph. This corrects both callers at once AND the UA's own focus scrolling,
+     which no JS change can reach. It has to be `--hero-height` for the same reason `.plan__month`
+     uses it: that token is the header's whole occupied height. */
+  scroll-padding-top: var(--hero-height);
 }
 
 body {
@@ -141,16 +148,6 @@ hr {
   border: 0;
   margin: var(--space-4) 0;
   background-color: var(--line);
-}
-
-code,
-kbd,
-samp,
-pre {
-  font-family: var(--font-mono);
-  /* Relative, but floored: 0.9375em inside a 13px hint is 12.19px, and 12px
-     kanji is mush. Monospace here only ever nests inside caption-sized text. */
-  font-size: max(var(--fs-caption), 0.9375em);
 }
 
 [hidden] {

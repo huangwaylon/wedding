@@ -24,13 +24,28 @@
 
 import { deflateSync } from 'node:zlib'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const SIZES = [180, 192, 512]
 const OUT = join('public', 'icons')
 
-/** --accent (indigo) and --accent-text from tokens.css. */
-const BG = [0x3d, 0x4e, 0x8b]
+/**
+ * The default accent, READ OFF `tokens.css` rather than retyped as a byte triple.
+ *
+ * That triple was the one spelling of the accent nothing pinned: `test/ui.test.jsx` checks
+ * `tokens.css` against `ACCENT_HEX` in `theme.js`, and this file sat outside both — so a retheme
+ * would leave the app one colour and its Home Screen icon another. It parses the stylesheet
+ * rather than importing `theme.js` because that module reaches `import.meta.env`, which plain
+ * node does not have; `scripts/check-contrast.js` reads the palette the same way.
+ *
+ * The PNGs are committed, so re-run `npm run icons` after changing the default.
+ */
+const ROOT = /:root\s*\{([\s\S]*?)\n\}/.exec(
+  readFileSync('src/styles/tokens.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''),
+)[1]
+const ACCENT = /--accent:\s*#([0-9a-f]{6})/i.exec(ROOT)[1]
+const BG = [0, 2, 4].map((i) => parseInt(ACCENT.slice(i, i + 2), 16))
 const FG = [0xff, 0xff, 0xff]
 
 /** 3x3 per pixel. Enough that a 1px stroke at 180px has no visible stair-stepping. */

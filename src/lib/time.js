@@ -125,6 +125,34 @@ function pad(number) {
 }
 
 /**
+ * The three ways the app takes a day string apart, and THE ONLY PLACE THAT KNOWS ITS LAYOUT.
+ *
+ * Nothing outside this module may index into `YYYY-MM-DD`. A `slice(0, 7)` in a component is a
+ * second file that knows where the hyphens are, and there is no reason for one to: everything
+ * above compares two day strings, prints one, or groups by month. All three go through here, and
+ * all three normalise first, so a cell holding `2027-04-18T00:00` behaves like the day it means.
+ *
+ * `monthOf` returns '' for anything unusable, which is what an undated row wants — `Plan` groups on
+ * the empty key, so a bad date lands in the same group as no date rather than in a group of its own.
+ */
+export function monthOf(day) {
+  const normalized = normalizeDay(day)
+  return normalized ? normalized.slice(0, 7) : ''
+}
+
+/** The day of the month as a NUMBER, for the column a row prints it in. 0 if unusable. */
+export function dayOfMonth(day) {
+  const parts = parseDay(normalizeDay(day))
+  return parts ? parts.day : 0
+}
+
+/** A 'YYYY-MM' key back to a real day, so it can be formatted. '' if unusable. */
+export function firstOfMonth(monthKey) {
+  const candidate = `${String(monthKey ?? '').trim()}-01`
+  return isValidDay(candidate) ? candidate : ''
+}
+
+/**
  * Calendar-day arithmetic on a day string. Zone-free on purpose: adding a day to a
  * date means the next date on the calendar, which is what a template offset ("90
  * days before the wedding") means, and it stays true across a DST boundary where

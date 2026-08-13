@@ -26,7 +26,7 @@
  */
 
 import { STATE } from '../lib/progress.js'
-import { formatDay } from '../lib/time.js'
+import { dayOfMonth, formatDay } from '../lib/time.js'
 import { useCategoryLabel, useT } from '../i18n/index.js'
 import DoneToggle from './DoneToggle.jsx'
 import DueLabel from './DueLabel.jsx'
@@ -105,7 +105,7 @@ export default function TaskCard({
         {/* The dash keeps the slot occupied, so the titles down a month stay in one column
             rather than jumping left on the one task nobody dated. */}
         <span className="tcard__day tnum">
-          {dated ? Number(task.due.slice(8, 10)) : t('common.dash')}
+          {dated ? dayOfMonth(task.due) : t('common.dash')}
         </span>
 
         <span className="tcard__body">

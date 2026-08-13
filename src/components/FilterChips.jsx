@@ -7,7 +7,7 @@
  * changes is one somebody has to re-read every time.
  */
 
-import { STATE_ORDER } from '../lib/progress.js'
+import { STATE, STATE_ORDER } from '../lib/progress.js'
 import { useT } from '../i18n/index.js'
 
 export const FILTER_ALL = 'all'
@@ -34,7 +34,13 @@ export default function FilterChips({ counts, total, filter, onFilter }) {
             onClick={() => onFilter(name)}
           >
             {name === FILTER_ALL ? t('filter.all') : t(`state.${name}`)}
-            <span className="chip__count">{count}</span>
+            <span
+              className={`chip__count${name === STATE.OVERDUE ? ' chip__count--alert' : ''}${
+                count === 0 ? ' chip__count--empty' : ''
+              }`}
+            >
+              {count}
+            </span>
           </button>
         )
       })}

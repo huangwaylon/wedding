@@ -11,7 +11,7 @@
 
 import { useT } from '../i18n/index.js'
 import BottomSheet from './BottomSheet.jsx'
-import { ChevronRightIcon, UndoIcon } from './icons.jsx'
+import { ChevronRightIcon, ICON_SIZE, UndoIcon } from './icons.jsx'
 
 export function ConfirmDeleteSheet({ task, onConfirm, onClose }) {
   const { t } = useT()
@@ -30,9 +30,10 @@ export function ConfirmDeleteSheet({ task, onConfirm, onClose }) {
         </>
       }
     >
-      <p className="caption">
+      <p className="notice__body">
         {t('confirm.deleteBody', { title: task.title })}
-        {/* The delete cascades server-side under one lock, so saying so is not optional. */}
+        {/* The delete takes the whole checklist with it, in one write, so saying so is not
+            optional — the count is the only warning anybody gets. */}
         {task.progress?.tally ? (
           <> {t('confirm.deleteSubtasks', { count: task.progress.tally.total })}</>
         ) : null}
@@ -60,7 +61,7 @@ export function DeletedList({ tasks, onRestore }) {
               className="btn btn--secondary btn--sm"
               onClick={() => onRestore(task.id)}
             >
-              <UndoIcon style={{ width: '1em', height: '1em' }} />
+              <UndoIcon style={ICON_SIZE.inline} />
               {t('common.restore')}
             </button>
           </li>

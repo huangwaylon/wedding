@@ -22,9 +22,9 @@ import { STORAGE_KEYS, readStored, writeStored } from '../config.js'
  * paints `.dot--soon` — one of the three discs that carry a row's state. See the accent block in
  * `tokens.css`.
  */
-export const ACCENTS = ['indigo', 'rose', 'sage', 'plum', 'gold']
+export const ACCENTS = ['tarn', 'pine', 'rosehip']
 
-export const DEFAULT_ACCENT = 'indigo'
+export const DEFAULT_ACCENT = 'tarn'
 
 /**
  * The same hexes the `[data-accent]` blocks in `tokens.css` declare.
@@ -34,12 +34,17 @@ export const DEFAULT_ACCENT = 'indigo'
  * each other: `test/ui.test.jsx` parses the stylesheet and fails when a preset's hex is
  * changed in one place and not the other, which is otherwise only visible to the eye.
  */
+/**
+ * The page background, which `index.html` also declares as `theme-color` and the manifest
+ * declares twice. Named here so the four spellings are greppable from one place; no preset
+ * changes it, which is why this is a constant rather than part of `ACCENT_HEX`.
+ */
+export const BG_HEX = '#faf8f3'
+
 export const ACCENT_HEX = {
-  indigo: '#3d4e8b',
-  rose: '#8f2f50',
-  sage: '#385844',
-  plum: '#6b3a6e',
-  gold: '#6b4d17',
+  tarn: '#1c4b74',
+  pine: '#23503a',
+  rosehip: '#7f2b60',
 }
 
 function getAccent() {
@@ -69,7 +74,7 @@ export function syncDocumentAccent(name = getAccent()) {
   // The status bar behind an installed app's notch. It tracks --bg, which no
   // preset changes, so this only matters on first paint.
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', '#faf7f4')
+  if (meta) meta.setAttribute('content', BG_HEX)
 }
 
 /**

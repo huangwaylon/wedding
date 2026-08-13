@@ -288,12 +288,15 @@ The ones that cost something to rediscover:
 ## Conventions
 
 - **One helper, one home.** `readStored`/`writeStored` are the only `localStorage` touches;
-  `schema.js` owns column names, `templates.js` owns `CATEGORIES`, `time.js` is the only file that
-  resolves a zone, `run()` the only mutation wrapper, `DoneToggle` the only done control, `Notice` the
-  only title/body/action block, `DueLabel` the only place a date's nearness is worded, and
-  `TaskFields` the only task field markup — the inline editor and the create sheet render the same
-  controls through it, differing by a `skin` prop and by when they commit. **Export only what
-  something outside the file uses.**
+  `schema.js` owns column names AND every A1 range; `templates.js` owns `CATEGORIES`; `time.js`
+  resolves every zone and is **the only file that knows the layout of a day string** — `monthOf`,
+  `dayOfMonth` and `firstOfMonth` exist so nothing else indexes into `YYYY-MM-DD`; `icons.jsx` owns
+  `ICON_SIZE`, so a glyph size is a name rather than a pair of literals at five call sites;
+  `theme.js` owns `BG_HEX` and `ACCENT_HEX`; `run()` is the only mutation wrapper and `fail()` the
+  only classifier; `DoneToggle` the only done control, `Notice` the only title/body/action block,
+  `DueLabel` the only place a date's nearness is worded, and `TaskFields` the only task field markup.
+  **No design token may be named in JSX** — the empty board's mark was the last one, and it has a
+  class now. **Export only what something outside the file uses.**
 - **No new npm dependencies** without a clear reason — one is also a CSP decision, and
   `test/lockfile.test.js` pins the list. **Add a host, update the CSP** in `index.html`, and never put
   a real secret in a `VITE_` variable: Vite inlines them into the shipped bundle.
@@ -337,16 +340,44 @@ carries its constraint as a comment.
   including the couple's names. Uppercase belongs in JS with `toLocaleUpperCase`, never in CSS:
   `text-transform` is a no-op on kana and would fire on the Latin half alone. **A row's day does NOT
   go through `Intl`**: `{ day: 'numeric' }` in `ja` returns `18日`, which wraps inside the 2rem
-  column. Nothing below 13px; weights `400|500|600`.
-- **`--ink-3` MUST NOT SIT ON AN ACCENT WASH.** 4.47:1 under `plum`, which fails AA, and 4.56–4.64:1
-  on the other four, which is no margin. The wedding month's plaque is the only rule consuming
-  `--accent-wash` and its label and tally are both `--ink-2` (6.71:1 at worst).
-  `scripts/check-contrast.js` covers all five; kanji at low contrast is unreadable in a way Latin is
-  not.
-- **The DEFAULT accent is `indigo`, and that is a legibility decision.** The accent paints
-  `.dot--soon`, an 8px disc carrying a row's whole state, so the default must be separable from
-  `--good` and `--critical` at that size — a green default is two mid-dark greens of one hue family.
-  `make-icons.js` hardcodes the same hex, so changing it means re-running `npm run icons`.
+  column. Weights `400|500|600`.
+- **FOUR TYPE STEPS: 13 / 16 / 18 / 24, and nothing below 13.** There is deliberately no 14 — 13 and
+  14 are not distinguishable in a UI, and everywhere the two met, weight and ink were already carrying
+  the difference. Anything reaching for 14 is either a caption or body text; decide which.
+- **One value per idea, and the tokens say which.** `--ring-width` and `--dim` each replaced a pair a
+  couple of units apart doing the same job in two files; `--space-hair` is the pill's 1px of optical
+  padding, the one value deliberately off the 4px scale; `--sheet-height` is both sheet maxima.
+  `--fs-label`, `--radius-xs`, `--good-wash`, `--neutral-wash`, `--meter-height-lg`, `--font-mono`,
+  `--lh-flat`, `--fs-display` and the whole `--danger` family are gone — a red is a red, and
+  `.btn--danger` names a destructive control rather than a colour.
+- **`--ink-3` MUST NOT SIT ON AN ACCENT WASH** — 4.59–4.71:1, which is no margin at 13px. The
+  wedding month's plaque is the only rule consuming `--accent-wash` and its label and tally are both
+  `--ink-2` (6.60:1 at worst). Kanji at low contrast is unreadable in a way Latin is not.
+- **`--line-input` IS MEASURED ON ALL THREE SURFACES, and that is not pedantry.** It exists only for
+  WCAG 1.4.11's 3:1 control boundary, and `.chip` and `.btn--secondary` both swap their fill to
+  `--sunken` on hover while keeping it — so the boundary on the app's primary filter controls is only
+  as good as its worst backdrop. It went unmeasured for as long as it existed and was failing:
+  2.65:1 on sunken, 2.91:1 on bg. Now 4.00 / 3.77 / 3.38, with a harness row for each.
+- **THE OVERDUE CHIP'S COUNT IS `--critical`, THE ONE COUNT THAT IS NOT `--ink-3`.** Everything else
+  in that row is a statistic; this is the number somebody has to act on, and at `--ink-3` it was the
+  quietest text on the row beside "Later 34", which read louder purely because 34 is bigger than 8.
+  Within the one-coloured-mark budget because the word "Overdue" is immediately beside it, and
+  withheld at zero — `--empty` marks that — so a clean board carries no red 0.
+- **THE DEFAULT ACCENT IS `tarn`, AND IT IS THE ONLY ONE THAT MAY BE.** The accent paints
+  `.dot--soon`, an 8px disc carrying a row's whole state, so the default has to be separable at that
+  size from BOTH `--good` and `--critical`. Measured in OKLab (0.15 is comfortable at 8px):
+  tarn 0.198/0.202, pine 0.134/0.176, rosehip 0.260/0.128. A green default collides with the green
+  "done" and a magenta one with the red "overdue"; a cold water blue is the one family clear of both.
+  **Whoever picks pine or rosehip accepts a `soon` dot they may not separate** — survivable only
+  because the dot is never the only channel. Never add a preset without measuring it, and **never
+  mute `--good` to match the neutrals**: at a muted `#35762f` the default falls to 0.155, closer than
+  the sage preset that was rejected for exactly this. `--good` and `--critical` are SIGNALS, not
+  theme; the neutrals carry the outdoors reading instead.
+- **`make-icons.js` and `scripts/check-contrast.js` both PARSE `tokens.css`** rather than restating
+  it. Each used to hold its own copy of the palette, which meant a retheme could pass its own
+  contrast check while measuring the previous colours, and could ship an app one colour with a Home
+  Screen icon another. The icons are committed, so re-run `npm run icons` after changing the default.
+  `index.html`'s inline favicon is the one copy that cannot be derived.
 - **The app's mark is two peaks.** `PeaksIcon`, `make-icons.js` and `index.html`'s inline favicon all
   draw it and must not drift. A notched fan is not available at this size: a notch deep enough to
   read turns the silhouette into a heart.
@@ -474,6 +505,10 @@ sends somebody hunting for their edit link.
   ```
 
   `--cropOffset` is measured from the top-left when non-zero but means "centred" at `0 0`, and an
-  offset whose rect ends exactly on the image edge silently produces no crop at all. The faces must
-  land at 40-45% of the frame's height, because `object-position: 50% 42%` is what keeps them in the
-  band at every viewport.
+  offset whose rect ends exactly on the image edge silently produces no crop at all.
+
+  **DO NOT COMPOSE FOR FACES.** The band is a tenth of the viewport, so no `object-position` holds
+  them in it at any offset — the picture is texture behind two lines of type. Compose for what reads
+  at 90px tall, then LOOK at it at 393px and at the 48rem plate, because that is the only way to
+  choose the percentage. (These four lines used to say the opposite, and both halves of this file
+  were true of different versions of the hero.)

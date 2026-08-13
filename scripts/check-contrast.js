@@ -1,10 +1,39 @@
 /**
- * Contrast check for the palette. Not part of the build — run it when a colour
- * changes, paste the numbers next to the values in tokens.css, and fix anything
- * that FAILs.
+ * Contrast check for the palette. Not part of the build — run it when a colour changes, paste
+ * the numbers next to the values in tokens.css, and fix anything that FAILs.
  *
  *   node scripts/check-contrast.js
+ *
+ * IT PARSES `tokens.css` RATHER THAN RESTATING IT. Every value here used to be a hand-copied
+ * hex, which made this file the largest colour duplication in the repo and meant a retheme could
+ * pass while measuring the previous palette. The accent list is discovered from the
+ * `[data-accent]` blocks too, so adding or removing a preset needs no edit here at all.
  */
+
+import { readFileSync } from 'node:fs'
+
+/** Comments stripped: several of these values are discussed in prose that also contains hexes. */
+const TOKENS = readFileSync('src/styles/tokens.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+const ROOT = /:root\s*\{([\s\S]*?)\n\}/.exec(TOKENS)[1]
+
+/** One custom property from `:root`. Throws rather than measuring `undefined` as black. */
+function token(name) {
+  const found = new RegExp(`--${name}:\\s*([^;]+);`).exec(ROOT)
+  if (!found) throw new Error(`check-contrast: no --${name} in :root`)
+  return found[1].trim()
+}
+
+/** One preset's own value, from its `[data-accent]` block. */
+function preset(accent, name) {
+  const block = new RegExp(`\\[data-accent="${accent}"\\]\\s*\\{([\\s\\S]*?)\\n\\}`).exec(TOKENS)
+  if (!block) throw new Error(`check-contrast: no [data-accent="${accent}"] block`)
+  const found = new RegExp(`--${name}:\\s*([^;]+);`).exec(block[1])
+  if (!found) throw new Error(`check-contrast: ${accent} declares no --${name}`)
+  return found[1].trim()
+}
+
+/** Every preset the stylesheet defines, in declaration order. */
+const PRESETS = [...TOKENS.matchAll(/\[data-accent="([a-z]+)"\]/g)].map((m) => m[1])
 
 function srgb(hex) {
   const clean = hex.replace('#', '')
@@ -31,52 +60,42 @@ export function contrast(a, b) {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
 }
 
-const BG = '#faf7f4'
-const SURFACE = '#ffffff'
-const SUNKEN = '#f3ece7'
+const BG = token('bg')
+const SURFACE = token('surface')
+const SUNKEN = token('sunken')
 /** The unfilled half of a meter. Deliberately darker than --sunken. */
-const TRACK = '#e7ddd3'
+const TRACK = token('track')
 /** The hairline around a meter or a timeline bar. Must outline the track, not match it. */
-const TRACK_LINE = '#c9b7a3'
+const TRACK_LINE = token('track-line')
+/** The boundary that identifies a control. Floor 3:1, and it is measured on ALL THREE surfaces. */
+const LINE_INPUT = token('line-input')
 
-const INK = { ink: '#1c1a17', 'ink-2': '#56504a', 'ink-3': '#736a61', 'ink-4': '#8c8377' }
+const INK = Object.fromEntries(
+  ['ink', 'ink-2', 'ink-3', 'ink-4'].map((name) => [name, token(name)]),
+)
 
-const ACCENTS = {
-  rose: '#8f2f50',
-  sage: '#385844',
-  indigo: '#3d4e8b',
-  plum: '#6b3a6e',
-  gold: '#6b4d17',
-}
+const ACCENTS = Object.fromEntries(PRESETS.map((name) => [name, preset(name, 'accent')]))
 
 /**
  * Two states get a colour of their own. There is no `warning`: `soon` is the accent and
  * `later` is the bare track, so nothing needs a hue that cannot clear 3:1 on white.
  */
-const STATUS = { good: '#098409', critical: '#c4362f' }
+const STATUS = { good: token('good'), critical: token('critical') }
 
-const WASHES = {
-  'good-wash': '#e6f4e6',
-  'critical-wash': '#fbeae8',
-  'neutral-wash': '#f0ece7',
-}
+const WASHES = { 'critical-wash': token('critical-wash') }
 
 /**
- * The five accent washes, which went unmeasured for as long as nothing consumed one.
- * `.plan__month--day` does now — the wedding's own month wears a tinted plaque — so every
- * preset's wash is checked against every ink that can land on it.
+ * Every accent wash, which went unmeasured for as long as nothing consumed one.
+ * `.plan__month--day` does — the wedding's own month wears a tinted plaque — so every preset's
+ * wash is checked against every ink that can land on it.
  *
- * THE RESULT IS A RULE: --ink-3 MUST NOT SIT ON AN ACCENT WASH. It measures 4.47:1 on plum,
- * which fails AA, and 4.56–4.64:1 on the other four, which is no margin worth having. --ink-2
- * is 6.71:1 at worst. Kanji at low contrast is unreadable in a way Latin is not.
+ * THE RESULT IS A RULE: --ink-3 MUST NOT SIT ON AN ACCENT WASH. It measures 4.59–4.71:1, which
+ * is no margin worth having at 13px; --ink-2 is 6.60:1 at worst. Kanji at low contrast is
+ * unreadable in a way Latin is not.
  */
-const ACCENT_WASHES = {
-  'indigo-wash': '#edeef7',
-  'rose-wash': '#fbecf1',
-  'sage-wash': '#e8f0ea',
-  'plum-wash': '#f2e9f3',
-  'gold-wash': '#f4eee0',
-}
+const ACCENT_WASHES = Object.fromEntries(
+  PRESETS.map((name) => [`${name}-wash`, preset(name, 'accent-wash')]),
+)
 
 const rows = []
 const add = (label, ratio, floor) =>
@@ -128,6 +147,19 @@ for (const [name, hex] of Object.entries(ACCENT_WASHES)) {
 // The unfilled meter track has to read as a bar against the card. It cannot reach
 // 3:1 and stay a warm neutral, which is why every meter also carries a hairline —
 // the boundary, not the fill difference, is what identifies the control.
+/**
+ * THE CONTROL BOUNDARY, ON EVERY SURFACE IT MEETS — and this is the row that was missing.
+ *
+ * --line-input exists only to satisfy WCAG 1.4.11's 3:1 for the boundary that identifies a
+ * control, and it went unmeasured here for as long as it existed. It was failing: `.chip` and
+ * `.btn--secondary` both swap their fill to --sunken on hover while keeping this border, so the
+ * boundary on the app's primary filter controls measured 2.65:1 — and 2.91:1 against --bg even at
+ * rest. A boundary is only as good as its worst backdrop, so all three are checked.
+ */
+for (const [name, backdrop] of [['surface', SURFACE], ['bg', BG], ['sunken', SUNKEN]]) {
+  add(`line-input on ${name}`, contrast(LINE_INPUT, backdrop), 3)
+}
+
 add('track on surface', contrast(TRACK, SURFACE), 1.25)
 
 // The hairline is the mechanism that makes an EMPTY bar read as a bar, so it has to be
@@ -167,16 +199,22 @@ function over(top, alpha, backdrop) {
   return `#${mix.map((c) => Math.round(c * 255).toString(16).padStart(2, '0')).join('')}`
 }
 
-/** --photo-scrim's base colour and the alpha it reaches where the type sits. */
-const SCRIM = '#181410'
-const SCRIM_ALPHA = 0.78
+/**
+ * --photo-scrim's base colour and the alpha it reaches where the type sits, both read off the
+ * gradient's LAST stop — the one the type actually sits on. `test/ui.test.jsx` pins that this
+ * file models the same alpha the token declares.
+ */
+const SCRIM_STOPS = [...token('photo-scrim').matchAll(/rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/g)]
+const DENSE = SCRIM_STOPS[SCRIM_STOPS.length - 1]
+const SCRIM = `#${[1, 2, 3].map((i) => Number(DENSE[i]).toString(16).padStart(2, '0')).join('')}`
+const SCRIM_ALPHA = Number(DENSE[4])
 
 add(
   'white on the scrim over a white sky',
   contrast('#ffffff', over(SCRIM, SCRIM_ALPHA, '#ffffff')),
   4.5,
 )
-// --photo-ink-2 is the countdown and the date, which are --fs-label and --fs-caption:
+// --photo-ink-2 is the countdown and the venue, both --fs-caption:
 // small text, so no large-text relief.
 const SCRIMMED = over(SCRIM, SCRIM_ALPHA, '#ffffff')
 add(

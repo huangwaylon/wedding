@@ -6,36 +6,46 @@
 :root {
   color-scheme: light;
 
-  /* ---- Colour: warm neutrals -------------------------------------------
-     Warm, unbleached, paper-like. A wedding board is read on a phone at a venue
-     and on a planner's large monitor for hours at a stretch, and a cool grey
-     screen at that duration reads clinical.
+  /* ---- Colour: canvas and lichen ---------------------------------------
+     Unbleached canvas with a green cast — the colour of a cotton tent and the
+     grey-green of lichen on granite, not the pink-warm paper every design system
+     ships. A wedding board is read on a phone at a venue and on a planner's large
+     monitor for hours at a stretch, so it stays light and low-chroma; the theme
+     lives in the HUE of the neutrals, not in saturation.
 
      The temperature step from --bg to --surface IS the elevation, which is why almost
-     nothing in this app needs a shadow. */
-  --bg: #faf7f4;
+     nothing in this app needs a shadow.
+
+     Every ratio below is measured by scripts/check-contrast.js against bg / surface /
+     sunken. Every ink improves on the pink-warm set it replaces. */
+  --bg: #faf8f3;
   --surface: #ffffff;
-  --sunken: #f3ece7;
+  --sunken: #eeece1;
 
-  --line: #e9e1d8;
-  /* Deliberately darker than --line, and only for form controls and secondary
-     button borders. WCAG 1.4.11 wants 3:1 for the boundary that identifies a
-     control, and a --line border on white does not come close. Do not tidy this
-     to --line. */
-  --line-input: #9a9186;
+  --line: #e2ded0;
+  /* Deliberately darker than --line, and only for form controls and secondary button
+     borders. WCAG 1.4.11 wants 3:1 for the boundary that identifies a control.
 
-  /* ink 16.27 / 17.36 / 14.85 against bg / surface / sunken
-     ink-2 7.45 / 7.95 / 6.80
-     ink-3 4.96 / 5.30 / 4.53  <- the lightest that still passes AA at 13px.
+     IT IS MEASURED AGAINST ALL THREE SURFACES, not just white, and that is the whole
+     reason it is this dark. `.chip` and `.btn--secondary` swap their fill to --sunken
+     on hover while keeping this border, so the boundary on the app's primary filter
+     controls is only as good as its worst backdrop: 3.38 on sunken, 3.55 on bg, 3.78
+     on surface. Do not tidy this to --line, and do not lighten it to taste — the
+     harness measures all three. */
+  --line-input: #7c8174;
+
+  /* ink 16.18 / 17.17 / 14.49 against bg / surface / sunken
+     ink-2 7.45 / 7.90 / 6.67
+     ink-3 5.18 / 5.49 / 4.64  <- the lightest that still passes AA at 13px.
      Kanji at low contrast is unreadable in a way Latin is not: do not lighten. */
-  --ink: #1c1a17;
-  --ink-2: #56504a;
-  --ink-3: #736a61;
+  --ink: #1a1c18;
+  --ink-2: #4e5349;
+  --ink-3: #666b5c;
   /* Placeholder and disabled text only. Never carries information, so it is held
      to the 3:1 graphic floor rather than 4.5:1. */
-  --ink-4: #8c8377;
+  --ink-4: #7f8475;
 
-  --scrim: rgba(28, 26, 23, 0.34);
+  --scrim: rgba(26, 28, 24, 0.34);
 
   /* ---- Over the photograph ---------------------------------------------
      The hero is the one surface whose background is unknown, so the ink there
@@ -50,38 +60,50 @@
      gradient's dense end, not the mechanism. */
   --photo-ink: #ffffff;
   --photo-ink-2: rgba(255, 255, 255, 0.92);
+  /* The base is the neutrals' own near-black rather than a brown one — hue only. The
+     ALPHA RAMP IS UNCHANGED, because it is what the measurements above depend on. */
   --photo-scrim: linear-gradient(
     to bottom,
-    rgba(24, 20, 16, 0) 28%,
-    rgba(24, 20, 16, 0.38) 62%,
-    rgba(24, 20, 16, 0.78) 100%
+    rgba(20, 23, 15, 0) 28%,
+    rgba(20, 23, 15, 0.38) 62%,
+    rgba(20, 23, 15, 0.78) 100%
   );
-  --photo-shadow: 0 1px 12px rgba(24, 20, 16, 0.55);
+  --photo-shadow: 0 1px 12px rgba(20, 23, 15, 0.55);
   /* A control ON the photograph: a dark disc, so the glyph inside it stays white
      whatever it happens to sit over. 0.55, not 0.42 — at 0.42 a white glyph over a
      blown-out sky measures 2.73:1 and misses the 3:1 graphic floor. */
-  --photo-control: rgba(24, 20, 16, 0.55);
-  --photo-control-hover: rgba(24, 20, 16, 0.68);
+  --photo-control: rgba(20, 23, 15, 0.55);
+  --photo-control-hover: rgba(20, 23, 15, 0.68);
 
   /* ---- Accent ----------------------------------------------------------
-     One hue, swappable. `[data-accent]` at the foot of this file redefines the
-     three properties below and NOTHING else, so a preset cannot reach the
-     neutrals or the state colours. Every preset keeps white text at or above
-     7.5:1 and sits at or above 6.8:1 against --bg, so buttons, focus rings and
-     the FAB stay compliant whichever one is chosen.
+     One hue, and THREE presets rather than five. `[data-accent]` at the foot of this
+     file redefines the three properties below and NOTHING else, so a preset cannot
+     reach the neutrals or the state colours. Every preset keeps white text at or above
+     7.5:1 and sits at or above 6.8:1 against --bg.
 
-     INDIGO (藍) IS THE DEFAULT. Two reasons, one of them measurable. The accent
-     paints `.dot--soon`, an 8px disc that is a row's only coloured mark — so the
-     default has to be separable from --good and --critical at that size, and a green
-     default is not: sage against good is two mid-dark greens of the same hue family.
-     Indigo is far from both. And it is the truer colour for this board: the cold sky
-     over the ginkgo avenue the hero was shot in, and the colour of Japanese work
-     cloth. What it costs is that nothing on screen says "wedding" by hue — rose is
-     one tap away in Settings, per device. */
-  --accent: #3d4e8b;
-  --accent-hover: #313f73;
+     TARN (湖) IS THE DEFAULT, and the reason is measurable rather than a preference.
+     The accent paints `.dot--soon`, an 8px disc that is a row's only coloured mark, so
+     the default has to be separable at that size from BOTH --good and --critical.
+     Measured in OKLab (0.15 is comfortable at 8px, and the harness prints these):
+
+       tarn     0.198 from good   0.202 from critical   <- the only preset clear of both
+       pine     0.134 from good   0.176 from critical
+       rosehip  0.260 from good   0.128 from critical
+
+     So a green default is out — pine against a green "done" is two forest greens — and
+     so is a magenta one, against a red "overdue". A cold water blue is the one family
+     far from both, and it is the truer colour for this board anyway: the sky over the
+     ginkgo avenue the hero was shot in, and the colour of Japanese work cloth.
+
+     WHAT PINE AND ROSEHIP COST, stated rather than hidden: whoever picks one gets a
+     `soon` dot they may not separate from `done` or `overdue` at 8px. That is survivable
+     ONLY because the dot is never the only channel — it sits beside the words that carry
+     the meaning, which is the rule the state block below states. Do not make either of
+     them the default, and do not add a fourth preset without measuring it. */
+  --accent: #1c4b74;
+  --accent-hover: #163c5e;
   --accent-text: #ffffff;
-  --accent-wash: #edeef7;
+  --accent-wash: #e8eef3;
   --accent-ring: color-mix(in srgb, var(--accent) 22%, transparent);
   --accent-shadow: color-mix(in srgb, var(--accent) 38%, transparent);
 
@@ -95,18 +117,20 @@
      track, so no state needs a hue that cannot clear 3:1 on white — which yellow
      cannot.
 
-     good     4.87 on surface, 3.63 on --track  (the reference palette's #0ca30c
-              measures 2.51 against this warm track, so it is stepped darker here)
-     critical 5.36 on surface, 4.00 on --track */
-  --good: #098409;
-  --good-wash: #e6f4e6;
-  --critical: #c4362f;
-  --critical-wash: #fbeae8;
-  --neutral-wash: #f0ece7;
+     BOTH ARE SIGNALS, NOT THEME, and that is why neither is muted to match the
+     neutrals. A muted green reads as "wilderness" and collapses the 8px separation the
+     accent depends on: at #35762f, tarn falls to 0.155 from good — closer than the sage
+     preset that is documented as too close to ship as a default. These two are stepped
+     off their poster values as far as that budget allows and no further.
 
-  --danger: #a33a2e;
-  --danger-hover: #8d3025;
-  --danger-text: #ffffff;
+     good     5.05 on surface, 3.83 on --track  (lichen; a yellower green than a
+              traffic-light one, and 0.198 from tarn in OKLab)
+     critical 5.58 on surface, 4.23 on --track  (rowan berry; also the fill under white
+              text on the destructive button, at 5.58) */
+  --good: #3f7d18;
+  --critical: #bb3b23;
+  --critical-hover: #a03219;
+  --critical-wash: #f7eae5;
 
   /* ---- Meters ----------------------------------------------------------
      --track is the unfilled half of every progress bar, and it is deliberately
@@ -115,15 +139,13 @@
      identifies the control, not the fill difference. Deleting that hairline is
      what would make an empty bar disappear.
 
-     --track-line is that hairline, and it is deliberately NOT --line: --line on --track
-     measures 1.035:1, so the outline it is meant to draw is invisible and an empty bar has
-     nothing holding it up but the 1.34:1 fill step. Measured here: 1.45:1 against --track,
-     1.95:1 against --surface — visible against both the bar it outlines and the card that bar
-     sits on. */
-  --track: #e7ddd3;
-  --track-line: #c9b7a3;
+     --track-line is that hairline, and it is deliberately NOT --line: --line on --track is
+     near-invisible, so the outline it is meant to draw would do nothing and an empty bar would
+     have nothing holding it up but the fill step. Measured: 1.58:1 against --track, 2.09:1
+     against --surface — visible against both the bar it outlines and the card that bar sits on. */
+  --track: #e5e0d2;
+  --track-line: #bab498;
   --meter-height: 8px;
-  --meter-height-lg: 14px;
 
   /* ---- The pinned header -----------------------------------------------
      The photograph is a TENTH of the viewport and it does not scroll away, so these
@@ -147,14 +169,22 @@
      Inner radius <= outer radius minus container padding. Never nest equal radii.
      --radius-xl is the ceiling on rectangles; fully pill-shaped rectangular
      buttons read consumer-app rather than considered. */
-  --radius-xs: 0.25rem;
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
   --radius-xl: 1.375rem;
   --radius-full: 999px;
 
+  /* ONE ring, and ONE dim. Each was two values a couple of units apart doing the same job in two
+     files — a focus/pressed ring at 3px and 2px, and an unsettled-row fade at 0.5 and 0.55.
+     Neither pair is distinguishable on screen, and both were things a reader had to hold twice. */
+  --ring-width: 2px;
+  --dim: 0.55;
+
   /* ---- Space: 4px base, with a 20px step --------------------------------- */
+  /* A pill's 1px of optical padding — below the 4px scale on purpose, and the only value here
+     that is. A chip tag and a badge both need it and both used to spell it as a literal. */
+  --space-hair: 0.0625rem;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -179,16 +209,17 @@
     "Helvetica Neue", Arial, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
     "Noto Sans JP", "Yu Gothic Medium", "Yu Gothic", YuGothic, "Yu Gothic UI",
     Meiryo, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
-    "Roboto Mono", "Liberation Mono", monospace;
 
   /* ---- Type ------------------------------------------------------------
      Nothing below 13px anywhere: 12px kanji is mush, which is why --fs-caption is
      also the floor for anything nested inside it. Weights are 400/500/600 only;
      550 and 650 are unreliable outside SF Pro, and Hiragino ships W3/W6 with
      nothing between. */
+  /* FOUR STEPS, and there is deliberately no 14. 13 and 14 are not distinguishable in a
+     UI, and everywhere the two used to meet — a label beside its value, a small button
+     beside a chip — weight and ink were already carrying the difference and the 1px was
+     noise. Anything reaching for 14 is either a caption or body text; decide which. */
   --fs-caption: 0.8125rem; /* 13 */
-  --fs-label: 0.875rem; /* 14 */
   --fs-body: 1rem; /* 16 — also the iOS no-zoom floor for inputs */
   --fs-lg: 1.125rem; /* 18 */
   --fs-xl: 1.5rem; /* 24 */
@@ -222,6 +253,9 @@
   --tap-target-sm: 36px;
   --column-max: 40rem;
   --sheet-max: 32rem;
+  /* How tall a bottom sheet may get. `dvh`, so the keyboard's own shrink is already in it; the
+     remainder is the strip of scrim that keeps the panel from reading as a full-screen page. */
+  --sheet-height: 88dvh;
   /* The FAB — the only fixed chrome — and therefore the clearance the view keeps beneath
      its content so the button never covers the last row. The toasts stack above it from
      the same number. */
@@ -264,44 +298,37 @@
    Attribute-scoped rather than :root-scoped so a settings swatch can paint itself
    with its own preset.
 
-   Contrast, white text / against --bg:
+   Three, not five. An accent picker with a row of arbitrary hues is the stock settings
+   control; these are the three that mean something here — the water, the trees, and the
+   one warm choice for whoever wants a wedding to look like a wedding. Each one is a
+   distinct role rather than a distinct hue.
 
-     rose   薔薇  7.81 / 7.31      plum  紫根  8.55 / 8.01
-     sage   若草  7.93 / 7.43      gold  山吹  7.78 / 7.29
-     indigo 藍    7.89 / 7.39
+   Contrast, white text / against --bg / as a meter fill on --track:
 
-   Every one clears AA for white text with a 1.6x margin and clears the 3:1
-   non-text floor as a meter fill against --track (5.8:1 or better). */
-/* Indigo is spelled out even though :root already carries it, so a swatch can scope
-   it locally like any other preset. */
-[data-accent="indigo"] {
-  --accent: #3d4e8b;
-  --accent-hover: #313f73;
-  --accent-wash: #edeef7;
+     tarn    湖    9.10 / 8.57 / 6.90      pine    松   9.21 / 8.68 / 6.98
+     rosehip 野薔薇 8.69 / 8.19 / 6.59
+
+   Every one clears AA for white text with a 1.6x margin and clears the 3:1 non-text
+   floor as a meter fill. See the accent block above for the 8px dot separation, which is
+   the constraint that decides which of them may be the DEFAULT. */
+/* Tarn is spelled out even though :root already carries it, so a swatch can scope it
+   locally like any other preset. */
+[data-accent="tarn"] {
+  --accent: #1c4b74;
+  --accent-hover: #163c5e;
+  --accent-wash: #e8eef3;
 }
 
-[data-accent="rose"] {
-  --accent: #8f2f50;
-  --accent-hover: #7a2844;
-  --accent-wash: #fbecf1;
+[data-accent="pine"] {
+  --accent: #23503a;
+  --accent-hover: #1c402e;
+  --accent-wash: #e7efe9;
 }
 
-[data-accent="sage"] {
-  --accent: #385844;
-  --accent-hover: #2d4737;
-  --accent-wash: #e8f0ea;
-}
-
-[data-accent="plum"] {
-  --accent: #6b3a6e;
-  --accent-hover: #572e5a;
-  --accent-wash: #f2e9f3;
-}
-
-[data-accent="gold"] {
-  --accent: #6b4d17;
-  --accent-hover: #573e12;
-  --accent-wash: #f4eee0;
+[data-accent="rosehip"] {
+  --accent: #7f2b60;
+  --accent-hover: #6b2451;
+  --accent-wash: #f6eaf1;
 }
 
 /* Zeroing the motion tokens is the primary reduced-motion mechanism; the global

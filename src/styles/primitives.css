@@ -20,14 +20,10 @@
   color: var(--ink-3);
 }
 
-.caption {
-  font-size: var(--fs-caption);
-  color: var(--ink-2);
-}
 
 .label {
   display: block;
-  font-size: var(--fs-label);
+  font-size: var(--fs-caption);
   font-weight: 500;
   color: var(--ink-2);
   margin-bottom: var(--space-2);
@@ -82,12 +78,12 @@
 }
 
 .btn--danger {
-  background-color: var(--danger);
-  color: var(--danger-text);
+  background-color: var(--critical);
+  color: var(--accent-text);
 }
 
 .btn--danger:hover:not([disabled]) {
-  background-color: var(--danger-hover);
+  background-color: var(--critical-hover);
 }
 
 .btn--block {
@@ -97,7 +93,7 @@
 .btn--sm {
   min-height: var(--tap-target-sm);
   padding: 0 var(--space-3);
-  font-size: var(--fs-label);
+  font-size: var(--fs-caption);
 }
 
 /* Never combined with --ghost: the two disagree about the border, and the glyph
@@ -116,7 +112,7 @@
 }
 
 .btn[disabled] {
-  opacity: 0.5;
+  opacity: var(--dim);
 }
 
 /* ---- FAB ---------------------------------------------------------------
@@ -162,7 +158,7 @@
 
 .input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+  box-shadow: 0 0 0 var(--ring-width) var(--accent-ring);
   outline: none;
 }
 
@@ -175,7 +171,7 @@
 }
 
 .input--invalid {
-  border-color: var(--danger);
+  border-color: var(--critical);
 }
 
 /* ---- The date control -------------------------------------------------
@@ -226,7 +222,7 @@
   display: block;
   margin-top: var(--space-2);
   font-size: var(--fs-caption);
-  color: var(--danger);
+  color: var(--critical);
 }
 
 .field__row {
@@ -277,7 +273,7 @@
   /* Not a control — a category tag on a card. It opts out of the target and the boundary that
      identifies one. */
   min-height: 0;
-  padding: 0.0625rem var(--space-2);
+  padding: var(--space-hair) var(--space-2);
   background-color: var(--sunken);
   border-color: transparent;
   color: var(--ink-2);
@@ -288,8 +284,8 @@
    (the same reasoning as the subtask toggle's glyph). --ink-3 rather than the chip's own --ink-2:
    the word is the label and the shape is the aid, so the shape is the quieter of the two. */
 .chip__icon {
-  width: 1.05em;
-  height: 1.05em;
+  width: 1em;
+  height: 1em;
   color: var(--ink-3);
 }
 
@@ -308,10 +304,23 @@
   color: inherit;
 }
 
+/* OVERDUE IS THE ONE COUNT THAT IS A CALL TO ACTION, so it is the one that is not --ink-3.
+   Everything else in this row is a statistic; this is the number somebody has to do something
+   about, and at --ink-3 it was the quietest text on the row — beside "Later 34", which read louder
+   purely because 34 is a bigger number than 8.
+
+   WITHIN THE ONE-COLOURED-MARK BUDGET, because the word "Overdue" is immediately beside it: the
+   hue is never the only channel. Withheld at zero, which is what `--empty` marks — a clean board
+   must not carry a red 0 — and withheld when the chip is pressed, because the accent fill wins. */
+.chip__count--alert:not(.chip__count--empty) {
+  color: var(--critical);
+  font-weight: 500;
+}
+
 /* `FilterChips` disables every zero-count filter, and this is what makes one look disabled:
    `.btn[disabled]`'s own opacity does not reach a chip. */
 .chip[disabled] {
-  opacity: 0.5;
+  opacity: var(--dim);
   cursor: default;
 }
 
@@ -322,10 +331,10 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 0.0625rem var(--space-2);
-  /* Pill, matching `.chip--static`. */
+  padding: var(--space-hair) var(--space-2);
+  /* Pill, matching `.chip--static` — the same fill, not a second grey a hair off it. */
   border-radius: var(--radius-full);
-  background-color: var(--neutral-wash);
+  background-color: var(--sunken);
   font-size: var(--fs-caption);
   font-weight: 500;
   color: var(--ink-2);
@@ -400,10 +409,6 @@
   background-color: var(--accent);
 }
 
-.meter--lg {
-  height: var(--meter-height-lg);
-}
-
 /* The tick is taller than the bar on purpose, so a meter carrying one cannot clip. Applied by
    `Meter` whenever a mark is passed. */
 .meter--marked {
@@ -446,7 +451,7 @@
   /* 88, not 92. At 92 a full form leaves a 68px scrim strip that sits almost entirely inside
      the Dynamic Island inset — so the only tap-to-dismiss region overlaps the status bar, and a
      stray reach for the top of the screen discards text that exists nowhere else. */
-  max-height: 88dvh;
+  max-height: var(--sheet-height);
   background-color: var(--surface);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   box-shadow: var(--shadow-overlay);
@@ -459,7 +464,7 @@
 
   @keyframes sheet-in {
     from {
-      transform: translateY(1.5rem);
+      transform: translateY(var(--space-6));
       opacity: 0;
     }
   }
@@ -515,7 +520,7 @@
 
   .sheet__panel {
     border-radius: var(--radius-xl);
-    max-height: 86dvh;
+    max-height: var(--sheet-height);
   }
 
   .sheet__foot {
@@ -529,7 +534,7 @@
 }
 
 .section__title {
-  font-size: var(--fs-label);
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--ink);
   margin-bottom: var(--space-1);
@@ -567,7 +572,7 @@
 }
 
 .notice__title {
-  font-size: var(--fs-label);
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--ink);
 }
@@ -607,7 +612,7 @@
   border-radius: var(--radius-md);
   background-color: var(--ink);
   color: var(--surface);
-  font-size: var(--fs-label);
+  font-size: var(--fs-caption);
   box-shadow: var(--shadow-overlay);
 }
 
@@ -618,7 +623,7 @@
 
   @keyframes toast-in {
     from {
-      transform: translateY(0.5rem);
+      transform: translateY(var(--space-2));
       opacity: 0;
     }
   }
@@ -630,7 +635,7 @@
   align-items: center;
   gap: var(--space-2);
   min-height: var(--tap-target);
-  font-size: var(--fs-label);
+  font-size: var(--fs-body);
   font-weight: 500;
   color: var(--ink-2);
   cursor: pointer;

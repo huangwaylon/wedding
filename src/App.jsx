@@ -23,7 +23,7 @@ import { isStandalone, markKeyRejected, resolveAccess, writeEditKey } from './li
 import { API_ERROR, isTerminal } from './lib/api.js'
 import { forgetToken } from './lib/connection.js'
 import { overallProgress, withProgress } from './lib/progress.js'
-import { resolveTimeZone, todayIn } from './lib/time.js'
+import { monthOf, resolveTimeZone, todayIn } from './lib/time.js'
 import { setSafeToReload } from './lib/serviceWorker.js'
 import { STATUS, useBoard } from './state/useBoard.js'
 import { useNow } from './state/useNow.js'
@@ -38,7 +38,7 @@ import Plan from './components/Plan.jsx'
 import SettingsSheet from './components/SettingsSheet.jsx'
 import TaskFormSheet from './components/TaskFormSheet.jsx'
 import Toasts from './components/Toasts.jsx'
-import { PlusIcon, RefreshIcon } from './components/icons.jsx'
+import { ICON_SIZE, PlusIcon, RefreshIcon } from './components/icons.jsx'
 
 /**
  * Read the fragment before React renders anything, so the first paint already knows
@@ -79,7 +79,7 @@ function RetryButton({ onRetry, label }) {
       className="btn btn--secondary btn--sm"
       onClick={() => onRetry({ force: true })}
     >
-      <RefreshIcon style={{ width: '1em', height: '1em' }} />
+      <RefreshIcon style={ICON_SIZE.inline} />
       {label}
     </button>
   )
@@ -407,7 +407,7 @@ export default function App() {
                   categories={board.config.categories}
                   today={today}
                   /* So the one heading that is the wedding's own month can say so. */
-                  weddingMonth={day ? day.slice(0, 7) : ''}
+                  weddingMonth={monthOf(day)}
                   unfiltered={filter === FILTER_ALL}
                   expanded={expanded}
                   onExpand={toggleExpanded}
@@ -433,7 +433,7 @@ export default function App() {
           onClick={() => setAdding(true)}
           aria-label={t('form.newTitle')}
         >
-          <PlusIcon style={{ width: '1.5em', height: '1.5em' }} />
+          <PlusIcon style={ICON_SIZE.fab} />
         </button>
       ) : null}
 

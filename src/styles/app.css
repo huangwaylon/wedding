@@ -56,14 +56,23 @@
   isolation: isolate;
 }
 
-/* The photograph's own band. `--safe-top` is padding rather than height so the image runs up
-   behind the status bar while the type stays clear of it. */
+/* The photograph's own band: `--hero-photo` of picture PLUS the inset, so the image runs up behind
+   the status bar while the type stays clear of it.
+
+   THE INSET IS IN THE HEIGHT, NOT ONLY IN THE PADDING. Everything here is `border-box`, so
+   `height: var(--hero-photo)` with `padding-top: var(--safe-top)` takes the inset OUT of the band
+   instead of adding it: on an iPhone that leaves 26px of content box, `justify-content: flex-end`
+   pushes the names up under the clock, `overflow: hidden` clips the gear to a sliver, and
+   `--hero-height` — which does count the inset — ends up 59px taller than the header really is, so
+   the sticky month heading parks in mid-air with rows scrolling through the gap. One `calc` is
+   what keeps the token and the layout agreeing. `test/ui.test.jsx` pins the composition of the
+   token; only a driven browser with a fake inset can pin this, because an iframe reports 0. */
 .hero__photo {
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  height: var(--hero-photo);
+  height: calc(var(--safe-top) + var(--hero-photo));
   padding-top: var(--safe-top);
   overflow: hidden;
 }
@@ -92,11 +101,13 @@
 }
 
 /* On the photograph rather than in a bar of its own. The disc is what lets a white glyph stay
-   legible over an unknown pixel. Centred vertically in the band rather than pinned to the top:
-   the band is barely taller than the control. */
+   legible over an unknown pixel. Centred in the PICTURE, not in the band: the band's height now
+   includes `--safe-top`, so a `50%` here would already carry the inset and adding it again pushes
+   the control out through `overflow: hidden`. Halving the picture token is the one form that
+   cannot double-count. */
 .hero__gear {
   position: absolute;
-  top: calc(var(--safe-top) + 50%);
+  top: calc(var(--safe-top) + var(--hero-photo) / 2);
   right: var(--space-3);
   transform: translateY(-50%);
   display: flex;
@@ -195,6 +206,11 @@
 
 .hero__percent {
   flex: none;
+  /* One step above the rest of the strip, and the only thing in the header that is not 13px or
+     the names. Without it the board's headline figure is tied for smallest text on the screen.
+     16px * 1.5 leaves 5px of slack in the 29px content box, so --hero-strip does not move — see
+     the strip's own note about that budget. */
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--ink);
 }
@@ -280,7 +296,7 @@
 .plan__month--day {
   margin-inline: calc(var(--space-2) * -1);
   padding-inline: var(--space-2);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background-color: var(--accent-wash);
 }
 
@@ -376,12 +392,16 @@
    — which reads as un-pressed, the exact opposite of what is true. The head recedes; the tick
    somebody just made stays at full ink. */
 .tcard--pending .tcard__head {
-  opacity: 0.55;
+  opacity: var(--dim);
 }
 
 /* ---- The check --------------------------------------------------------
-   The primary interaction of the whole app, at the full tap target and in the same ink and
-   radius as the icon buttons elsewhere. */
+   The primary interaction of the whole app, at the full tap target and in the same ink as the
+   icon buttons elsewhere.
+
+   --radius-sm, not --radius-md: an inner radius may be at most the outer one minus the padding
+   between them, and this sits inside a --radius-lg (16px) card padded by --space-2 (8px), which
+   leaves 8. At 12px the corner cut into the card's own. */
 .tcard__check {
   grid-column: 1;
   display: flex;
@@ -389,7 +409,7 @@
   justify-content: center;
   width: var(--tap-target);
   min-height: var(--tap-target);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   color: var(--ink-2);
   transition:
     color var(--transition-fast),
@@ -573,7 +593,7 @@
    glyph carrying the tick does not. Ticking five items down a checklist is what this row is for,
    and a tick that fades on contact reads as a tap that missed. */
 .subtask--pending .subtask__title {
-  opacity: 0.55;
+  opacity: var(--dim);
 }
 
 /* THE WHOLE ROW IS THE CONTROL — glyph and title inside one button, which is
@@ -744,18 +764,26 @@
   min-width: 0;
 }
 
+/* ONE QUIET LABEL, TWO PLACES IT SITS: above a field in the inline editor, and in front of a
+   fact on a closed row. They were two rules with identical declarations and a copy-pasted
+   comment, which is two places to keep one decision.
+
+   Quiet by size, weight and ink alone. NO uppercase and NO tracking: any of these labels can be
+   Japanese, where tracking inserts a gap between every kana and text-transform does nothing but
+   break the Latin ones. --ink-3 is the lightest ink measured to pass AA at 13px; a label is
+   information, so it does not get the --ink-4 placeholder treatment. */
+.editor__label,
+.tcard__factLabel {
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  color: var(--ink-3);
+  line-height: var(--lh-tight);
+}
+
+/* Above its field, so it needs the block and the gap. */
 .editor__label {
   display: block;
   margin-bottom: var(--space-1);
-  /* Quiet by size, weight and ink alone. NO uppercase and NO tracking: any of these labels
-     can be Japanese, where tracking inserts a gap between every kana and text-transform does
-     nothing but break the Latin ones. */
-  font-size: var(--fs-caption);
-  font-weight: 500;
-  /* --ink-3 is the lightest ink measured to pass AA at 13px. A label is information, so it
-     does not get the --ink-4 placeholder treatment. */
-  color: var(--ink-3);
-  line-height: var(--lh-tight);
 }
 
 /* The one fact an open row shows in read mode: its due date, spelled out. `space-between` on
@@ -766,17 +794,13 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
-  font-size: var(--fs-label);
+  font-size: var(--fs-body);
   color: var(--ink);
 }
 
+/* Beside its value on a baseline row, so it must not shrink. */
 .tcard__factLabel {
   flex: none;
-  font-size: var(--fs-caption);
-  font-weight: 500;
-  /* --ink-3 is the lightest ink measured to pass AA at 13px. A label is information, so it does
-     not get the --ink-4 placeholder treatment. */
-  color: var(--ink-3);
 }
 
 /* The controls at the foot of an open row: the Edit toggle, always, and the delete only while
@@ -800,7 +824,7 @@
   margin-inline-start: auto;
 }
 
-/* Quiet, and never a filled --danger button: filled, it would be the loudest thing in an open
+/* Quiet, and never a filled destructive button: filled, it would be the loudest thing in an open
    row, competing with the checklist for a control that most people never press. The WORD
    carries it — the ink is a second channel, not the only one — and it opens the confirmation
    sheet rather than deleting anything.
@@ -809,12 +833,12 @@
    wins on order alone: app.css is loaded after primitives.css. Not `.btn--sm` — a thumb aims
    at this, so it keeps the full --tap-target from `.btn`. */
 .btn--danger-quiet {
-  color: var(--danger);
+  color: var(--critical);
 }
 
 .btn--danger-quiet:hover {
   background-color: var(--critical-wash);
-  color: var(--danger);
+  color: var(--critical);
 }
 
 /* ---- Empty and seeding ------------------------------------------------- */
@@ -832,11 +856,19 @@
   margin-bottom: var(--space-2);
 }
 
+/* The wordless mark above an empty board. Its ink lives here rather than in an inline style: it
+   was the one place in the JSX that named a design token, so an ink change had to be grepped in
+   two languages. --ink-4 is the placeholder tier, which is right for a glyph carrying no
+   information — the words below it do that. */
+.empty__mark {
+  color: var(--ink-4);
+}
+
 .empty__body {
-  font-size: var(--fs-label);
+  font-size: var(--fs-body);
   line-height: var(--lh-body);
   color: var(--ink-2);
-  max-width: 32rem;
+  max-width: var(--sheet-max);
   margin: 0 auto var(--space-5);
 }
 
@@ -891,7 +923,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--fs-label);
+  font-size: var(--fs-body);
   color: var(--ink-2);
 }
 
@@ -916,7 +948,7 @@
 
 .swatch[aria-pressed="true"] {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-ring);
+  box-shadow: 0 0 0 var(--ring-width) var(--accent-ring);
   color: var(--ink);
 }
 
