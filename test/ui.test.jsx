@@ -497,11 +497,11 @@ describe('touch ergonomics', () => {
     const head = ruleFor(app, '.tcard__head')
     expect(head).toMatch(/align-items: center/)
     expect(head).not.toMatch(/align-items: (baseline|flex-start)/)
-    // The day column lines up on its trailing EDGE, which is what alignment must not be asked to
-    // do: a fixed width plus `text-align: end`, so one- and two-digit days share a right margin.
+    // The day column lines up as a fixed-width BOX, which is what alignment must not be asked to
+    // do: `width: 2rem` plus `text-align: center`, so a one- and a two-digit day share a centre.
     const day = ruleFor(app, '.tcard__day')
     expect(day).toMatch(/width: 2rem/)
-    expect(day).toMatch(/text-align: end/)
+    expect(day).toMatch(/text-align: center/)
     // And the chevron carries no correction of its own; a centred head leaves nothing to correct.
     expect(ruleFor(app, '.tcard__chev')).not.toMatch(/margin-top|align-self/)
   })

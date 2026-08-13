@@ -439,8 +439,8 @@
    first line instead, and on a row that also carries a meta line that puts the day's optical
    centre 16.7px above the centre of the block beside it (measured over CDP). Centring costs the
    day a fixed y, which is not what the day column is for: what has to line up down a month is
-   its trailing EDGE, and that is `width: 2rem` plus `text-align: end`, neither of which
-   alignment touches. */
+   the COLUMN, and that is `width: 2rem` plus `text-align: center`, neither of which alignment
+   touches. */
 .tcard__head {
   grid-column: 2;
   display: flex;
@@ -466,7 +466,11 @@
      day as a column of single digits. */
   width: 2rem;
   white-space: nowrap;
-  text-align: end;
+  /* CENTRED IN THAT BOX, not aligned to either edge. The box is what repeats down a month, so
+     its centre is the one x every row shares whether the day is one digit or two; aligning to
+     an edge instead leaves a `1` sitting a half-figure away from where the `27` above it was
+     read, which is the ragged margin the fixed width exists to prevent. */
+  text-align: center;
   font-size: var(--fs-xl);
   font-weight: 600;
   line-height: var(--lh-tight);
