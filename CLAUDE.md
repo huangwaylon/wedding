@@ -311,8 +311,10 @@ Measured, and `npm run contrast` re-checks every pair:
 - `make-icons.js` and `scripts/check-contrast.js` both parse `tokens.css` rather than restating it, or a
   retheme passes its own contrast check while measuring the previous colours. The icons are committed, so
   re-run `npm run icons` after changing the default. `index.html`'s inline favicon is the one copy that
-  cannot be derived, and it, `PeaksIcon` and `make-icons.js` all draw the two-peaks mark and must not drift
-  — a notch deep enough to read at this size turns the silhouette into a heart.
+  cannot be derived, and it, `RingsIcon` and `make-icons.js` all draw the two-rings mark — two
+  interlocking rings under a diamond setting — and must not drift. The favicon and `RingsIcon` share the
+  24-unit box, so those two are the same numbers; `make-icons.js` maps them into a 0–1 square and must
+  keep every point inside the 0.4 radius Android crops a maskable icon to.
 
 **Type**
 

@@ -6,11 +6,11 @@
  * A hand-rolled PNG encoder rather than a dependency: `sharp` and `canvas` both ship native
  * binaries, and Node's `zlib` is all a PNG needs.
  *
- * The mark is a two-peak ridgeline, drawn with signed-distance fields and supersampled 3x3 per
- * pixel: distance fields give antialiasing for free, and hard edges at 192px look wrong on a
- * Retina Home Screen. It has to match `PeaksIcon` in src/components/icons.jsx, or the installed app
- * and the screen it opens carry different logos; that file records why the ginkgo leaf it replaced
- * could not be drawn at glyph size.
+ * The mark is two interlocking rings under a stone setting, drawn with signed-distance fields and
+ * supersampled 3x3 per pixel: distance fields give antialiasing for free, and hard edges at 192px
+ * look wrong on a Retina Home Screen. It has to match `RingsIcon` in src/components/icons.jsx and
+ * the inline favicon in index.html, or the installed app and the screen it opens carry different
+ * logos.
  *
  * Every icon is full-bleed and also declared `maskable`, so the mark stays inside the safe zone
  * Android crops a maskable icon to: a circle of 80% width.
@@ -42,43 +42,38 @@ const FG = [0xff, 0xff, 0xff]
 const SAMPLES = 3
 
 /**
- * A 0–1 unit square, so one description scales to every size. The ridge is `PeaksIcon`'s path
- * mapped out of its 24-unit box: that glyph spans x 2.5–21.5, y 8–18.5, wide and shallow, so it is
- * scaled to about half the square and sat a little below centre, where a wordless mark reads best.
- * The furthest point stays inside the 0.4 radius Android crops to.
+ * A 0–1 unit square, so one description scales to every size. `RingsIcon`'s three shapes mapped out
+ * of their 24-unit box and sat a little below centre, where a wordless mark reads best.
+ *
+ * Everything stays inside the 0.4 radius Android crops a maskable icon to. The furthest ring point
+ * is hypot(0.115, 0.045) + 0.215 + STROKE / 2 = 0.365, and the setting's apex is at 0.375.
  */
-const RIDGE = [
-  [0.25, 0.655],
-  [0.378, 0.36],
-  [0.462, 0.535],
-  [0.558, 0.4],
-  [0.68, 0.655],
+const RINGS = [
+  { x: 0.5 - 0.115, y: 0.545, r: 0.215 },
+  { x: 0.5 + 0.115, y: 0.545, r: 0.215 },
 ]
-const STROKE = 0.055
+const STROKE = 0.052
+/** The band above the rings, which reads as the stone setting. */
+const GEM = { x: 0.5, y: 0.2, halfWidth: 0.085, halfHeight: 0.075 }
 
-/** Distance from a point to a segment, which is all a stroked polyline needs. */
-function distanceToSegment(x, y, [ax, ay], [bx, by]) {
-  const dx = bx - ax
-  const dy = by - ay
-  const lengthSquared = dx * dx + dy * dy
-  // A degenerate segment is a point; clamping keeps the projection on the segment itself.
-  const t =
-    lengthSquared === 0
-      ? 0
-      : Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / lengthSquared))
-  return Math.hypot(x - (ax + t * dx), y - (ay + t * dy))
-}
-
-/**
- * The ridge plus the baseline that closes it: `PeaksIcon`'s path ends in `Z`, so the flat bottom
- * belongs to the mark.
- */
-function inside(x, y) {
-  const points = [...RIDGE, RIDGE[0]]
-  for (let index = 0; index < points.length - 1; index += 1) {
-    if (distanceToSegment(x, y, points[index], points[index + 1]) <= STROKE / 2) return true
+/** A stroked circle is a distance band around its radius. */
+function ringCoverage(x, y) {
+  for (const ring of RINGS) {
+    const distance = Math.hypot(x - ring.x, y - ring.y)
+    if (Math.abs(distance - ring.r) <= STROKE / 2) return true
   }
   return false
+}
+
+/** A diamond: |dx| / w + |dy| / h <= 1. Filled, since at 180px an outline of it closes up. */
+function gemCoverage(x, y) {
+  const dx = Math.abs(x - GEM.x) / GEM.halfWidth
+  const dy = Math.abs(y - GEM.y) / GEM.halfHeight
+  return dx + dy <= 1
+}
+
+function inside(x, y) {
+  return ringCoverage(x, y) || gemCoverage(x, y)
 }
 
 /** RGB, no alpha: the icon is opaque, and iOS composites a transparent one onto white. */

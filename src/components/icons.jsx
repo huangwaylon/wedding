@@ -116,13 +116,16 @@ export function CheckCircleIcon(props) {
   )
 }
 
-/** Two peaks: the app's own mark. `scripts/make-icons.js` rasterises the same shape and
-    `index.html` draws it inline as the favicon; all three must agree. A notched fan is unavailable
-    at this size — at a 1.75 stroke in a 24 box, a notch deep enough to read turns it into a heart. */
-export function PeaksIcon(props) {
+/** Two interlocking rings under a stone setting: the app's own mark. `scripts/make-icons.js`
+    rasterises the same geometry and `index.html` draws it inline as the favicon, in the same
+    24-unit box; all three must agree, or the installed app and the screen it opens carry
+    different logos. */
+export function RingsIcon(props) {
   return (
     <svg {...base} {...props}>
-      <path d="M2.5 18.5 8.6 8l3.8 6.2L15.8 9l5.7 9.5Z" />
+      <circle cx="9" cy="14" r="6" />
+      <circle cx="15" cy="14" r="6" />
+      <path d="M15 4.5 12 8l-3-3.5 1.6-1.5h2.8Z" />
     </svg>
   )
 }
