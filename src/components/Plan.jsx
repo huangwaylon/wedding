@@ -1,36 +1,18 @@
 /**
- * The plan: every task as a row, grouped by the month it is due in.
+ * The plan: every task as a row, grouped by the month it is due in. Grouped by month, not state — a
+ * state grouping reshuffles the board on every tick and loses the reader's place, and state slicing
+ * lives in the filter chips.
  *
- * GROUPED BY MONTH, NOT BY STATE, because a plan is read forwards — "what is coming up" — and
- * a state grouping reshuffles the whole board every time something is ticked off, which loses
- * the reader's place. State slicing lives in the filter chips instead.
+ * The sticky month heading names the month, which lets a row print a bare day number, and carries
+ * the month's OWN TALLY — `3/9` answers "am I done with April", which neither the board's
+ * percentage nor any row can. The `Today` line is a BOUNDARY: one line between two rows, where what
+ * has passed meets what has not. Both are withheld while a filter is on, a slice of a month not
+ * being a month and a list with holes being unable to claim that everything below a line is still
+ * ahead.
  *
- * THE MONTH HEADING IS STICKY, AND IT NAMES THE MONTH RATHER THAN IMPLYING IT. That costs nothing
- * horizontally and is what lets a row print a bare day number instead of restating APR forty times.
- *
- * IT IS ALSO WHERE A MONTH'S OWN FIGURE GOES, because it is already the one thing on screen while
- * that month's rows scroll past. A `3/9` at its trailing edge answers "am I done with April", which
- * is the unit this work is done in and a question neither the board's single percentage nor any
- * individual row can answer. The month the wedding falls in says so once: a plan running to one
- * fixed day should name its last sign.
- *
- * AND THE LIST SAYS WHERE TODAY IS. One line, between two rows, at the boundary between what has
- * passed and what has not. The header counts down and its strip carries an on-schedule mark, but
- * the list is the screen people live in and it had no "you are here" at all. Both figures are
- * withheld while a filter is on: a slice of a month is not a month, and a list with holes in it
- * cannot claim that everything below a line is still ahead.
- *
- * AN ACCORDION IS THE RIGHT SHAPE FOR A PHONE, and the reasoning is about how much of a task
- * fits in 393pt. Everything worth scanning — when it is due, what it is, how far along it is —
- * fits one collapsed row; everything worth editing does not fit any row at all. A separate
- * screen or a sheet for the second half costs a navigation each way and puts the fields
- * somewhere the surrounding month is invisible. Opening in place keeps the neighbouring rows,
- * the month heading and the checklist visible while a date is being changed, and a tap closes
- * it again with nothing to save and nothing to lose.
- *
- * NOTHING HERE DRAWS A SUBTASK. A subtask has a title and a tick and no date at all, so it has
- * no position in a sequence of dates; it gets a row in its parent's checklist, and the parent
- * gets a `3/5` tally on its meta line.
+ * An accordion suits a phone, opening in place keeping the neighbouring rows and the heading
+ * visible while a date is changed. Nothing here draws a subtask — no date means no position in a
+ * sequence of dates, so a checklist reaches its parent as a `3/5` tally.
  */
 
 import React from 'react'
@@ -39,16 +21,9 @@ import { firstOfMonth, formatDayMonth, monthOf } from '../lib/time.js'
 import { useT } from '../i18n/index.js'
 import TaskCard from './TaskCard.jsx'
 
-/**
- * `withProgress` has already sorted, so grouping is a single pass and the groups
- * come out in order — no second sort, and no `Object.keys` ordering assumption.
- *
- * Tasks with no date collect in a final group. They sort last, so putting them anywhere else
- * would bury the month in progress.
- *
- * The tally is accumulated HERE rather than derived later, because this pass is already walking
- * every task and a second one over each group would be the same work done twice.
- */
+/** `withProgress` has already sorted, so grouping is one pass and the groups come out in order: no
+    second sort, no `Object.keys` ordering assumption. Undated tasks collect in a final group,
+    sorting last, and the tally accumulates here, this pass already walking every task. */
 function groupByMonth(tasks) {
   const groups = []
   let current = null
@@ -64,13 +39,9 @@ function groupByMonth(tasks) {
   return groups
 }
 
-/**
- * The id of the row the "Today" line goes above: the first dated task due today or later.
- *
- * `null` unless the boundary has tasks on BOTH sides of it, which is what makes it a boundary. A
- * line above the very first row of a board that is entirely in the future states nothing — and on
- * a board entirely in the past there is nothing for it to sit above at all.
- */
+/** The id of the row the `Today` line goes above: the first dated task due today or later. `null`
+    unless there are tasks on BOTH sides, which is what makes it a boundary — above the first row of
+    an all-future board it states nothing, and an all-past board has nothing for it to sit above. */
 function todayMarker(tasks, today) {
   let past = false
   let next = null
@@ -85,12 +56,9 @@ function todayMarker(tasks, today) {
 /**
  * @param {string} props.today the board's day, 'YYYY-MM-DD' — see `App`
  * @param {string} [props.weddingMonth] 'YYYY-MM' of the wedding, so one heading can say so
- * @param {boolean} [props.unfiltered] false while a filter is on, which suppresses both figures
- *   that describe a WHOLE month. A tally counted over the overdue slice of April would read
- *   "0/3 done" about a month that is nine tasks long and mostly finished — a misleading number on
- *   somebody's screen, which is the one defect class this app treats as unacceptable. The Today
- *   line goes with it: a filtered list has holes, so "everything below this is still ahead" stops
- *   being true.
+ * @param {boolean} [props.unfiltered] false while a filter is on, suppressing both whole-month
+ *   figures: a tally over the overdue slice of April would read "0/3 done" about a month nine
+ *   tasks long and mostly finished.
  */
 export default function Plan({
   tasks,
@@ -112,12 +80,7 @@ export default function Plan({
     <div className="plan">
       {groups.map((group) => (
         <section className="plan__group" key={group.key || 'nodate'}>
-          {/* THE SIGN. It names the stretch, and — because it is already the one element that
-              stays on screen while the rows pass under it — it is also where a month's own
-              progress belongs. The board's tracker gives one figure for four hundred days and a
-              row gives its own state; "am I finished with April" is the actual unit of wedding
-              planning and nothing answered it. The rule beneath is what makes it read as a sign
-              rather than as a floating label. */}
+          {/* The rule beneath is what makes this read as a sign rather than a floating label. */}
           <h2
             className={`plan__month${group.key && group.key === weddingMonth ? ' plan__month--day' : ''}`}
           >
@@ -125,9 +88,8 @@ export default function Plan({
             {group.key && group.key === weddingMonth ? (
               <span className="plan__day">{t('plan.theDay')}</span>
             ) : null}
-            {/* aria-hidden: every row states its own state, the header strip states the same
-                arithmetic for the board, and "3 slash 9" read out inside a heading is worse than
-                silence. It is a scanning aid for the eye. */}
+            {/* `aria-hidden`, and never coloured: every row states its own state and the header
+                strip the same arithmetic, so "3 slash 9" inside a heading is worse than silence. */}
             {unfiltered ? (
               <span className="plan__tally tnum" aria-hidden="true">
                 {group.done}/{group.tasks.length}
@@ -136,10 +98,8 @@ export default function Plan({
           </h2>
           {group.tasks.map((task) => (
             <React.Fragment key={task.id}>
-              {/* YOU ARE HERE. The header counts down and its strip carries an on-schedule mark;
-                  the list — the screen people actually live in — had nothing saying where today
-                  falls in it. One per board, and it sits BETWEEN rows rather than on one, so the
-                  one-coloured-mark-per-row rule is untouched. */}
+              {/* One per board, BETWEEN rows rather than on one, so the one-coloured-mark-per-row
+                  rule is untouched. */}
               {task.id === marker ? (
                 <p className="plan__now">
                   <span className="plan__nowLabel">{t('due.today')}</span>

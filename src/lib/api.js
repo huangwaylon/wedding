@@ -1,33 +1,23 @@
 /**
  * The network boundary, and the failure taxonomy everything above it branches on.
  *
- * TWO BACKENDS, ONE INTERFACE, AND WHICH ONE IS USED DEPENDS ONLY ON WHETHER THIS DEVICE
- * HOLDS AN EDIT KEY:
+ * Two backends, one interface, chosen only by whether this device holds an edit key:
  *
- *   no key    reads through `doGet` on the Apps Script web app. No credential at all —
- *             that is the feature, and it is why a planner needs nothing to open the board.
- *   a key     mints a token once an hour and does every read AND write straight to
- *             `sheets.googleapis.com`, one hop instead of two.
+ *   no key    reads through `doGet` on the Apps Script web app, with no credential at all.
+ *   a key     mints a token once an hour, then reads and writes straight to `sheets.googleapis.com`.
  *
- * An editor therefore never touches `/exec` except to mint. That is the whole speed story:
- * `/exec` costs 1.0–1.6s before any of our code runs, and the Sheets API costs ~0.24s.
+ * `/exec` costs 1.0–1.6s before any of our code runs and the Sheets API ~0.24s, so an editor
+ * touches `/exec` only to mint. The reads cannot share one path: `ScriptApp.getOAuthToken()`
+ * returns the script's own authorization, which can write, so a token handed to an anonymous reader
+ * would hand them editing.
  *
- * WHY THE READS SPLIT AT ALL, rather than everyone using one path. A minted token cannot be
- * read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization, which can
- * write — so handing one to an anonymous reader would hand them editing. The anonymous read
- * has to stay behind the script.
+ * The `doGet` reply is always HTTP 200 — `ContentService` cannot set a status — so the body is the
+ * only signal. Branch on the body, never on `response.ok`. The Sheets API states its failures
+ * properly, which is why the retry rule below is a status-code rule.
  *
- * THE `doGet` REPLY IS ALWAYS HTTP 200 and the body is the only signal, because
- * `ContentService` cannot set a status. Branch on the body, never on `response.ok`. The
- * Sheets API is the opposite and states its failures properly, which is why the retry rule
- * below is a status-code rule rather than the "is this reply even JSON" guesswork the whole
- * of this file used to be.
- *
- * A RETRY IS SAFE BECAUSE EVERY OP IS IDEMPOTENT, not because a failure proves nothing was
- * written. A write abandoned mid-flight may well be committing as it is abandoned, so a
- * replay has to be harmless even then: `updateTasks`, `setDeleted` and `setConfig` rewrite by
- * id and always did, and `createTasks` resolves the client's id and rewrites that row rather
- * than appending a twin.
+ * Retrying is safe because every op is idempotent, not because a failure proves nothing was
+ * written: a write abandoned mid-flight may be committing as it is abandoned. `updateTasks`,
+ * `setDeleted` and `setConfig` rewrite by id, and `createTasks` upserts on the client's id.
  */
 
 import { SCRIPT_URL, parseConfig } from '../config.js'
@@ -36,17 +26,16 @@ import { readEditKey } from './access.js'
 import { getSpreadsheetId } from './connection.js'
 import * as sheets from './sheets.js'
 
-/** Beyond this something is wrong with the network, not with the request. */
+/**
+ * A hang-stop on the anonymous read: `fetch` has no limit of its own and `useBoard` holds `reading`
+ * for the life of a read, so one socket that never closes blocks every later refresh. An abort has
+ * no `.status`, so it classifies TRANSIENT and is retried — sound because every op is idempotent.
+ */
 const READ_TIMEOUT_MS = 20_000
 
 /**
- * ATTEMPTS PER REQUEST, INCLUDING THE FIRST.
- *
- * Far less load-bearing than it was. It existed because Apps Script answered a cold
- * container with an HTML error page often enough that the retry loop was a human tapping
- * Save twice; the Sheets API does not do that. What is left is a genuine blip — a dropped
- * connection, a 500, a rate limit — and two of those in a row is a real outage rather than
- * something worth waiting through.
+ * Attempts per request, including the first. What is retried is a blip — a dropped connection, a
+ * 500, a rate limit — and two in a row is an outage.
  */
 const ATTEMPTS = 3
 
@@ -54,16 +43,12 @@ const ATTEMPTS = 3
 const BACKOFF_MS = [500, 1_500]
 
 /**
- * Status codes worth a second go. Everything else 4xx is a statement about the request that
- * will be equally true a second later — and 401 never arrives here, because `sheets.js`
- * re-mints and retries it before it can.
+ * Status codes worth a second go. Every other 4xx is a statement about the request that will be
+ * equally true a second later. A 401 never arrives here: `sheets.js` re-mints and retries it first.
  */
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504])
 
-/**
- * Thrown by everything here. `code` is what the UI branches on, and the class never leaves
- * this module: `useBoard` reads `error.code`.
- */
+/** Thrown by everything here. The class never leaves this module; `useBoard` reads `error.code`. */
 class ApiError extends Error {
   constructor(code, cause) {
     super(code)
@@ -74,7 +59,7 @@ class ApiError extends Error {
 }
 
 export const API_ERROR = {
-  /** No `VITE_SCRIPT_URL` in the build. Nothing works; the UI says so plainly. */
+  /** No `VITE_SCRIPT_URL` in the build. Nothing works; the UI says so. */
   UNCONFIGURED: 'unconfigured',
   /** The edit key was refused. Terminal: retrying cannot help. */
   UNAUTHORIZED: 'unauthorized',
@@ -82,20 +67,13 @@ export const API_ERROR = {
   NOT_EMPTY: 'not_empty',
   /** The script is not bound to a spreadsheet, or minted no usable id. */
   MISCONFIGURED: 'misconfigured',
-  /** The row vanished — someone deleted it in the Sheets UI mid-edit. */
+  /** The row vanished — deleted in the Sheets UI mid-edit. */
   NOT_FOUND: 'not_found',
   /** Anything else. Assumed transient, and retried before it is ever reported. */
   TRANSIENT: 'transient',
 }
 
-/**
- * Terminal codes. Anything not in here is retried by `send` before it reaches the UI.
- *
- * `busy` used to live outside this set and was the one code the taxonomy called worth
- * retrying. It is gone with the script lock that produced it — and it was never reachable
- * anyway: the script waited 25s on that lock and the client abandoned retrying at 20s, so a
- * contended write got exactly one attempt and rolled its row back on screen.
- */
+/** Terminal codes. Anything not in here is retried by `send` before it reaches the UI. */
 const TERMINAL = new Set([
   API_ERROR.UNCONFIGURED,
   API_ERROR.UNAUTHORIZED,
@@ -114,12 +92,9 @@ export function canWrite() {
 }
 
 /**
- * Anything thrown below the boundary -> our vocabulary.
- *
- * `sheets.js` throws with `.code` for an app-level refusal and `.status` for an HTTP one;
- * `connection.js` throws with `.badKey` / `.misconfigured`. An unrecognised failure is
- * transient, on the same reasoning a 500 is: a code this build has never heard of is more
- * likely a blip than a permanent refusal.
+ * Anything thrown below the boundary -> our vocabulary. `sheets.js` throws `.code` for an app-level
+ * refusal and `.status` for an HTTP one; `connection.js` throws `.badKey` / `.misconfigured`. An
+ * unrecognised failure is transient, on the same reasoning a 500 is.
  */
 function classify(error) {
   if (error instanceof ApiError) return error
@@ -131,6 +106,10 @@ function classify(error) {
       return new ApiError(API_ERROR.NOT_FOUND, error)
     case 'not_empty':
       return new ApiError(API_ERROR.NOT_EMPTY, error)
+    // A payload this bundle built wrongly — an empty task list, a missing id. Terminal: it is as
+    // false a second later, so it must not spend two retries and two seconds of backoff before
+    // saying so.
+    case 'bad_payload':
     case 'misconfigured':
       return new ApiError(API_ERROR.MISCONFIGURED, error)
     default:
@@ -139,14 +118,10 @@ function classify(error) {
 
   const status = error?.status
   /**
-   * A 4xx the retry list does not name is a statement about the request or the deployment that
-   * will be equally true a second later, so it is TERMINAL — retrying one only makes somebody
-   * wait longer to be told. All three realistic cases are setup rather than bad luck: 403 is a
-   * scope too narrow for the REST API, 404 is the wrong spreadsheet id, and 400 is a range this
-   * bundle built wrongly. `sheets.js` has already absorbed the 400/404 that merely means "the
-   * tabs do not exist yet", so those never arrive here.
-   *
-   * A 401 never arrives here either: `sheets.js` re-mints and retries it before it can.
+   * A 4xx the retry list does not name is terminal: 403 a scope too narrow, 404 the wrong
+   * spreadsheet id, 400 a range this bundle built wrongly. `sheets.js` absorbs the 400 meaning
+   * "tabs not built yet"; a 404 reaches here, no such spreadsheet being a different fact from an
+   * unbuilt one.
    */
   if (typeof status === 'number' && status >= 400 && !RETRYABLE_STATUS.has(status)) {
     return new ApiError(API_ERROR.MISCONFIGURED, error)
@@ -159,10 +134,8 @@ function wait(ms) {
 }
 
 /**
- * Run something across the boundary, retrying a non-terminal failure a few times.
- *
- * Everything above this sees a failure only once retrying it has been tried and has not
- * helped, which is what keeps a blip from reaching somebody as "Nothing was saved".
+ * Retry a non-terminal failure a few times, so a blip never reaches somebody as "Nothing was
+ * saved".
  */
 async function send(work) {
   for (let attempt = 1; ; attempt += 1) {
@@ -180,7 +153,7 @@ async function send(work) {
 function decodeBoard({ tasks, config, needsSetup, sheetTimeZone }) {
   return {
     tasks: Array.isArray(tasks) ? tasks.map(rowToTask).filter((task) => task.id) : [],
-    /** The PARTIAL config, pre-merge — see `mergeConfig` and the snapshot. */
+    /** The partial config, pre-merge — see `mergeConfig` and the snapshot. */
     config: parseConfig(config),
     needsSetup: Boolean(needsSetup),
     sheetTimeZone: typeof sheetTimeZone === 'string' ? sheetTimeZone : '',
@@ -190,10 +163,9 @@ function decodeBoard({ tasks, config, needsSetup, sheetTimeZone }) {
 /**
  * The anonymous read, for a device with no key.
  *
- * `t` is a cache-buster, not data the script reads: `/exec` is served through Google's own
- * cache and a planner reloading right after an edit must not be handed the previous board. It
- * goes in the query string because a fragment would not reach the server at all — which is
- * exactly why the edit key lives in one.
+ * `t` is a cache-buster, not data the script reads: `/exec` is served through Google's own cache,
+ * and a planner reloading after an edit must not get the previous board. It goes in the query
+ * string because a fragment would not reach the server — which is why the edit key lives in one.
  */
 async function readPublicBoard(now) {
   if (!SCRIPT_URL) throw new ApiError(API_ERROR.UNCONFIGURED)
@@ -240,13 +212,11 @@ export function readBoard(now = Date.now()) {
 }
 
 /**
- * Every write goes through here, which is what keeps "an editor must hold a key" in one place
- * rather than repeated per op.
+ * Every write goes through here, which keeps "an editor must hold a key" in one place.
  *
- * It resolves nothing back: a Sheets write answers with the ranges it touched and nothing
- * about the rest of the board, so `useBoard` keeps its optimistic state and settles the rows
- * it wrote. That is one round trip instead of the two a re-read would cost, and the throttled
- * focus refresh is what picks up the other editor's changes.
+ * It resolves nothing back: a Sheets write answers with the ranges it touched and nothing about the
+ * rest of the board, so `useBoard` keeps its optimistic state and settles the rows it wrote. One
+ * round trip instead of two, and the throttled focus refresh picks up the other editor's changes.
  */
 function write(work) {
   if (!canWrite()) return Promise.reject(new ApiError(API_ERROR.UNAUTHORIZED))
@@ -261,12 +231,9 @@ export function createTasks(tasks) {
 }
 
 /**
- * Several rows in ONE request, which is what makes a burst of ticks cost one round trip.
- *
- * ATOMIC ON RESOLUTION: every id is resolved before anything is written, so a batch naming a
- * row somebody has since deleted by hand fails whole and writes none of them. That is why the
- * client may roll the whole batch back — a partial success would leave nothing able to say
- * which half landed.
+ * Several rows in one request, so a burst of ticks costs one round trip. Atomic on resolution: a
+ * batch naming a row somebody has since deleted by hand writes none of them, so the client may roll
+ * the whole batch back.
  */
 export function updateTasks(tasks) {
   return write((id) => sheets.updateTasks(id, tasks))

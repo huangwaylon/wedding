@@ -1,37 +1,28 @@
 /**
- * The hero: the photograph, who is getting married, how long there is left, and how far along
- * the board is. It is the app's only pinned chrome apart from the FAB.
+ * The header: photograph, couple, countdown, board progress. It and the FAB are the only pinned
+ * chrome.
  *
- * IT IS A BAND RATHER THAN A PLATE, AND IT STAYS ON SCREEN. A full-height photograph is the
- * nicer first impression and it costs the whole viewport on the one screen this app has — so
- * the photo is a tenth of the height and it does not scroll away. What that buys is a header
- * that always answers the three questions worth answering without scrolling back up: whose
- * wedding, how many days, how much is done.
+ * `position: fixed`, not `sticky`: WebKit gives a sticky element no layer of its own, so a later
+ * promoted element composites above it and the list draws over the photograph mid-flick.
+ * Consequence: `.hero__progress` renders always — see below.
  *
- * THE PROGRESS STRIP IS OUTSIDE THE PHOTOGRAPH ON PURPOSE. Every contrast figure for a meter
- * — the fill against `--track`, the hairline that identifies an empty one — is measured
- * against opaque tokens, and a photograph is the one backdrop in this app that cannot be
- * measured. So the strip sits below the image on `--surface`, where those numbers still hold,
- * and only the type over the photo relies on the scrim.
+ * The progress strip sits OUTSIDE the photograph, on `--surface`. Every measured meter figure (the
+ * fill against `--track`, the hairline identifying an empty one) is against opaque tokens, and a
+ * photograph cannot be measured; only the type over the photo relies on the scrim.
  *
- * The photograph is `alt=""` and not described — the `<h1>` beside it names the couple, so a
- * described photo would say the same thing twice to a screen reader.
- *
- * The countdown is counted in CALENDAR days in the board's zone (see `daysUntil`), so it flips
- * at midnight rather than at whatever o'clock the page happened to load.
+ * `alt=""` because the `<h1>` beside it names the couple. `today` is a day string in the board's
+ * zone, so the countdown is in calendar days and flips at midnight there.
  */
 
 import { weddingDay } from '../config.js'
 import { toPercent } from '../lib/progress.js'
-import { daysUntil } from '../lib/time.js'
+import { daysBetween } from '../lib/time.js'
 import { useT } from '../i18n/index.js'
 import Meter from './Meter.jsx'
 import { GearIcon } from './icons.jsx'
 
-/**
- * A `public/` asset, so it needs the deployed base — the site serves from `/wedding/` on
- * project Pages and from `/` in dev and under vitest.
- */
+/** A `public/` asset, so it needs the deployed base: `/wedding/` on project Pages, `/` in dev and
+    under vitest. */
 const PHOTO = `${import.meta.env.BASE_URL ?? '/'}hero.jpg`
 
 /** The couple, however much of it has been filled in. */
@@ -42,18 +33,16 @@ export function coupleTitle(config, fallback) {
 }
 
 /**
- * @param {object} props
- * @param {object} props.overall from `overallProgress`. The strip is withheld entirely on an
- *   empty board: a 0% bar measuring nothing is worse than no bar, and `EmptyBoard` is what
- *   that state has to say for itself.
- * @param {string} [props.photo] the photograph's URL. Only the preview harness passes one: its
- *   pages are written into `scripts/`, where the deployed absolute path resolves to nothing and
- *   the hero would screenshot as a bare gradient.
+ * @param {string} props.today today's date in the board's zone, from `useToday`
+ * @param {object} props.overall from `overallProgress`; falsy `total` withholds the meter, not
+ *   the strip
+ * @param {string} [props.photo] only the preview harness passes one: its pages live in
+ *   `scripts/`, where the deployed absolute path resolves to nothing
  */
-export default function Hero({ config, nowMs, canEdit, overall, onOpenSettings, photo = PHOTO }) {
+export default function Hero({ config, today, canEdit, overall, onOpenSettings, photo = PHOTO }) {
   const { t } = useT()
   const day = weddingDay(config)
-  const days = day ? daysUntil(day, config.timezone, nowMs) : null
+  const days = day ? daysBetween(today, day) : null
 
   let countdown = t('countdown.unset')
   if (days != null) {
@@ -73,8 +62,8 @@ export default function Hero({ config, nowMs, canEdit, overall, onOpenSettings, 
           className="hero__img"
           src={photo}
           alt=""
-          /* The largest-contentful-paint element on the tab that opens first;
-             `index.html` preloads the same URL. */
+          /* The largest-contentful-paint element on the tab that opens first; `index.html` preloads
+             the same URL. */
           fetchPriority="high"
           decoding="async"
         />
@@ -94,15 +83,9 @@ export default function Hero({ config, nowMs, canEdit, overall, onOpenSettings, 
           </p>
         </div>
 
-        {/* On the photograph rather than in a bar of its own: a header band above the image would
-            cost a row of chrome to hold one rarely-pressed control.
-
-            IT MUST COME AFTER `.hero__text` IN THE DOM. Both are positioned and neither carries a
-            z-index, so paint order — and therefore hit-testing — is document order. With the gear
-            first, the full-width text block sits on top of it and swallows every tap: Settings is
-            the only route to the language, the accent, the wedding date, the read-only preview,
-            restore and the edit key, and on a phone all of it became unreachable while the button
-            stayed perfectly visible and perfectly keyboard-focusable. */}
+        {/* On the photograph rather than in a bar of its own, which would cost a row of chrome for
+            one rarely-pressed control. It follows `.hero__text` in the DOM because neither carries
+            a z-index, so paint order — and hit-testing — is document order. */}
         <button
           type="button"
           className="hero__gear"
@@ -113,25 +96,31 @@ export default function Hero({ config, nowMs, canEdit, overall, onOpenSettings, 
         </button>
       </div>
 
-      {overall?.total ? (
-        <div className="hero__progress">
-          <span className="hero__percent tnum">{toPercent(overall.percent)}%</span>
-          <Meter
-            value={overall.percent}
-            mark={overall.expected}
-            label={t('overall.title')}
-            /* The mark has no visible label, so its meaning has to be in here — it is the only
-               channel a screen reader has for the whole pace signal. */
-            valueText={`${summary} — ${t('overall.expected', {
-              count: overall.passed,
-              total: overall.total,
-            })}`}
-          />
-          {/* The count is what makes the percentage checkable by arithmetic. The app claims no
-              pace: a single figure for that can be wrong, and a count cannot. */}
-          <span className="hero__tally tnum">{summary}</span>
-        </div>
-      ) : null}
+      {/* Rendered ALWAYS, even empty, at a FIXED height: the header reserves no flow space, so
+          `.views` pads by `--hero-height` and a strip that came and went would overstate the header
+          by its own height. An empty board withholds the METER instead — a 0% bar measures nothing,
+          and `EmptyBoard` is what that state says. */}
+      <div className="hero__progress">
+        {overall?.total ? (
+          <>
+            <span className="hero__percent tnum">{toPercent(overall.percent)}%</span>
+            <Meter
+              value={overall.percent}
+              mark={overall.expected}
+              label={t('overall.title')}
+              /* The mark has no visible label, so its meaning goes here: a screen reader's only
+                 channel for it. */
+              valueText={`${summary} — ${t('overall.expected', {
+                count: overall.passed,
+                total: overall.total,
+              })}`}
+            />
+            {/* The count makes the percentage checkable by arithmetic. No pace is claimed: one
+                figure for that can be wrong, a count cannot. */}
+            <span className="hero__tally tnum">{summary}</span>
+          </>
+        ) : null}
+      </div>
     </header>
   )
 }

@@ -12,14 +12,13 @@
   h       iframe height in px (default 900)
   to      a CSS selector to scroll the frame's document to, centred
 
-  IFRAMES, NOT A RESIZED WINDOW. Each frame gets its own viewport, so container and media
-  queries resolve honestly; headless Chrome quietly reports a different width than you
-  asked for and every breakpoint reads wrong.
+  Iframes, not a resized window: each frame gets its own viewport, so container and media queries
+  resolve correctly, while headless Chrome reports a different width than asked for. `to` does not
+  survive a headless capture either, so a surface only reachable mid-scroll needs a preview page of
+  its own. Everything scrolls with the document — no surface owns a nested scroller — so `to` is
+  the only positioning control here.
 
   Regenerate the preview files first: `npx vite-node scripts/preview.jsx`.
-
-  Everything scrolls with the DOCUMENT now — no surface owns a nested scroller — so `to` is
-  the only positioning control this page needs.
 -->
 <html>
   <head>

@@ -15,7 +15,7 @@ import {
   FALLBACK_TIME_ZONE,
   addDays,
   daysBetween,
-  daysUntil,
+
   dayOfMonth,
   firstOfMonth,
   formatDay,
@@ -142,26 +142,30 @@ describe('daysBetween', () => {
   })
 })
 
-describe('daysUntil', () => {
+describe('the countdown', () => {
+  // `Hero` composes it as `daysBetween(today, wedding)`, where `today` comes from `useToday`.
+  // These pin that composition rather than a wrapper: what matters is that the figure is calendar
+  // days in the BOARD's zone, so it flips at midnight at the venue.
   const wedding = '2027-04-18'
+  const countdown = (nowMs) => daysBetween(todayIn(TOKYO, nowMs), wedding)
 
   it('counts calendar days in the board zone', () => {
-    expect(daysUntil(wedding, TOKYO, Date.UTC(2027, 3, 11, 14, 0))).toBe(7)
+    expect(countdown(Date.UTC(2027, 3, 11, 14, 0))).toBe(7)
   })
 
   it('flips at midnight, not at the hour the page loaded', () => {
     // 23:59 and 00:01 either side of the same Tokyo midnight must differ by one, which a
     // difference-in-milliseconds implementation gets wrong.
-    expect(daysUntil(wedding, TOKYO, Date.UTC(2027, 3, 17, 14, 59))).toBe(1)
-    expect(daysUntil(wedding, TOKYO, Date.UTC(2027, 3, 17, 15, 1))).toBe(0)
+    expect(countdown(Date.UTC(2027, 3, 17, 14, 59))).toBe(1)
+    expect(countdown(Date.UTC(2027, 3, 17, 15, 1))).toBe(0)
   })
 
   it('goes negative after the wedding', () => {
-    expect(daysUntil(wedding, TOKYO, Date.UTC(2027, 3, 20, 0, 0))).toBe(-2)
+    expect(countdown(Date.UTC(2027, 3, 20, 0, 0))).toBe(-2)
   })
 
   it('is null with no date', () => {
-    expect(daysUntil('', TOKYO, Date.now())).toBeNull()
+    expect(daysBetween(todayIn(TOKYO, Date.now()), '')).toBeNull()
   })
 })
 

@@ -1,49 +1,37 @@
 /**
  * Progress. Pure, and the only file that decides what a percentage means.
  *
- * A task is a title, a day and a tick, so a percentage here is WORK DONE and nothing
- * else:
- *
  *   percent    what to draw. done -> 100, else the subtask tally, else 0.
- *   duePassed  whether the calendar has already asked for it. Rolled up as
- *              `expected`, this is where the fill would sit if everything were
- *              finished exactly on its date — the marker on the overall meter.
+ *   duePassed  whether the calendar has already asked for it. Rolled up as `expected`.
  *
- * THOSE TWO ARE DIFFERENT CLAIMS OVER THE SAME DENOMINATOR AND MUST NOT BE MERGED.
- * `percent` is countable — "9 of 14 tasks" — while `expected` is the calendar's
- * opinion, and the gap between them is the whole pace signal: a task done early
- * raises the first and not the second, a date that slipped raises the second and not
- * the first. It is shown as the distance between a fill and a mark and never as a
- * sentence, because a sentence has to pick a verdict and a verdict can be wrong —
- * five things late and five future things ticked early sum to a pace of zero.
+ * Those are different claims over the same denominator and must not be merged: `percent` is work
+ * done and is countable, `expected` is the share of dates that have passed. The gap is drawn as a
+ * fill against a mark, never worded — five things late plus five future things ticked early sum to
+ * a pace of zero, so any single verdict can be flatly wrong.
  *
- * AN UNFINISHED TASK IS 0%, WHATEVER THE DATE SAYS. Nothing may make a percentage
- * advance without somebody ticking something: the headline has to be a number
- * somebody can check by counting.
+ * An unfinished task is 0%, whatever the date says: nothing may make a percentage advance without
+ * somebody ticking something.
  *
- * Every task counts EQUALLY in the roll-up — not weighted by subtask count. "62% of
- * our tasks" is a sentence somebody can check; a weighted average silently makes the
- * one task somebody decomposed into ten worth ten times the rest.
+ * Every top-level task counts equally in the roll-up, never weighted by subtask count: decomposing
+ * one task more finely must not change what the rest of the board is worth.
  */
 
 import { isDone, isLive } from '../schema.js'
 import { daysBetween, isValidDay } from './time.js'
 
 /**
- * How near a due date has to be to count as SOON. Two weeks: near enough that it is
- * this fortnight's work, far enough that a wedding checklist's chip is not either
- * empty or the whole board. Exported because it is part of the meaning of the state
- * rather than a component's constant.
+ * How near a due date has to be to count as soon. Two weeks: near enough to be this fortnight's
+ * work, far enough that the chip is neither empty nor the whole board. Exported because it is part
+ * of the meaning of the state rather than a component's constant.
  */
 export const SOON_DAYS = 14
 
 /**
  * Split a flat row list into top-level tasks and the subtasks hanging off them.
  *
- * ONE LEVEL, AND THE READ IS WHAT ENFORCES IT. A row is a subtask iff its `parentId` names a
- * LIVE row whose own `parentId` is empty. That rule is depth-1 by construction, so it cannot
- * recurse, cannot walk a cycle, and needs no visited set or depth counter — and it has an
- * answer for every state a hand-edited spreadsheet can reach:
+ * One level, enforced on the read: a row is a subtask iff its `parentId` names a live row whose own
+ * `parentId` is empty. Depth-1 by construction, so it cannot recurse or walk a cycle and needs no
+ * visited set. Every state a hand-edited spreadsheet can reach has an answer:
  *
  *   a grandchild      its parent has a parentId, so the parent is not top-level -> promoted
  *   a self-parent     same reasoning, the row is its own non-top-level parent  -> promoted
@@ -51,10 +39,8 @@ export const SOON_DAYS = 14
  *   an orphan         the parent is tombstoned, so not live                    -> promoted
  *   a dangling id     names nothing                                            -> promoted
  *
- * PROMOTED, NEVER HIDDEN. A one-pass "group children under parents" that dropped an
- * unresolvable row would make tasks vanish from the board with no error and quietly shrink the
- * roll-up's denominator. On a wedding checklist a silently hidden task is the worst thing this
- * app could do, so the rule fails open: anything it cannot place is a task.
+ * Promoted, never hidden: dropping an unplaceable row would make a task vanish with no error and
+ * shrink the roll-up's denominator.
  */
 export function partitionSubtasks(tasks) {
   const live = tasks.filter(isLive)
@@ -76,8 +62,8 @@ export function partitionSubtasks(tasks) {
 }
 
 /**
- * The order a checklist is read is the order it was typed. `createTasks` stamps one timestamp
- * for a whole batch, so ties fall back to sheet order via `Array.sort`'s stability.
+ * A checklist is read in the order it was typed. `createTasks` stamps one timestamp per batch, so
+ * ties fall back to sheet order via `Array.sort`'s stability.
  */
 function byCreated(a, b) {
   if (a.createdAt === b.createdAt) return 0
@@ -109,8 +95,8 @@ function clamp01(value) {
  * @param {string} today the board's current day, 'YYYY-MM-DD' (`time.todayIn`)
  * @param {object[]} [subtasks] this task's LIVE subtasks, if any
  * @returns {{percent:number, duePassed:boolean, state:string, dated:boolean,
- *            days:number|null, tally:{done:number,total:number}|null}}
- *   `percent` is 0–1; `days` is signed calendar days until the due date
+ *   days:number|null, tally:{done:number,total:number}|null}} `percent` is 0–1; `days` is signed
+ *   calendar days until the due date
  */
 export function taskProgress(task, today, subtasks = []) {
   const dated = isValidDay(task?.due)
@@ -118,25 +104,17 @@ export function taskProgress(task, today, subtasks = []) {
   const days = dated ? daysBetween(today, task.due) : null
 
   /**
-   * The subtask tally, and why it can be trusted where an estimate could not.
-   *
-   * This app never asks anybody how far along a task is. Ticking a subtask is not an estimate,
-   * it is a count — so a tally is the only partial measurement in the model, and it did not
-   * have to be asked for.
-   *
-   * LIVE subtasks only, which `partitionSubtasks` has already filtered. A parent whose subtasks
-   * are all tombstoned therefore has no tally and reads 0% until somebody ticks it.
+   * The subtask tally. Ticking is a count rather than an estimate; this app never asks how far
+   * along a task is. Live subtasks only, filtered by `partitionSubtasks`, so a parent whose
+   * subtasks are all tombstoned reads 0%.
    */
   const total = subtasks.length
   const tally = total ? { done: subtasks.filter(isDone).length, total } : null
 
   /**
-   * PRECEDENCE: `done_at` > the subtask tally > nothing.
-   *
-   * `done_at` wins because it is the only explicit human assertion in the model — somebody
-   * ticking a parent with two items open is saying "the rest turned out not to be needed", and
-   * answering 60% tells them the app knows better. Nothing is blended: "3 of 5 = 60%" is a
-   * sentence somebody can check by counting.
+   * Precedence: `done_at` > the subtask tally > nothing, and nothing is blended. `done_at` wins as
+   * the only explicit human assertion in the model: ticking a parent with two items open says the
+   * rest was not needed. "3 of 5 = 60%" is checkable by counting; a blend is not.
    */
   const percent = done ? 1 : clamp01(tally ? tally.done / tally.total : 0)
 
@@ -150,10 +128,8 @@ export function taskProgress(task, today, subtasks = []) {
   return {
     percent,
     /**
-     * Whether the calendar has already asked for this one. An UNDATED task asks nothing of
-     * anybody, so it can be neither ahead nor behind — it counts in the denominator and
-     * contributes to neither numerator, which is the only honest treatment of a task nobody
-     * has committed to a date for.
+     * Whether the calendar has already asked for this one. An undated task asks nothing, so it
+     * counts in the denominator and contributes to neither numerator.
      */
     duePassed: dated && days < 0,
     state,
@@ -164,15 +140,11 @@ export function taskProgress(task, today, subtasks = []) {
 }
 
 /**
- * Attach progress to every live task, sorted for display.
+ * Attach progress to every live task, sorted by due date ascending then title. Undated tasks sort
+ * last: they have no place in a sequence of dates.
  *
- * Sorted by due date ascending, then by title — the order the plan is read in ("what is due
- * next"). Undated tasks sort last: they have no place in a sequence of dates, and putting them
- * first would bury the week in progress.
- *
- * TOP-LEVEL TASKS ONLY, each carrying its own `subtasks`. Subtasks are never sorted into this
- * list: they are dateless, so the comparison below would tear every one of them away from its
- * parent into a trailing pile.
+ * Top-level tasks only, each carrying its own `subtasks`. Subtasks are dateless, so sorting them
+ * into this list would tear every one away from its parent into a trailing pile.
  */
 export function withProgress(tasks, today) {
   const { parents, children } = partitionSubtasks(tasks)
@@ -183,11 +155,9 @@ export function withProgress(tasks, today) {
         ...task,
         subtasks,
         /**
-         * A row that NAMES a parent and is on this list anyway: `partitionSubtasks` could not
-         * place it — dangling, cyclic, or a parent that is tombstoned — and promoted it rather
-         * than hide it. The UI has to be able to ask, because "has a `parentId`" and "is a
-         * subtask" stop being the same question here, and the client's answer is this one: it
-         * is being drawn, counted and rolled up as a task.
+         * A row that names a parent and is on this list anyway: `partitionSubtasks` could not place
+         * it. The UI has to be able to ask, because "has a `parentId`" and "is a subtask" are
+         * different questions here; this row is drawn, counted and rolled up as a task.
          */
         promoted: Boolean(task.parentId),
         progress: taskProgress(task, today, subtasks),
@@ -203,29 +173,21 @@ function compareForDisplay(a, b) {
 }
 
 /**
- * The headline. `percent` is the mean of every task's `percent` — the share of the
- * work that is done — and `expected` is the share whose date has already passed. Same
- * denominator, two different claims, and the distance between them is drawn as a fill
- * against a mark.
+ * The headline. `percent` is the mean of every task's `percent`; `expected` is the share whose date
+ * has passed. Same denominator, two claims, drawn as a fill against a mark.
  *
- * THERE IS NO PACE VERDICT HERE AND THERE MUST NOT BE ONE. Any single figure
- * subtracting the two can be flatly wrong: five tasks past their date with nothing
- * done, plus five future tasks ticked early, sums to exactly zero and would read "on
- * schedule" with five things late. The graphic declines to claim it and `overdue`
- * states the fact on its own.
+ * No pace verdict: five tasks past their date with nothing done, plus five future tasks ticked
+ * early, sums to zero and would read "on schedule" with five things late. `overdue` states the fact
+ * on its own.
  *
- * TOP-LEVEL TASKS ONLY, which `withProgress` already guarantees. A subtask must never enter
- * this mean: a parent with ten subtasks would otherwise carry eleven twentieths of a ten-task
- * board — one task outweighing nine — and worse, because decomposing a task is a bookkeeping
- * choice rather than a fact about the wedding. Writing more detail into one task would
- * silently deflate every other.
+ * Top-level tasks only, which `withProgress` guarantees: a subtask in this mean would make a parent
+ * with ten subtasks carry eleven twentieths of a ten-task board.
  *
- * @param {Array} tasks live TOP-LEVEL tasks WITH `progress` attached (`withProgress`)
+ * @param {Array} tasks live top-level tasks with `progress` attached (`withProgress`)
  */
 export function overallProgress(tasks) {
-  // Every key in `STATE` needs a slot here, `nodate` included: the loop below indexes this
-  // object BY state, so a missing key makes the count NaN for the first undated task. It is
-  // an accumulator, not a promise that something displays it.
+  // Every key in `STATE` needs a slot, `nodate` included: the loop indexes this object by state, so
+  // a missing key makes the count NaN for the first undated task.
   const counts = { done: 0, overdue: 0, soon: 0, later: 0, nodate: 0 }
   let percentSum = 0
   let passed = 0
@@ -241,7 +203,7 @@ export function overallProgress(tasks) {
     total,
     percent: total ? percentSum / total : 0,
     expected: total ? passed / total : 0,
-    /** How many dates have already passed. The mark's own accessible wording needs it. */
+    /** How many dates have already passed, for the mark's accessible wording. */
     passed,
     ...counts,
   }

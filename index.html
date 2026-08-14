@@ -3,11 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <!--
-      `interactive-widget=resizes-content` is the load-bearing part. iOS defaults to
-      `resizes-visual`, where the keyboard changes neither the layout viewport nor `dvh` — so a
-      bottom sheet stayed full height with its Save button under ~340px of keyboard and no way
-      to reach it. `resizes-content` shrinks the layout viewport instead, which brings the
-      footer up with it. `.sheet__foot` is also sticky, for engines that ignore this.
+      `interactive-widget=resizes-content` is load-bearing: on iOS's default `resizes-visual` the
+      keyboard changes neither the layout viewport nor `dvh`, so a bottom sheet stays full height
+      with Save under ~340px of keyboard. `.sheet__foot` is also sticky, for engines ignoring this.
     -->
     <meta
       name="viewport"
@@ -16,72 +14,62 @@
     <meta name="theme-color" content="#faf8f3" />
     <meta name="color-scheme" content="light" />
     <!--
-      An inline data-URI favicon rather than a file: it costs no request at all, and
-      without one every page load logs a 404 for /favicon.ico. The two-peak mark on the
-      accent, the same mark and colour `scripts/make-icons.js` rasterises for the Home
-      Screen — the two must not drift. Covered by `img-src 'self' data:` below.
+      Inline, so it costs no request, and without one every load logs a 404 for /favicon.ico. The
+      two-peak mark on the accent, and the one copy of it that cannot be derived —
+      `scripts/make-icons.js` rasterises it for the Home Screen, `PeaksIcon` draws it in the app,
+      and the three must not drift. Covered by `img-src 'self' data:`.
     -->
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231c4b74'/%3E%3Cpath d='M6 23 12 12l3.4 5.6L19 12l6 11Z' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
     />
     <!--
-      Home Screen install (iOS Safari 26+): Share -> Add to Home Screen. The service
-      worker is generated into dist/ by scripts/build-sw.js and registered from
-      main.jsx in production only — it is what makes a cold launch do no network work,
-      since Pages serves even content-hashed assets with max-age=600.
-      `apple-touch-icon` (not the SVG favicon) is what iOS actually uses for the tile
-      and the splash flash; the PNGs live in `public/`.
+      Home Screen install (iOS Safari 26+): Share -> Add to Home Screen. scripts/build-sw.js
+      generates the service worker into dist/ and main.jsx registers it in production only; it is
+      what makes a cold launch do no network work, since Pages serves even content-hashed assets
+      with max-age=600. iOS uses `apple-touch-icon`, not the SVG favicon, for the tile and splash;
+      those PNGs live in `public/`.
 
-      NOTE: `public/manifest.webmanifest` deliberately has NO `start_url`, so it
-      defaults to the document URL. That is what lets an editor install from a URL
-      still carrying `#k=…` and have the installed app — which gets its own storage
-      bucket, separate from Safari's — capture the key on its first launch. See
-      `src/lib/access.js`.
+      `public/manifest.webmanifest` has no `start_url`, so it defaults to the document URL: an
+      editor installs from a URL still carrying `#k=…`, and the installed app — its own storage
+      bucket, separate from Safari's — captures the key on first launch (`src/lib/access.js`).
+
+      Absolute paths, like the script tag below: Vite's dev server prepends `base` to a
+      leading-slash href once, and %BASE_URL% already resolves to the base, so it would double.
     -->
-    <!-- Plain absolute paths, like the script tag below: Vite's dev server prepends
-         `base` to a leading-slash href exactly once. %BASE_URL% already resolves to
-         the base itself, so using it here would double it in dev. -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/icon-180.png" />
-    <!-- The hero photograph is the largest-contentful-paint element — it is the first
-         thing on Home and nothing above it competes. It is rendered by React, so the
-         preload scanner cannot see it in the HTML: without this the request does not
-         start until the bundle has downloaded, parsed and committed a first render.
-         `fetchpriority="high"` is the other half, since an `as="image"` preload is
-         queued at low priority by default and would then wait behind that same bundle.
-         Same origin, so `img-src 'self'` below already covers it. -->
+    <!-- The hero photograph is the largest-contentful-paint element and React renders it, so the
+         preload scanner cannot see it: without this the request waits for the bundle to download,
+         parse and commit a first render. `fetchpriority="high"` is the other half — an `as="image"`
+         preload is queued at low priority and would wait behind that same bundle. Same origin, so
+         `img-src 'self'` covers it. -->
     <link rel="preload" as="image" href="/hero.jpg" fetchpriority="high" />
-    <!-- Safari still only recognizes the apple- prefixed tag; the unprefixed one is
-         the standards-track name Chromium now asks for instead. Harmless to ship both. -->
+    <!-- Safari recognizes only the apple- prefixed tag; the unprefixed one is the
+         standards-track name Chromium asks for. -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Wedding" />
     <!--
-      An allowlist, not boilerplate. No third-party JavaScript executes in this app at
-      all: `script-src 'self'` is possible because there is no Google Identity
-      Services script, no Picker iframe and no Sheets API *client library* — there is
-      no sign-in anywhere, and the Sheets API is reached with a plain `fetch` carrying
-      a token the Apps Script endpoint minted.
+      An allowlist. `script-src 'self'` is possible because no third-party JavaScript runs here:
+      no Google Identity Services, no Picker iframe, no Sheets client library. Nothing signs in —
+      the Sheets API takes a plain `fetch` with a token the Apps Script endpoint minted — so no
+      sign-in host may be added; `accounts.google.com` here would mean the capability link had
+      been replaced with OAuth.
 
-      `sheets.googleapis.com` IS here, and it is the one host that carries a
-      credential. An EDITOR mints a Google token from `/exec` and then reads and
-      writes the spreadsheet directly, because `/exec` costs 1.0-1.6s per request and
-      the Sheets API costs ~0.24s. A view-only visitor still holds no token at all and
-      never reaches that host — their board comes from `doGet`, which is why they need
-      no credential. Removing this host does not make the app safer; it makes every
-      write four times slower.
+      `sheets.googleapis.com` is the one host carrying a credential: an editor mints from `/exec`
+      at 1.0-1.6s a request, then reads and writes directly at ~0.24s. A view-only visitor holds
+      no token and never reaches it, their board coming from `doGet`. Removing this host does not
+      make the app safer, it makes every write four times slower.
 
-      `script.googleusercontent.com` looks redundant next to `script.google.com` and
-      is not: `/exec` answers with a 302 to it. Current Chrome does not re-check
-      `connect-src` against a redirect target, but browsers have differed and Safari
-      is the primary target here, so it stays.
+      `script.googleusercontent.com` is not redundant: `/exec` answers with a 302 to it. Current
+      Chrome does not re-check `connect-src` against a redirect target, but browsers have differed
+      and Safari is the primary target.
 
-      Note this tag does NOT cover the service worker's own execution context — a
-      worker's CSP comes from the headers served with its script, and GitHub Pages
-      sends none. That is why the service worker never intercepts a cross-origin
-      request: it must not end up an uncovered proxy in front of the hosts below.
+      This tag does not cover the service worker's own context: a worker's CSP comes from the
+      headers served with its script, and Pages sends none. Hence the worker never intercepts a
+      cross-origin request — it must not be an uncovered proxy in front of these hosts.
     -->
     <meta
       http-equiv="Content-Security-Policy"

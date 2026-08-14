@@ -1,24 +1,19 @@
 /**
- * How near a task's due date is, in words, with the row's one spot of colour beside them.
+ * The only place a date's nearness is worded, with the row's one spot of colour beside it. It says
+ * the relative distance, not the state: "3 days ago" carries the state as a side effect and needs
+ * no second pill saying "Overdue".
  *
- * IT SAYS THE RELATIVE DISTANCE, NOT THE STATE. "3 days ago" and "in 5 days" are the two
- * questions somebody scanning a checklist actually has, and they carry the state as a
- * side effect: nothing that reads "3 days ago" needs a second pill saying "Overdue".
- *
- * IT RENDERS NOTHING PAST THE FORTNIGHT, and that is the point. A wedding board runs
- * four hundred days, so a label on every row would be four hundred labels — and presence
- * then becomes a third channel on top of the dot's hue and the words themselves: a row
- * with a mark on it is a row to act on this fortnight. A finished task and an undated one
- * say nothing either; their tick and their empty day column have already said it.
- *
- * The dot takes its fill from the one state table, so no state colour ever touches type.
+ * It renders nothing past the fortnight. A board runs four hundred days, so a label on every row
+ * would be four hundred labels, and presence is then a third channel on top of the dot's hue and
+ * the words: a row with a mark is a row to act on this fortnight. A finished or undated task says
+ * nothing either. The dot takes its fill from the one `.dot--*` table, so no state colour touches
+ * type.
  */
 
 import { STATE } from '../lib/progress.js'
 import { useT } from '../i18n/index.js'
 
 /**
- * @param {object} props
  * @param {string} props.state one of `STATE`
  * @param {number|null} props.days signed calendar days until the due date
  */

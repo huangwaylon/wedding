@@ -189,11 +189,11 @@ function stateEntry(state) {
 const STATES = Object.values(STATE)
 
 /**
- * The states that earn a rule: the ones whose fill DIFFERS from `.dot`'s fallback. `later` and
- * `nodate` are the neutral pair, the fallback is already --ink-4, and a rule for either would
- * be a no-op restating the base.
+ * The states that earn a rule: the ones a dot is ever drawn for. `DueLabel` is the only site
+ * composing `dot--${state}` and it renders for `overdue` and `soon` alone, so a rule for any
+ * other state would be CSS nothing can reach.
  */
-const COLOURED = [STATE.DONE, STATE.OVERDUE, STATE.SOON]
+const COLOURED = [STATE.OVERDUE, STATE.SOON]
 
 describe('the state table', () => {
   it('maps exactly the coloured states, once, in one place', () => {
@@ -383,9 +383,17 @@ describe('form controls', () => {
     expect(/\.input \{([^}]*)\}/.exec(primitives)[1]).toContain('var(--line-input)')
   })
 
-  it('keeps tap targets at 44px, with a 36px floor for secondary controls', () => {
+  it('has ONE tap target size, and gives it to every control a thumb aims at', () => {
+    // A 36px floor for "secondary" controls existed and every one of its users was a thumb target:
+    // retry, restore, seed the template, use this link, the row's Edit toggle beside a 44px delete,
+    // and the settings swatches. `.btn--sm` is smaller in type and padding, not in target.
     expect(tokens).toMatch(/--tap-target: 44px/)
-    expect(tokens).toMatch(/--tap-target-sm: 36px/)
+    expect(code(tokens)).not.toContain('--tap-target-sm')
+    for (const sheet of [primitives, app]) {
+      expect(code(sheet)).not.toContain('--tap-target-sm')
+    }
+    expect(ruleFor(primitives, '.btn--sm')).toMatch(/min-height: var\(--tap-target\)/)
+    expect(ruleFor(app, '.swatch')).toMatch(/min-height: var\(--tap-target\)/)
   })
 
   it('lets the select inherit that floor rather than restating it', () => {
@@ -601,6 +609,39 @@ describe('layout', () => {
     expect(ruleFor(app, '.hero__title')).toMatch(/font-size: clamp\(/)
   })
 
+  it('spends a FIFTH of the viewport on the band, with a floor a landscape window affords', () => {
+    // The three terms are not interchangeable. 20vh is the band — at 10vh the picture was texture
+    // behind two lines of type and no `object-position` held the couple in it.
+    //
+    // The FLOOR is two lines of type plus the inset and nothing more, because it applies exactly
+    // where the viewport is shortest: a 393x852 phone in landscape is 393px TALL, and a 9rem floor
+    // took 144px of that plus the strip and the inset — 44% of the screen, header. It has to stay
+    // below what 20vh of that height comes to, or the floor overrides the band on the one window
+    // that can least afford it.
+    const clamp = /--hero-photo: clamp\(([^)]*)\)/.exec(code(tokens))[1].split(',')
+    expect(clamp).toHaveLength(3)
+    expect(clamp[1].trim()).toBe('20vh')
+
+    const rem = (term) => Number(/([\d.]+)rem/.exec(term)[1]) * 16
+    const LANDSCAPE_PX = 393
+    const floor = rem(clamp[0])
+    expect(floor, 'the floor overrides 20vh in landscape').toBeLessThanOrEqual(0.2 * LANDSCAPE_PX)
+    // And the whole header, floor plus strip, stays under a third of that window.
+    const strip = rem(/--hero-strip:([^;]*);/.exec(code(tokens))[1])
+    expect((floor + strip) / LANDSCAPE_PX).toBeLessThan(0.3)
+    // The ceiling stops a tall monitor spending 300px on a band nobody is reading.
+    expect(rem(clamp[2])).toBeGreaterThan(floor)
+  })
+
+  it('composes --hero-height as EXACTLY the three bands it occupies', () => {
+    // A `fixed` header reserves no flow space, so this token is the only thing standing between the
+    // list and the photograph: `.views`' padding-top, `.plan__month`'s sticky top and `html`'s
+    // scroll-padding-top all offset by it and nothing measures the header itself. A term missing
+    // leaves the month heading under the strip; a term too many leaves a gap rows scroll through.
+    const height = /--hero-height:([^;]*);/.exec(code(tokens))[1].trim()
+    expect(height).toBe('calc(var(--safe-top) + var(--hero-photo) + var(--hero-strip))')
+  })
+
   it('ADDS the safe-area inset to the photo band rather than eating into it', () => {
     // Everything is `border-box`, so `height: var(--hero-photo)` with `padding-top:
     // var(--safe-top)` takes the inset OUT of the band. On an iPhone that leaves 26px of content
@@ -624,15 +665,36 @@ describe('layout', () => {
     expect(ruleFor(base, 'html')).toMatch(/scroll-padding-top: var\(--hero-height\)/)
   })
 
+  it('turns pull-to-refresh off on the document', () => {
+    // Installed on iOS that gesture is a RELOAD, and a reload lands between a keystroke and a save:
+    // the text in an open edit session exists nowhere else until it is written. The service-worker
+    // guard covers the version swap, not a person's thumb. On `html`, which is the scroller that
+    // chains to the browser — the same declaration on `body` stops nothing.
+    expect(ruleFor(base, 'html')).toMatch(/overscroll-behavior-y: contain/)
+  })
+
   it('pins the header and makes the month heading stop BELOW it', () => {
-    // Both are sticky and they meet. A month heading still offsetting by `--safe-top` parks
-    // itself under the photograph, where it is invisible until you have already scrolled past
-    // the month it names — and it has to slide UNDER the header, so its z-index stays lower.
+    // THE HEADER IS `fixed`, NOT `sticky`, AND THAT IS A FIX. WebKit positions a sticky element on
+    // the scrolling thread without promoting it to a layer of its own, so a later element that IS
+    // promoted — `.chips` carries a mask, every row carries an image — composites above it and the
+    // list is drawn over the photograph mid-flick. A fixed element is always its own layer.
     const hero = ruleFor(app, '.hero')
-    expect(hero).toMatch(/position: sticky/)
+    expect(hero).toMatch(/position: fixed/)
+    expect(hero).not.toMatch(/position: sticky/)
     expect(hero).toMatch(/top: 0/)
     expect(hero).toMatch(/z-index: var\(--z-header\)/)
+    // Its containing block is the viewport rather than `body`'s padding box, so the horizontal
+    // insets are repeated here or a landscape notch clips the type, and `margin-inline: auto`
+    // inside them is what keeps it over the same column `.views` centres.
+    expect(hero).toMatch(/left: var\(--safe-left\)/)
+    expect(hero).toMatch(/right: var\(--safe-right\)/)
+    expect(hero).toMatch(/margin-inline: auto/)
+    expect(hero).toMatch(/max-width: var\(--column-max\)/)
 
+    // A fixed header reserves NO flow space, so the one column has to pad by the whole of it.
+    expect(ruleFor(app, '.views')).toMatch(/padding-top: var\(--hero-height\)/)
+
+    // The month heading is still sticky and still has to slide UNDER the header.
     const month = ruleFor(app, '.plan__month')
     expect(month).toMatch(/top: var\(--hero-height\)/)
     expect(month).toMatch(/z-index: 1;/)

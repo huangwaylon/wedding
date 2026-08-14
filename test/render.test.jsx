@@ -13,6 +13,7 @@
  * blur) is pinned by driving the pure function the handler would call instead.
  */
 
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_CONFIG, mergeConfig } from '../src/config.js'
@@ -33,9 +34,8 @@ import TaskCard from '../src/components/TaskCard.jsx'
 import { draftFrom, taskFromDraft } from '../src/components/TaskFields.jsx'
 import Toasts from '../src/components/Toasts.jsx'
 
-/** The board's day, and the instant that produces it in Tokyo. */
+/** The board's day. Day-granular everywhere, so no instant is needed. */
 const TODAY = '2027-01-06'
-const NOW = Date.UTC(2027, 0, 5, 15, 0)
 
 afterEach(() => {
   setLocale(DEFAULT_LOCALE)
@@ -663,7 +663,7 @@ describe('Hero', () => {
     renderToStaticMarkup(
       <Hero
         config={mergeConfig({ weddingDate: '2027-04-18' })}
-        nowMs={NOW}
+        today={TODAY}
         canEdit
         overall={overall}
         onOpenSettings={noop}
@@ -703,18 +703,21 @@ describe('Hero', () => {
     expect(heroWith(late)).toMatch(/class="hero__percent tnum">0%</)
   })
 
-  it('withholds the strip entirely on an empty board rather than showing a 0% bar', () => {
-    // `EmptyBoard` says what an empty board means; a bar measuring nothing does not. And the
-    // strip is part of `--hero-height`, so an empty board must not reserve it either.
+  it('withholds the METER on an empty board but keeps the strip, which is fixed geometry', () => {
+    // `EmptyBoard` says what an empty board means; a bar measuring nothing does not. The strip
+    // itself stays: the header is `position: fixed`, so it reserves no flow space and `.views` pads
+    // by `--hero-height` — a strip that came and went would leave that padding overstating the
+    // header by its own height. Empty, the strip is the header's bottom rule.
     const html = heroWith(overallOf([]))
-    expect(html).not.toContain('hero__progress')
+    expect(html).toContain('hero__progress')
     expect(html).not.toContain('role="progressbar"')
-    // Withheld when the prop is absent altogether, too — the preview harness renders it that way.
-    expect(
-      renderToStaticMarkup(
-        <Hero config={mergeConfig({})} nowMs={NOW} canEdit onOpenSettings={noop} />,
-      ),
-    ).not.toContain('hero__progress')
+    expect(html).not.toContain('hero__percent')
+    // Same when the prop is absent altogether — the preview harness renders it that way.
+    const bare = renderToStaticMarkup(
+      <Hero config={mergeConfig({})} today={TODAY} canEdit onOpenSettings={noop} />,
+    )
+    expect(bare).toContain('hero__progress')
+    expect(bare).not.toContain('role="progressbar"')
   })
 
   it('shows both names, the countdown and the venue', () => {
@@ -725,7 +728,7 @@ describe('Hero', () => {
       venue: 'Meguro',
     })
     const html = renderToStaticMarkup(
-      <Hero config={config} nowMs={NOW} canEdit onOpenSettings={noop} />,
+      <Hero config={config} today={TODAY} canEdit onOpenSettings={noop} />,
     )
     expect(html).toContain('Aoi &amp; Ren')
     expect(html).toContain('102 days to go')
@@ -734,7 +737,7 @@ describe('Hero', () => {
 
   it('leaves the photograph undescribed, because the h1 beneath it says the same thing', () => {
     const html = renderToStaticMarkup(
-      <Hero config={mergeConfig({ partner1Name: 'Aoi' })} nowMs={NOW} canEdit onOpenSettings={noop} />,
+      <Hero config={mergeConfig({ partner1Name: 'Aoi' })} today={TODAY} canEdit onOpenSettings={noop} />,
     )
     expect(html).toContain('alt=""')
     expect(html).toContain('<h1')
@@ -747,7 +750,7 @@ describe('Hero', () => {
 
   it('says so when there is no wedding date', () => {
     const html = renderToStaticMarkup(
-      <Hero config={mergeConfig({})} nowMs={NOW} canEdit onOpenSettings={noop} />,
+      <Hero config={mergeConfig({})} today={TODAY} canEdit onOpenSettings={noop} />,
     )
     expect(html).toContain('No wedding date set')
     // The spelled-out date went with the tall band — there is no room for it in a tenth of the
@@ -759,23 +762,23 @@ describe('Hero', () => {
     const config = mergeConfig({ weddingDate: '2027-04-18' })
     expect(
       renderToStaticMarkup(
-        <Hero config={config} nowMs={NOW} canEdit={false} onOpenSettings={noop} />,
+        <Hero config={config} today={TODAY} canEdit={false} onOpenSettings={noop} />,
       ),
     ).toContain('View only')
     expect(
-      renderToStaticMarkup(<Hero config={config} nowMs={NOW} canEdit onOpenSettings={noop} />),
+      renderToStaticMarkup(<Hero config={config} today={TODAY} canEdit onOpenSettings={noop} />),
     ).not.toContain('View only')
   })
 
   it('handles the day itself and the days after', () => {
     const config = mergeConfig({ weddingDate: TODAY })
     expect(
-      renderToStaticMarkup(<Hero config={config} nowMs={NOW} canEdit onOpenSettings={noop} />),
+      renderToStaticMarkup(<Hero config={config} today={TODAY} canEdit onOpenSettings={noop} />),
     ).toContain('Today is the day')
 
     const past = mergeConfig({ weddingDate: '2027-01-01' })
     expect(
-      renderToStaticMarkup(<Hero config={past} nowMs={NOW} canEdit onOpenSettings={noop} />),
+      renderToStaticMarkup(<Hero config={past} today={TODAY} canEdit onOpenSettings={noop} />),
     ).toContain('5 days ago')
   })
 })
@@ -783,9 +786,7 @@ describe('Hero', () => {
 describe('FilterChips', () => {
   const render = (list, filter = FILTER_ALL) => {
     const overall = overallProgress(rows(list))
-    return renderToStaticMarkup(
-      <FilterChips counts={overall} total={overall.total} filter={filter} onFilter={noop} />,
-    )
+    return renderToStaticMarkup(<FilterChips counts={overall} filter={filter} onFilter={noop} />)
   }
 
   it('carries a count on every filter, and is the only place the counts live', () => {
@@ -916,7 +917,7 @@ describe('Japanese', () => {
       <>
         <Hero
           config={mergeConfig({ weddingDate: '2027-04-18' })}
-          nowMs={NOW}
+          today={TODAY}
           canEdit={false}
           overall={overall}
           onOpenSettings={noop}
@@ -1042,5 +1043,32 @@ describe('the payload TaskEditor hands to onSave', () => {
     const gone = task({ id: 'x', title: 'Old title', deletedAt: '2027-01-06T00:00:00.000Z' })
     expect(taskToRow(taskFromDraft({ ...draftFrom(gone), title: 'New title' }, gone)).deleted_at)
       .toBe('2027-01-06T00:00:00.000Z')
+  })
+})
+
+/**
+ * THE ONE THING A STATIC RENDER CANNOT SEE AT ALL IS AN EFFECT, so this reads the component as
+ * text. Comments are stripped first: its header explains the dependency it must not have, and a
+ * raw match would find the prose rather than the code.
+ */
+describe('BottomSheet’s open effect', () => {
+  const source = readFileSync('src/components/BottomSheet.jsx', 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*\n/gm, '')
+
+  it('runs ON OPEN and never again', () => {
+    // `onClose` is an inline arrow at every call site, so a new one arrives on every parent render.
+    // With it in the deps the whole body re-ran each time, and `panel.current?.focus()` pulled focus
+    // off whatever field was being typed in — on iOS that drops the keyboard and the caret with it.
+    const deps = [...source.matchAll(/\}, \[([^\]]*)\]\)/g)].map((match) => match[1].trim())
+    expect(deps).toEqual([''])
+    expect(source).not.toMatch(/\[onClose\]/)
+  })
+
+  it('reads onClose through a ref, so Escape still calls the CURRENT one', () => {
+    // What the empty dep array costs: the listener closes over the first `onClose` it ever saw, so
+    // without the ref a sheet reopened for a second task would close the first one's state.
+    expect(source).toMatch(/close\.current = onClose/)
+    expect(source).toMatch(/close\.current\(\)/)
   })
 })

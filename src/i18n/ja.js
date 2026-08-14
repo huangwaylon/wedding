@@ -1,9 +1,7 @@
 /**
- * Japanese catalog. Key set identical to `en.js` — `test/i18n.test.js` fails on a
- * key either one has and the other does not.
- *
- * `ja` has a single cardinal plural category, so every pluralised value supplies
- * `other` alone. That is what `Intl.PluralRules('ja')` reports, not a shortcut.
+ * Japanese catalog. Key set identical to `en.js` — `test/i18n.test.js` fails on a key either one
+ * has and the other does not. `ja` has a single cardinal plural category, so every pluralised value
+ * supplies `other` alone; that is what `Intl.PluralRules('ja')` reports, not a shortcut.
  */
 export default {
   'app.name': '結婚式の準備',

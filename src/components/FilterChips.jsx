@@ -1,10 +1,8 @@
 /**
- * The filter row: which state to show.
- *
- * The chips carry their counts, which is what makes them worth the space — "3" next to
- * Overdue is the whole reason somebody taps it. A chip with a count of zero stays visible
- * and disabled rather than disappearing: a row of controls that reshuffles as the board
- * changes is one somebody has to re-read every time.
+ * The filter row: which state to show. The chips carry their counts, which is what makes them worth
+ * the space. A chip with a count of zero stays visible and disabled rather than disappearing, a row
+ * of controls that reshuffles having to be re-read every time. The overdue count is the one that is
+ * not `--ink-3` (`.chip__count--alert`) and is withheld at zero, so a clean board carries no red 0.
  */
 
 import { STATE, STATE_ORDER } from '../lib/progress.js'
@@ -15,21 +13,24 @@ export const FILTER_ALL = 'all'
 /** `all` plus one per state, in scanning order — problems first. */
 const FILTERS = [FILTER_ALL, ...STATE_ORDER]
 
-export default function FilterChips({ counts, total, filter, onFilter }) {
+/**
+ * @param {object} props.counts `overallProgress`'s result: one count per state, plus the `total`
+ *   the All chip carries — taking it as a second prop would be the same number twice.
+ */
+export default function FilterChips({ counts, filter, onFilter }) {
   const { t } = useT()
 
   return (
     <div className="chips" role="group" aria-label={t('filter.label')}>
       {FILTERS.map((name) => {
-        const count = name === FILTER_ALL ? total : (counts[name] ?? 0)
+        const count = name === FILTER_ALL ? counts.total : (counts[name] ?? 0)
         return (
           <button
             type="button"
             key={name}
             className="chip"
             aria-pressed={filter === name}
-            /* Never the chip that is currently on: disabling the active filter would strand
-               the board on a slice with no way back to it. */
+            /* Never the chip that is on: disabling the active filter strands the board. */
             disabled={count === 0 && name !== filter}
             onClick={() => onFilter(name)}
           >

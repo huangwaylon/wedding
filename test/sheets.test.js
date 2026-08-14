@@ -640,6 +640,91 @@ describe('reading the board', () => {
   })
 })
 
+/**
+ * 400 IS "NOT BUILT YET"; 404 IS "NO SUCH SPREADSHEET", AND THE TWO MUST NOT DECODE ALIKE.
+ *
+ * Reading a 404 as an unbuilt board is how a wrong id, a file in the trash or a null id from a
+ * superseded mint turned into an EMPTY BOARD — which `useBoard` then wrote over the device's
+ * last-good snapshot, so the relaunch was empty too, and which invited an editor to seed a template
+ * over the top of a board that still exists. Every one of the three call sites below is a place a
+ * 404 has to travel on as an error instead.
+ *
+ * The fake answers a missing tab with a 400 of its own, so each status here is injected on the read
+ * the branch actually looks at, rather than inferred from the shape of the grid.
+ */
+describe('an id that names nothing', () => {
+  /** The FIRST `values:batchGet` answered with `status`; everything after it is served normally. */
+  function failsFirstRead(api, status) {
+    const real = api.fetch.getMockImplementation()
+    let spent = false
+    api.fetch.mockImplementation(async (url, init) => {
+      if (!spent && String(url).includes('values:batchGet')) {
+        spent = true
+        return { ok: false, status, json: async () => ({ error: { message: 'forced' } }) }
+      }
+      return real(url, init)
+    })
+  }
+
+  it('reads a 400 as an empty board still waiting to be built', async () => {
+    const api = makeApi({ tabs: gridOf(FAMILY) })
+    failsFirstRead(api, 400)
+    expect(await sheets.loadBoard(ID)).toMatchObject({ tasks: [], needsSetup: true })
+  })
+
+  it('throws a 404 out of loadBoard instead of decoding it as an empty board', async () => {
+    const api = makeApi({ tabs: gridOf(FAMILY) })
+    failsFirstRead(api, 404)
+    await expect(sheets.loadBoard(ID)).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('throws a 404 out of a write rather than building tabs somewhere else', async () => {
+    // `openGrid` builds the structure on a 400. Doing that on a 404 means `ensureStructure` running
+    // against a spreadsheet this account may still be able to reach.
+    const api = makeApi({ tabs: gridOf(FAMILY) })
+    failsFirstRead(api, 404)
+    await expect(sheets.updateTasks(ID, [task('p1')])).rejects.toMatchObject({ status: 404 })
+    expect(api.log.some((call) => call.body?.requests?.[0]?.addSheet)).toBe(false)
+    expect(api.log.some((call) => call.method === 'POST')).toBe(false)
+  })
+
+  it('throws a 404 out of a config write, which reads its own range', async () => {
+    // `setConfig` does not go through `openGrid`, so it carries the same decision separately.
+    const api = makeApi({ tabs: gridOf(FAMILY) })
+    failsFirstRead(api, 404)
+    await expect(sheets.setConfig(ID, { venue: 'The hall' })).rejects.toMatchObject({ status: 404 })
+    expect(api.log.some((call) => call.method === 'POST')).toBe(false)
+  })
+
+  it('still builds the config tab on a 400', async () => {
+    const api = makeApi({ tabs: {} })
+    await sheets.setConfig(ID, { venue: 'The hall' })
+    expect(api.grid.config[0]).toEqual(['key', 'value'])
+    expect(api.grid.config.at(-1)).toEqual(['venue', 'The hall'])
+  })
+})
+
+/**
+ * The four guards on a payload this bundle built wrongly. Each throws `bad_payload`, which
+ * `api.js` maps to `misconfigured` — terminal, so it is said once rather than retried for two
+ * seconds — and none of them spends a request first.
+ */
+describe('a payload that cannot be written', () => {
+  it('refuses an empty list or a missing id before any request goes out', async () => {
+    const api = makeApi({ tabs: gridOf(FAMILY) })
+    const cases = [
+      ['createTasks', () => sheets.createTasks(ID, [])],
+      ['updateTasks', () => sheets.updateTasks(ID, [])],
+      ['setDeleted', () => sheets.setDeleted(ID, '', 'x')],
+      ['setConfig', () => sheets.setConfig(ID, null)],
+    ]
+    for (const [name, call] of cases) {
+      await expect(call(), name).rejects.toMatchObject({ code: 'bad_payload' })
+    }
+    expect(api.log).toHaveLength(0)
+  })
+})
+
 describe('a rejected token', () => {
   it('re-mints and retries EXACTLY once', async () => {
     // A 401 means the token was rejected even if it still looked unexpired. Never more than once:

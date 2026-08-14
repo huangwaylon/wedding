@@ -1,18 +1,12 @@
 /**
- * Adding a task. CREATE ONLY.
+ * Adding a task. Create only: an existing task is edited in place inside its own row
+ * (`TaskDetail`), so the one job left for a modal is the case where there is nothing on screen to
+ * edit. Both surfaces buffer a draft and write once.
  *
- * An existing task is edited in place, inside its own row (`TaskDetail`), so the one job left for
- * a modal is the case where there is nothing on screen to edit yet. Both surfaces buffer a draft
- * and write once — this one's end is Save, the inline one's is Done.
- *
- * THE DATE IS REQUIRED, AND STILL NOT DEFAULTED. Every task carries a day — `validateTask`
- * returns `MISSING_DUE` without one — but the field opens BLANK and Save refuses until somebody
- * picks one, rather than starting on today. Those are two different things: a defaulted date is an
- * invented date, and every task typed in a hurry would be overdue tomorrow, which is the one way
- * this app can put a false number on somebody's screen without anybody typing anything wrong.
- * Refusing asks a question; defaulting answers it wrongly and says nothing.
- *
- * The field set and the validation live in `TaskFields`.
+ * The date is REQUIRED and still not DEFAULTED. `validateTask` returns `MISSING_DUE` without one,
+ * but the field opens BLANK and Save refuses until somebody picks one: a defaulted date is an
+ * invented date, and everything typed in a hurry would read overdue tomorrow, in the overdue count
+ * and the on-schedule mark. The field set and the validation live in `TaskFields`.
  */
 
 import { useState } from 'react'
@@ -43,14 +37,10 @@ export default function TaskFormSheet({ categories, onSave, onClose }) {
     setCodes(failures)
     if (failures.length) return
 
-    /**
-     * CLOSED IMMEDIATELY, AND THE WRITE IS NOT AWAITED.
-     *
-     * A write measures ~0.5s, and nothing is gained by waiting on it: the mutation is
-     * optimistic, so the row is already in the list behind this panel. `onSave` reports what
-     * happened as a toast, and a failure rolls the row back out — which is why the failure
-     * needs a toast of its own. Validation above is synchronous and keeps the sheet open.
-     */
+    /* The sheet closes immediately and the write is not awaited: the mutation is optimistic, so the
+       row is already in the list behind this panel. `onSave` reports what happened as a toast, and
+       a failure rolls the row back out, which is why that failure needs a toast of its own.
+       Validation above is synchronous and keeps the sheet open. */
     onSave(next)
     onClose()
   }
@@ -71,7 +61,7 @@ export default function TaskFormSheet({ categories, onSave, onClose }) {
       }
     >
       {/* The submit button lives in the sticky footer, outside this element, which is what the
-          `form` attribute is for — moving it inside would put Save under the keyboard. */}
+          `form` attribute is for: inside, Save would sit under the keyboard. */}
       <form id="task-form" onSubmit={submit} noValidate>
         <TitleField
           id="task-title"

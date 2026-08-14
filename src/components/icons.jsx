@@ -1,24 +1,15 @@
 /**
- * Inline SVG icons. No icon dependency: a package would be a bundle cost and a CSP
- * decision for a dozen paths.
- *
- * Every icon is `currentColor` and 1em-relative, so it inherits the button's colour
- * and the surrounding type scale rather than carrying its own. None of them is ever
- * the only label — each sits inside a control with an `aria-label`, and `aria-hidden`
- * keeps the glyph out of the accessibility tree.
+ * Inline SVG icons. No icon dependency: a package would be a bundle cost and a CSP decision for a
+ * dozen paths. Every icon is `currentColor` and 1em-relative, inheriting the control's colour and
+ * type scale, and none is ever the only label — each sits inside a control with an `aria-label`,
+ * `aria-hidden` keeping the glyph out of the accessibility tree.
  */
 
 /**
- * The three sizes anything outside this file is allowed to ask for, so a glyph size is a NAME
- * rather than a pair of literals repeated at five call sites.
- *
- * `em` for the two that sit inside type — they track the control's own size, which is the whole
- * reason the icons are em-relative — and `rem` for the one decorative glyph, which sits in no
- * control and must not shrink with the caption it happens to be near.
- *
- *   INLINE  beside 13px label text, in a `.btn--sm` or a row control
- *   FAB     the one 24px glyph, in the floating action button
- *   DISPLAY the empty board's wordless mark
+ * The three sizes anything outside this file may ask for, so a glyph size is a NAME rather than a
+ * pair of literals at five call sites. `em` for the two inside type, tracking the control's size;
+ * `rem` for the decorative glyph, which sits in no control. INLINE beside 13px label text · FAB the
+ * one 24px glyph · DISPLAY the empty board's mark.
  */
 export const ICON_SIZE = {
   inline: { width: '1em', height: '1em' },
@@ -56,7 +47,6 @@ export function GearIcon(props) {
   )
 }
 
-/** The edit toggle. A pencil, which is the one glyph nobody has to be taught. */
 export function PencilIcon(props) {
   return (
     <svg {...base} {...props}>
@@ -126,15 +116,9 @@ export function CheckCircleIcon(props) {
   )
 }
 
-/**
- * Two peaks. THE APP'S OWN MARK. These two hike, and a ridgeline is both theirs and — without
- * making a joke of it — two things side by side.
- *
- * `scripts/make-icons.js` rasterises the same shape for the Home Screen and `index.html`'s
- * favicon draws it inline; all three must agree. A leaf or any other notched fan is not
- * available at this size: at a 1.75 stroke in a 24 box a notch deep enough to read turns the
- * silhouette into a heart, which is the one thing this mark must not be.
- */
+/** Two peaks: the app's own mark. `scripts/make-icons.js` rasterises the same shape and
+    `index.html` draws it inline as the favicon; all three must agree. A notched fan is unavailable
+    at this size — at a 1.75 stroke in a 24 box, a notch deep enough to read turns it into a heart. */
 export function PeaksIcon(props) {
   return (
     <svg {...base} {...props}>
@@ -143,16 +127,11 @@ export function PeaksIcon(props) {
   )
 }
 
-/* ---- The categories ----------------------------------------------------
-   ONE GLYPH PER CATEGORY, AND NOT ONE COLOUR. A hue per category is the obvious move here and
-   it is forbidden: colour follows STATE in this app, there is exactly one coloured mark on a
-   row, and fourteen category hues would make that mark carry two claims at once. A SHAPE is the
-   channel that was still free — it costs no contrast, it survives greyscale, and it is readable
-   at a glance in a way a fourteenth word is not.
-
-   Every metaphor is picked to work for both an English and a Japanese reader, which rules out
-   the usual shortcuts: no currency sign for Budget (a wallet), no church for Venue (a pavilion
-   roof, which reads as 式場 or as a hall), no cake for Food (a steaming bowl). */
+/* ---- The categories ---------------------------------------------------- One glyph per category,
+   and not one colour: colour follows STATE and a row carries exactly one coloured mark, so fourteen
+   hues would make that mark carry two claims. Shape costs no contrast and survives greyscale. Every
+   metaphor works for an English and a Japanese reader, which rules out a currency sign for Budget,
+   a church for Venue and a cake for Food. */
 
 function WalletIcon(props) {
   return (
@@ -240,11 +219,8 @@ function NotesIcon(props) {
   )
 }
 
-/**
- * Scissors, for Beauty: the salon is what the category holds — hair, makeup, a trial,
- * ブライダルエステ. Not a hand mirror, which is a circle on a stem with a crossbar and therefore
- * the Venus symbol.
- */
+/** Scissors, for Beauty: the salon is what the category holds. Not a hand mirror, which is the
+    Venus symbol. */
 function ScissorsIcon(props) {
   return (
     <svg {...base} {...props}>
@@ -255,8 +231,7 @@ function ScissorsIcon(props) {
   )
 }
 
-/** The bow is what makes this a gift rather than a cabinet: the lid seam plus the ribbon alone
-    read as two drawers. */
+/** The bow makes this a gift: the lid seam plus the ribbon read as two drawers. */
 function GiftIcon(props) {
   return (
     <svg {...base} {...props}>
@@ -296,15 +271,9 @@ function TagIcon(props) {
   )
 }
 
-/**
- * Category -> glyph, keyed by the LOWERCASED name so the lookup matches the way
- * `category.<lowercased>` is translated.
- *
- * A category the sheet holds but this map does not returns nothing, and the chip prints the word
- * alone — the same courtesy the catalog extends. The spreadsheet is the source of truth for what
- * a category IS; this is decoration on top of a known one, so it must never be the thing that
- * decides whether a category can be shown.
- */
+/** Category -> glyph, keyed by the LOWERCASED name to match the way `category.<lowercased>` is
+    translated. A category this map lacks returns nothing and the chip prints the word alone: the
+    spreadsheet decides what a category is, and this must never decide whether one can be shown. */
 const CATEGORY_ICONS = {
   budget: WalletIcon,
   venue: PavilionIcon,
@@ -322,13 +291,8 @@ const CATEGORY_ICONS = {
   other: TagIcon,
 }
 
-/**
- * The glyph for a category, or nothing at all.
- *
- * NOTHING, not a fallback glyph: a category somebody typed into the spreadsheet is shown exactly
- * as they typed it, and pinning an unknown one under the Other tag would put a claim on it that
- * nobody made. The word is always there — this only ever rides in front of it.
- */
+/** The glyph for a category, or nothing at all — never a fallback glyph, which would put a claim on
+    an unknown category nobody made. It renders exactly as typed instead. */
 export function CategoryIcon({ name, ...props }) {
   const Glyph = CATEGORY_ICONS[String(name ?? '').trim().toLowerCase()]
   return Glyph ? <Glyph {...props} /> : null

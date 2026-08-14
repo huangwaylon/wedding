@@ -1,14 +1,11 @@
 /**
- * Toasts. Short, non-blocking, and deliberately WITHOUT actions.
+ * Toasts: short, non-blocking, and without actions.
  *
- * A toast with a button in it is a promise the app cannot keep: one that has
- * already timed out is an action nobody can reach. Recovery lives in the
- * interface instead — a deleted task is restored from the Deleted list, not from
- * a toast — so everything here is a statement, never a control.
+ * A toast that has timed out is an action nobody can reach, so recovery lives in the interface
+ * instead — a deleted task is restored from the Deleted list. Everything here is a statement.
  *
- * `show(message)` takes nothing else. One duration and no severity: a toast is a
- * sentence, and a second channel for how alarming it is belongs to `Notice`, which
- * stays on screen long enough to be read twice.
+ * `show(message)` takes nothing else: one duration, no severity. Severity belongs to `Notice`,
+ * which stays on screen long enough to be read twice.
  */
 
 import { useCallback, useRef, useState } from 'react'
@@ -38,7 +35,6 @@ export function useToasts() {
         id,
         setTimeout(() => dismiss(id), DURATION_MS),
       )
-      return id
     },
     [dismiss],
   )

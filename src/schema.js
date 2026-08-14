@@ -1,38 +1,33 @@
 /**
- * The sheet contract, and the ONLY file on this side that knows the layout.
+ * The sheet contract: the only file on this side that knows the layout, and the owner of every
+ * column name and every A1 range.
  *
- * `apps-script/Code.gs` holds the same column list because the boundary between
- * them is a network hop and neither can import the other. Those two lists must
- * stay identical and in the same order; `test/schema.test.js` parses the .gs file
- * and fails the build when they drift. Nothing else anywhere may name a column.
+ * `apps-script/Code.gs` holds the same column list because the boundary is a network hop and
+ * neither can import the other. The lists must stay identical and in the same order;
+ * `test/schema.test.js` parses the .gs file and fails the build on drift. Nothing else anywhere may
+ * name a column.
  *
- * Everything crossing the wire is a STRING. The sheet stores text (`ensureStructure`
- * sets the '@' number format on every column it builds), so a task's fields are
- * strings here too and are parsed at the point of use — `done_at` is the only one
- * that carries meaning as anything but text, and it is decoded here.
+ * Everything crossing the wire is a string: the sheet stores text (`ensureStructure` sets the '@'
+ * number format on every column it builds), so fields are strings here too and are parsed at the
+ * point of use.
  *
- * A TASK IS A TITLE, A DAY AND A TICK. There is no start, no clock time, no
- * all-day flag, no owner and no memo: a wedding checklist is read as "what is due
- * next", every one of those fields was optional in practice, and each one cost a
- * control on a 393px screen and a column somebody had to understand in the
- * spreadsheet. Removing them is what lets a task row be scannable at a glance and
- * the editor be three fields long.
+ * A task is a title, a day and a tick. No start, no clock time, no all-day flag, no owner, no memo:
+ * each costs a control on a 393px screen and a column somebody has to understand in the
+ * spreadsheet.
  */
 
 /**
- * Sheet column order. Kept as data rather than as an object so the order is
- * unambiguous and the .gs comparison is a plain array equality.
+ * Sheet column order, as data so the .gs comparison is array equality.
  *
- * APPEND, never rename or reorder. Appending is the only change that cannot shift an
- * existing index: every write addresses cells by position, `relayout` repairs a header by
- * NAME against this list, and a rename would leave every value under the old label
- * unreachable while looking correct in the Sheets UI.
+ * Append, never rename or reorder. Appending is the only change that cannot shift an existing
+ * index: every write addresses cells by position, so a rename leaves every value under the old
+ * label unreachable while looking correct in the Sheets UI.
  */
 export const TASK_COLUMNS = [
   'id',
   'title',
   'category',
-  /** The day it is due, 'YYYY-MM-DD'. No time: see the header. */
+  /** The day it is due, 'YYYY-MM-DD'. No time. */
   'due',
   'done_at',
   'created_at',
@@ -44,7 +39,7 @@ export const TASK_COLUMNS = [
 export const TASKS_SHEET = 'tasks'
 export const CONFIG_SHEET = 'config'
 
-/** 0 -> 'A'. General rather than a lookup table because `TASK_COLUMNS` may only grow. */
+/** 0 -> 'A'. General rather than a lookup table because `TASK_COLUMNS` may grow. */
 function letterAt(index) {
   let letter = ''
   for (let n = index; n >= 0; n = Math.floor(n / 26) - 1) {
@@ -54,8 +49,8 @@ function letterAt(index) {
 }
 
 /**
- * A column's position, by name. Throws rather than returning -1: every caller uses the
- * result to build a range, and a `-1` would silently address the column before A.
+ * A column's position, by name. Throws rather than returning -1: callers build ranges from the
+ * result, and -1 would address the column before A.
  */
 export function columnIndex(name) {
   const index = TASK_COLUMNS.indexOf(name)
@@ -70,9 +65,9 @@ function columnLetter(name) {
 const LAST_LETTER = letterAt(TASK_COLUMNS.length - 1)
 
 /**
- * The A1 ranges, all derived from `TASK_COLUMNS` so appending a column widens every one of
- * them at once. NOTHING outside this file may spell a range: a hardcoded `tasks!A2:I` is a
- * second place that knows the width, and it goes stale on the very next append.
+ * The A1 ranges, derived from `TASK_COLUMNS` so an append widens every one at once. Nothing outside
+ * this file may spell a range: a hardcoded `tasks!A2:I` is a second place that knows the width and
+ * goes stale on the next append.
  */
 export const TASKS_RANGE = `${TASKS_SHEET}!A1:${LAST_LETTER}`
 export const CONFIG_RANGE = `${CONFIG_SHEET}!A1:B`
@@ -83,8 +78,8 @@ export function rowRange(row) {
 }
 
 /**
- * A span of adjacent columns on one row. `updated_at` and `deleted_at` are neighbours, so
- * stamping a delete is one range per affected row rather than two.
+ * A span of adjacent columns on one row. `updated_at` and `deleted_at` are neighbours, so stamping
+ * a delete is one range per affected row rather than two.
  */
 export function spanRange(row, firstColumn, lastColumn) {
   return `${TASKS_SHEET}!${columnLetter(firstColumn)}${row}:${columnLetter(lastColumn)}${row}`
@@ -96,12 +91,9 @@ export function cellText(value) {
 }
 
 /**
- * A row object from the endpoint -> the shape the app works in.
- *
- * `due` is a WALL-CLOCK DAY ('2027-04-18') with no zone and no time. It means that
- * date on a calendar at the venue, and whether it has passed is decided against
- * the board's configured timezone by `src/lib/time.js` — never against the
- * device's. "Due on the 18th" must read the 18th for a planner in another country.
+ * A row object from the endpoint -> the shape the app works in. `due` is a wall-clock day, no zone
+ * and no time; whether it has passed is decided against the board's configured timezone by
+ * `src/lib/time.js`.
  */
 export function rowToTask(row) {
   return {
@@ -118,12 +110,10 @@ export function rowToTask(row) {
 }
 
 /**
- * The stored fields of a task, as strings, WITHOUT either timestamp.
- *
- * OMITTING THE TIMESTAMPS IS WHAT MAKES THIS A FINGERPRINT. `TaskDetail` stringifies the
- * result to decide whether an edit session actually changed the row, and skips the write
- * when it did not — so anything in here that moves on its own, `updated_at` above all,
- * would make every Done cost a round trip. `taskCells` is what a write uses.
+ * The stored fields of a task, as strings, without either timestamp — which is what makes it a
+ * fingerprint. `TaskDetail` stringifies it to decide whether an edit session changed the row and
+ * skips the write when it did not, so anything in here that moves on its own would make every Done
+ * cost a round trip. `taskCells` is what a write uses.
  */
 export function taskToRow(task) {
   if (!task?.id) throw new Error('taskToRow: id is required')
@@ -136,28 +126,23 @@ export function taskToRow(task) {
     done_at: cellText(task.doneAt),
     deleted_at: cellText(task.deletedAt),
     /**
-     * Never omit this. A write rewrites the WHOLE row from this, so a task object built
-     * without `parentId` blanks the cell and silently promotes a subtask to a task.
+     * Never omit this. A write rewrites the whole row from here, so a task object built without
+     * `parentId` blanks the cell and promotes a subtask to a task.
      */
     parent_id: cellText(task.parentId),
   }
 }
 
 /**
- * One task as the CELLS of its row, in `TASK_COLUMNS` order — what the Sheets API wants.
+ * One task as the cells of its row, in `TASK_COLUMNS` order.
  *
- * THE CLIENT STAMPS BOTH TIMESTAMPS, so a device with a wrong clock can backdate a row. That
- * is accepted rather than overlooked: only a server can stamp a trustworthy time, and reaching
- * one costs a second hop on every write. Neither timestamp is load-bearing for anything the app
- * computes — `due` decides every date question and `done_at` is only ever tested for emptiness —
- * so the exposure is a wrong number in a column nobody reads. Wanting trustworthy timestamps
- * means wanting a server on the write path, which is the decision to revisit, not this line.
+ * The client stamps both timestamps, so a device with a wrong clock can backdate a row. Accepted: a
+ * trustworthy stamp needs a server on the write path, and neither timestamp is load-bearing — `due`
+ * decides every date question and `done_at` is only tested for emptiness.
  *
- * `createdAt` is passed in rather than read off the task so the caller can preserve what the
- * row already holds: a create that is replaying must not restamp a row somebody made
- * yesterday.
+ * `createdAt` is passed in so the caller can preserve what the row already holds: a replayed create
+ * must not restamp a row made yesterday.
  *
- * @param {object} task
  * @param {{createdAt?: string, updatedAt: string}} stamps
  * @returns {string[]} one cell per column, in order
  */
@@ -179,41 +164,36 @@ export function isDone(task) {
   return Boolean(task.doneAt)
 }
 
-/** A row that names a parent. Whether that parent is USABLE is decided by `partitionSubtasks`. */
+/** A row that names a parent. Whether that parent is usable is decided by `partitionSubtasks`. */
 function isSubtask(task) {
   return Boolean(task?.parentId)
 }
 
 /**
- * Structural problems that must stop a save, as codes rather than sentences so
- * the catalog owns the wording.
+ * Structural problems that must stop a save, as codes so the catalog owns the wording. A task needs
+ * a title and a day; a subtask needs only a title.
  *
- * A TASK NEEDS A TITLE AND A DAY. A subtask needs only a title.
- *
- * @param {object} task
- * @param {(day: string) => boolean} isValidDay injected from `lib/time.js` to
- *   keep this module free of date logic
+ * @param {(day: string) => boolean} isValidDay injected from `lib/time.js`, to keep this module
+ *   free of date logic
  */
 export function validateTask(task, isValidDay) {
   const codes = []
   if (!cellText(task?.title)) codes.push('MISSING_TITLE')
 
   /**
-   * A subtask is a checklist item: a title and a tick, with no date at all. A date wheel per item
-   * would make entering five in a row unusable on a phone, and then no parent's progress would
-   * advance, which is the point of the feature. One branch rather than a second function, so the
-   * title check cannot drift between them.
+   * A subtask is a title and a tick, no date: a date wheel per item would make entering five in a
+   * row unusable on a phone. One branch rather than a second function, so the title check cannot
+   * drift.
    */
   if (isSubtask(task)) return codes
 
   /**
-   * A DAY IS REQUIRED, AND REFUSED RATHER THAN DEFAULTED. Nothing may invent a date: an invented
-   * one lands straight in the overdue count and in the on-schedule mark, so the create sheet opens
-   * BLANK and Save refuses until somebody picks a day.
+   * A day is required and refused rather than defaulted: an invented date lands straight in the
+   * overdue count and in the on-schedule mark, so the create sheet opens blank and Save refuses
+   * until somebody picks one.
    *
-   * `STATE.NODATE` still has to render. A sheet can hold undated rows and anybody can empty the
-   * cell by hand, and a row this refuses to SAVE must still be shown — hiding one is the worst
-   * thing this app can do.
+   * `STATE.NODATE` still has to render: a sheet can hold undated rows, anybody can empty the cell
+   * by hand, and a row this refuses to save must still be shown.
    */
   const due = cellText(task?.due)
   if (!due) codes.push('MISSING_DUE')

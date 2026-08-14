@@ -1,22 +1,12 @@
 /**
- * A task's subtasks: the checklist inside the open card.
- *
- * A subtask is deliberately the lightest thing in the model — a title and a tick, no dates.
- * Two consequences the layout depends on:
- *
- *   NO METER. A dateless item has nothing for a bar to measure, so a meter here would encode
- *   exactly the one bit the tick 8px to its left already encodes. The parent's meter is where
- *   subtask progress shows up, because that is what it now measures.
- *
- *   NO STATE BADGE. A subtask is ticked or it is not.
- *
- * The add row is a form that never unmounts and never moves — new rows insert BEFORE it —
- * which is what keeps the iOS keyboard up while somebody enters five in a row. It does not
- * await the write before clearing: the optimistic update has already landed synchronously,
- * and awaiting would freeze the field for a second per item.
+ * A task's subtasks: the checklist inside the open card. Nesting is one level only, so nothing here
+ * renders a checklist of its own. A subtask is a title and a tick, no date: hence no meter — a
+ * dateless item has nothing for a bar to measure, and the parent's meter is where subtask progress
+ * shows up — and no state badge. The add row never unmounts and never moves, new rows inserting
+ * BEFORE it, which keeps the iOS keyboard up while somebody enters five in a row.
  */
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { isDone } from '../schema.js'
 import { useT } from '../i18n/index.js'
 import DoneToggle from './DoneToggle.jsx'
@@ -28,10 +18,8 @@ function SubtaskRow({ subtask, canEdit, canRemove, onToggle, onDelete }) {
 
   return (
     <li className={`subtask${done ? ' subtask--done' : ''}${subtask.pending ? ' subtask--pending' : ''}`}>
-      {/* THE WHOLE ROW IS THE TOGGLE, not the circle on its own. A checklist item is tapped by
-          aiming at its text, and with only the 44px glyph live that tap did nothing — which is
-          how this read as "clicking a subtask does not register it as done". The target is now
-          the full width of the row minus the delete button. */}
+      {/* The whole row is the toggle, not the circle alone: an item is tapped by aiming at its
+          text, and with only the 44px glyph live that tap did nothing. */}
       <DoneToggle
         done={done}
         title={subtask.title}
@@ -61,23 +49,33 @@ function AddSubtask({ onAdd, onFocusChange }) {
   const field = useRef(null)
 
   /**
-   * Enter on the input, NOT a `<form>` submit.
-   *
-   * This list renders inside a card that also holds the editor's own fields, and HTML forbids
-   * nested forms — the parser silently drops the inner one, so `Enter` here would reach the
-   * ENCLOSING form's submit handler and try to save the task instead of adding an item. Found
-   * by driving the real app; a static render cannot see it, because the nesting only becomes
-   * invalid once a browser parses it.
+   * The focus report must balance across an unmount. This is the one per-field producer, sitting
+   * outside any edit session, but React fires no blur for a focused input it removes — and closing
+   * the card or leaving Edit removes this one. `typing` is a count, so an unreleased "on" hides the
+   * FAB for the rest of the session; the ref makes the pair idempotent.
+   */
+  const focused = useRef(false)
+  const report = (on) => {
+    if (focused.current === on) return
+    focused.current = on
+    onFocusChange?.(on)
+  }
+  useEffect(() => () => report(false), [onFocusChange])
+
+  /**
+   * Enter on the input, not a `<form>` submit. This list renders inside a card holding the editor's
+   * fields, and HTML forbids nested forms: the parser drops the inner one, so `Enter` would reach
+   * the enclosing form's handler and save the task instead of adding an item. Invisible to a static
+   * render, the nesting only becoming invalid once parsed.
    */
   const submit = () => {
     const title = draft.trim()
     if (!title) return
     setDraft('')
-    // Not awaited: `run`'s optimistic update has already landed, so the row is on screen. The
-    // field keeps focus and is ready for the next one.
+    // Not awaited: the optimistic update has landed, so the row is on screen and keeps focus.
     onAdd(title)
-    // Every add pushes this field down a row, and with the keyboard up it walks underneath.
-    // `nearest` will not yank the page when it is already comfortably visible.
+    // Every add pushes this field down a row, and with the keyboard up it walks underneath;
+    // `nearest` will not yank a page already showing it.
     field.current?.scrollIntoView({ block: 'nearest' })
   }
 
@@ -94,20 +92,16 @@ function AddSubtask({ onAdd, onFocusChange }) {
           event.preventDefault()
           submit()
         }}
-        onFocus={() => onFocusChange?.(true)}
-        onBlur={() => onFocusChange?.(false)}
+        onFocus={() => report(true)}
+        onBlur={() => report(false)}
         placeholder={t('list.subtaskAdd')}
         aria-label={t('list.subtaskAdd')}
         autoComplete="off"
         enterKeyHint="done"
       />
-      {/* A VISIBLE way to commit. Enter alone was the only route, with no button and no hint, so
-          typing a subtask and then clicking away discarded it with no sign anything had happened
-          — which is exactly how this read as "adding subtasks does not work". Disabled while the
-          field is empty so it never looks like the thing to press first.
-
-          `onMouseDown` with preventDefault, not `onClick`: the button would otherwise blur the
-          field first, and blur is what closes the keyboard and hides this row on a phone. */}
+      {/* A visible way to commit: with Enter the only route, typing a subtask and clicking away
+          discarded it silently. `onMouseDown` with preventDefault, not `onClick`: the button would
+          otherwise blur the field, and blur closes the keyboard and hides this row on a phone. */}
       <button
         type="button"
         className="btn btn--icon subtask-add__submit"
@@ -123,13 +117,11 @@ function AddSubtask({ onAdd, onFocusChange }) {
 }
 
 /**
- * @param {boolean} [props.canAdd] false when the DEPLOYED script has no `parent_id` column, so a
- *   subtask cannot be stored at all. The existing items stay live — they can still be ticked and
- *   deleted — but there is no field, because offering one would
- *   invite somebody to type a checklist that gets thrown away. The banner says why.
- * @param {boolean} [props.canRemove] false on the read path. Ticking and adding are doing the
- *   work; removing is destructive, so it lives with the task's own delete behind the Edit toggle
- *   rather than putting three trash icons under every ordinary tap.
+ * @param {boolean} [props.canAdd] false for a PROMOTED row, whose `parent_id` named something
+ *   the read could not place: its items stay live, but a new child would be a grandchild,
+ *   promoted again on the next read.
+ * @param {boolean} [props.canRemove] false on the read path — ticking and adding are doing the
+ *   work, while removing is destructive and sits with the task's delete behind the Edit toggle.
  */
 export default function SubtaskList({
   subtasks,

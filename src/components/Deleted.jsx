@@ -1,12 +1,9 @@
 /**
- * Delete confirmation, and the collapsed list a delete can be undone from.
- *
- * Deletes are soft, confirmed, and reversible. Recovery is this list rather than a
- * toast action: a toast that has timed out is a delete nobody can undo, which is why
- * no toast in this app carries a button.
- *
- * The list lives inside Settings › Maintenance, beside the purge that empties it, rather
- * than on the board — so it is a plain disclosure here and not a card of its own.
+ * Delete confirmation, and the collapsed list a delete can be undone from. Deletes are soft,
+ * confirmed and reversible, and recovery is this list rather than a toast action: a toast that has
+ * timed out is a delete nobody can undo, which is why no toast in this app carries a button. It
+ * lives inside Settings › Maintenance, beside the purge that empties it, so it is a plain
+ * disclosure rather than a card of its own.
  */
 
 import { useT } from '../i18n/index.js'
@@ -32,8 +29,8 @@ export function ConfirmDeleteSheet({ task, onConfirm, onClose }) {
     >
       <p className="notice__body">
         {t('confirm.deleteBody', { title: task.title })}
-        {/* The delete takes the whole checklist with it, in one write, so saying so is not
-            optional — the count is the only warning anybody gets. */}
+        {/* The delete takes the whole checklist with it, in one write, so the count is the only
+            warning anybody gets. */}
         {task.progress?.tally ? (
           <> {t('confirm.deleteSubtasks', { count: task.progress.tally.total })}</>
         ) : null}

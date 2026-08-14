@@ -1,9 +1,7 @@
 /**
- * English catalog. Flat keys, dot-namespaced by surface.
- *
- * A pluralised value is an object keyed by CLDR category — the only case where a
- * value is not a string. `test/i18n.test.js` fails on a key nothing references, a
- * referenced key that is missing here, and a key `ja.js` does not also have.
+ * English catalog. Flat keys, dot-namespaced by surface. A pluralised value is an object keyed by
+ * CLDR category, the only non-string case. `test/i18n.test.js` fails on a key nothing references, a
+ * referenced key missing here, and a key `ja.js` does not also have.
  */
 export default {
   'app.name': 'Wedding',
@@ -12,8 +10,7 @@ export default {
   'common.save': 'Save',
   'common.delete': 'Delete',
   'common.close': 'Close',
-  /* The read/edit toggle inside an open row. Two words for one control, because a toggle that
-     does not say which way it is about to go is a guess. */
+  /* Two words for one control: a toggle not saying which way it will go is a guess. */
   'common.edit': 'Edit',
   'common.editDone': 'Done',
   'common.restore': 'Restore',
@@ -41,9 +38,8 @@ export default {
   'countdown.unset': 'No wedding date set',
 
   'overall.title': 'Overall progress',
-  /* The count that makes the percentage beside it checkable by arithmetic, and what replaced a
-     pace sentence that could be wrong — see `Hero`. No noun is counted, so this is a plain
-     string rather than a plural object. */
+  /* The count that makes the percentage checkable by arithmetic, in place of a pace sentence that
+     could be wrong. No noun is counted, so this is a plain string. */
   'overall.summary': '{done} of {count} done',
   'overall.expected': '{count} of {total} dates have passed',
 
@@ -53,8 +49,8 @@ export default {
   'state.later': 'Later',
   'state.nodate': 'No date',
 
-  /* How near the due date is, and the only urgency wording on a row. Nothing is rendered
-     past the fortnight, so there is no key for it. */
+  /* The only urgency wording on a row. Nothing renders past the fortnight, so there is no key for
+     it. */
   'due.ago': { one: '{count} day ago', other: '{count} days ago' },
   'due.today': 'Today',
   'due.tomorrow': 'Tomorrow',
@@ -65,14 +61,13 @@ export default {
 
   'list.emptyFiltered': 'Nothing matches.',
   'list.showAll': 'Show everything',
-  /* The collapsed row's accessible name, and the one place the date is spelled out in full:
-     the visible row leans on a bare day number plus the sticky month heading, and neither of
-     those reaches a screen reader. It states the state in WORDS, so the dot's colour is never
-     the only channel. */
+  /* The collapsed row's accessible name, and the one place the date is spelled out in full: the
+     visible row leans on a bare day number plus the sticky heading, and neither reaches a screen
+     reader. It states the state in WORDS, so the dot's colour is never the only channel. */
   'plan.cardLabel': '{title}: {when}, {state}',
   'plan.cardLabelSubs': '{title}: {when}, {state}, {subs}',
-  /* The one heading in the board that is the wedding's own month. An aside on the month name,
-     not a sentence: it sits inside a 13px sticky heading that already holds a figure. */
+  /* An aside on the wedding month's name, not a sentence: it sits in a 13px heading already holding
+     a figure. */
   'plan.theDay': 'the day',
   'list.subtasks': {
     one: '{done} of {count} subtask',
@@ -81,9 +76,8 @@ export default {
   'list.subtaskAdd': 'Add a subtask',
   'list.markDone': 'Mark {title} done',
   'list.markNotDone': 'Mark {title} not done',
-  /* A STATE, not an action — these name a tick nobody can press: a viewer's row, and the
-     detail sheet's read-only checklist. Without them a screen reader gets the title and no
-     way to tell a ticked item from an open one, since the glyph is decorative. */
+  /* A STATE, not an action: these name a tick nobody can press. Without them a screen reader gets
+     the title and no way to tell a ticked item from an open one, the glyph being decorative. */
   'list.isDone': 'Done: {title}',
   'list.isNotDone': 'Not done: {title}',
   'list.deleteTask': 'Delete {title}',
@@ -140,8 +134,8 @@ export default {
   'settings.language': 'Language',
   'settings.accent': 'Colour',
   'settings.access': 'Editing',
-  /* A VIEW preference, not an access change — the wording has to make that unmistakable, or it
-     reads as the same thing as revoking the key directly below it. */
+  /* A view preference, not an access change: the wording must make that unmistakable, or it reads
+     as the revoke below. */
   'settings.readOnlyHint':
     'See the board exactly as your guests see it. Your edit link stays on this device.',
   'settings.readOnlyOn': 'Switch to the read-only view',
@@ -176,9 +170,8 @@ export default {
   'status.refresh': 'Refresh',
 
   'toast.saved': 'Saved.',
-  /* IT MUST STAND ALONE and may not point at a notice: one is rendered only for a TERMINAL code,
-     and `busy`/`transient` — the two retryable ones that produce most of these — are deliberately
-     excluded from that set, so there would be nothing up there to look at. */
+  /* It must stand alone and may not point at a notice: one renders only for a TERMINAL code, and
+     `transient` — the retryable one producing most of these — is excluded from that set. */
   'toast.failed': 'Nothing was saved. Try again.',
   'toast.deleted': 'Task deleted.',
 
@@ -189,9 +182,9 @@ export default {
   'api.not_empty': 'That spreadsheet already has other tabs',
   'api.not_emptyHint':
     'The script refused to add its tabs to a spreadsheet somebody is using. Bind it to an empty one.',
-  /* One code for every way the deployment itself can be wrong: a script bound to no spreadsheet,
-     a scope too narrow for the Sheets API, or an id that names nothing. All three are a setup
-     mistake rather than bad luck, so the hint points at the setup rather than offering a retry. */
+  /* One code for every way the deployment can be wrong: a script bound to no spreadsheet, a scope
+     too narrow for the Sheets API, an id that names nothing. All three are setup mistakes, so the
+     hint points at the setup. */
   'api.misconfigured': 'The board could not be opened',
   'api.misconfiguredHint':
     'The script’s spreadsheet or its permissions are not set up correctly. It has to be created from the sheet via Extensions › Apps Script, with the spreadsheets scope. See README.md.',

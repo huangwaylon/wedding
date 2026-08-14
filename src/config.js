@@ -1,10 +1,10 @@
 /**
  * Build-time configuration, storage keys, and the board defaults.
  *
- * `SCRIPT_URL` is PUBLIC and has to be. Vite inlines it into the shipped bundle,
- * and a view-only visitor reads the board through it with no credential at all —
- * that is the feature. Nothing may depend on the endpoint being hard to guess;
- * the edit key is the only access control. See README's security model.
+ * `SCRIPT_URL` is public and has to be: Vite inlines every `VITE_` variable into the shipped
+ * bundle, so none may hold a real secret. A view-only visitor reads the board through it with no
+ * credential, so nothing may depend on the endpoint being hard to guess; the edit key is the only
+ * access control. See README's security model.
  */
 
 import { CATEGORIES } from './lib/templates.js'
@@ -12,24 +12,20 @@ import { CATEGORIES } from './lib/templates.js'
 export const SCRIPT_URL = import.meta.env.VITE_SCRIPT_URL ?? ''
 export const STORAGE_KEYS = {
   /**
-   * The edit key, captured from the URL fragment (see `lib/access.js`). Present
-   * only on the two editors' devices; a planner's browser never holds one.
-   *
-   * NOTE: localStorage is scoped to the ORIGIN, not the path, so every other site
-   * published from this GitHub Pages account can read it. Accepted knowingly, and
-   * the reason nothing untrusted may be published from the same account.
+   * The edit key, captured from the URL fragment (see `lib/access.js`). localStorage is scoped to
+   * the ORIGIN, not the path, so every other site published from this GitHub Pages account can read
+   * it — accepted knowingly, and the reason nothing untrusted may be published there.
    */
   editKey: 'wd.editKey',
   editKeyRejected: 'wd.editKeyRejected',
   /**
-   * The minted Google access token and the id of the spreadsheet it reaches, cached so a
-   * relaunch does not spend an Apps Script round trip before its first read. Both are
-   * derived from the edit key and are worthless without it; `forgetToken` drops them.
+   * The minted Google access token and the id of the spreadsheet it reaches, cached so a relaunch
+   * does not spend an Apps Script round trip before its first read. Both derive from the edit key
+   * and are worthless without it; `forgetToken` drops them.
    *
-   * The token is a WRITE-CAPABLE bearer credential with an hour of life, which is the one
-   * thing in this app's storage that is genuinely dangerous. It is here rather than in
-   * memory only because a cold launch that had to mint first would pay ~1.5s before
-   * painting — and the origin-scoping note above applies to it with more force.
+   * The token is a write-capable bearer credential with an hour of life. It is here rather than in
+   * memory only because a cold launch that had to mint first would pay ~1.5s before painting, and
+   * the origin-scoping note above applies to it with more force.
    */
   token: 'wd.token',
   spreadsheetId: 'wd.sheetId',
@@ -40,17 +36,15 @@ export const STORAGE_KEYS = {
   /** Which state filter the device was last using. Per-device, never shared. */
   filter: 'wd.filter',
   /**
-   * An editor choosing to see the board the way a guest sees it. Per-device, and purely a VIEW
-   * preference: the edit key stays exactly where it is, and the endpoint's own refusal is
-   * untouched either way, so this only ever decides what renders.
+   * An editor choosing to see the board the way a guest sees it. Per-device, and purely a view
+   * preference: the edit key stays where it is and the endpoint's refusal is untouched.
    */
   readOnly: 'wd.readOnly',
 }
 
 /**
- * Every localStorage touch goes through these two, because every one of them can
- * throw: Safari in private browsing rejects writes outright. A failure is never
- * fatal — the value just does not survive a reload.
+ * Every localStorage touch goes through these two, because every one can throw: Safari in private
+ * browsing rejects writes. A failure is never fatal — the value just does not survive a reload.
  */
 export function readStored(key) {
   try {
@@ -70,27 +64,22 @@ export function writeStored(key, value) {
 }
 
 /**
- * Used when the sheet has no `config` tab yet, or a key is missing from it.
- *
- * These values are WRITTEN to the shared spreadsheet, so none of them is
- * localized: two people and their planners may read the UI in different
- * languages, and the stored data must not depend on whose device seeded it. The
- * interface language and the accent colour are per-device and live in
- * `localStorage` instead — neither person gets to restyle the other's phone, and
- * a planner's language preference is nobody else's business.
+ * Used when the sheet has no `config` tab yet, or a key is missing from it. These values are
+ * written to the shared spreadsheet, so none is localized: the stored data must not depend on whose
+ * device seeded it. Interface language and accent colour are per-device and live in `localStorage`.
  */
 export const DEFAULT_CONFIG = {
   partner1Name: '',
   partner2Name: '',
-  /** 'YYYY-MM-DD', or '' until somebody sets it. The countdown and the templates both
-   *  need it. No time: nothing on the board is timed, so a ceremony hour would be a
-   *  field somebody fills in and never sees again. */
+  /**
+   * 'YYYY-MM-DD', or '' until somebody sets it. The countdown and the templates both need it. No
+   * time.
+   */
   weddingDate: '',
   venue: '',
   /**
-   * The zone today's date is resolved in, which is what decides whether a due date
-   * has passed. Not the device's: a task due on the 18th must stop being due on the
-   * 19th at the venue, not at midnight wherever a planner happens to be.
+   * The zone today's date is resolved in, which decides whether a due date has passed. Not the
+   * device's: a task due on the 18th must stop being due on the 19th at the venue.
    */
   timezone: 'Asia/Tokyo',
   /** One home for this list: `lib/templates.js`, which is what seeds it. */
@@ -98,11 +87,9 @@ export const DEFAULT_CONFIG = {
 }
 
 /**
- * The `config` tab's field list: a kind per key, so `parseConfig` knows whether a
- * value is text or a comma-separated list. A key whose value is blank or
- * unparseable is OMITTED from the parse result rather than returned empty, so the
- * default below wins — an empty `categories` list would leave the category picker
- * with nothing in it.
+ * The `config` tab's field list: a kind per key, so `parseConfig` knows whether a value is text or
+ * a comma-separated list. A blank or unparseable value is omitted rather than returned empty, so
+ * the default wins — an empty `categories` list would leave the picker with nothing in it.
  */
 export const CONFIG_FIELDS = [
   { key: 'partner1_name', field: 'partner1Name', kind: 'text' },
@@ -150,12 +137,9 @@ export function isConfigured() {
 }
 
 /**
- * Layer whatever the sheet actually specified over the defaults.
- *
- * Shared with the snapshot cache, which stores the PARTIAL rather than the merged
- * result: a merged copy would freeze the building build's defaults into every
- * future launch, so a changed default would not take effect until a network read
- * landed.
+ * Layer whatever the sheet specified over the defaults. Shared with the snapshot cache, which
+ * stores the partial rather than the merged result: a merged copy would freeze the building build's
+ * defaults into every future launch.
  */
 export function mergeConfig(partial) {
   return {

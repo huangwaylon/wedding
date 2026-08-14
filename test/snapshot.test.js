@@ -6,7 +6,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearSnapshot, readSnapshot, writeSnapshot } from '../src/lib/snapshot.js'
+import { readSnapshot, writeSnapshot } from '../src/lib/snapshot.js'
 import {
   CONFIG_FIELDS,
   DEFAULT_CONFIG,
@@ -26,7 +26,12 @@ beforeEach(() => {
     setItem: (key, value) => store.set(key, String(value)),
     removeItem: (key) => store.delete(key),
   })
-  clearSnapshot()
+  // The redundant-write memo is module state, so it outlives a test. Writing a payload no test
+  // uses and then emptying the store parks it somewhere harmless, which is what a fresh store
+  // alone cannot do: without this, the second test to write TASKS/CONFIG would be short-circuited
+  // and see an empty store.
+  writeSnapshot([{ id: '__memo__' }], {})
+  store.clear()
 })
 
 const TASKS = [{ id: 'a', title: 'Book the venue', due: '2027-01-01' }]
@@ -91,15 +96,6 @@ describe('snapshot', () => {
     // A different payload writes again.
     writeSnapshot([...TASKS, { id: 'b', title: 'x' }], CONFIG)
     expect(store.get(STORAGE_KEYS.snapshot)).not.toBe(first)
-  })
-
-  it('resets the memo on clear', () => {
-    // Clearing the key without resetting the memo would leave the next write convinced
-    // it had already saved, and the cache would stay empty forever.
-    writeSnapshot(TASKS, CONFIG)
-    clearSnapshot()
-    writeSnapshot(TASKS, CONFIG)
-    expect(readSnapshot()).not.toBeNull()
   })
 
   it('survives storage that throws', () => {

@@ -1,52 +1,43 @@
 /**
- * Drives the RUNNING app in a real browser, over the Chrome DevTools Protocol.
+ * Drives the running app in a real browser over the Chrome DevTools Protocol: the accordion, the
+ * read/edit toggle, commit-on-blur, the create sheet, whether `input[type=date]` stays inside its
+ * row, that ticking under a filter keeps the row on screen, and that deleting a just-edited task
+ * sends no resurrecting `update`. A static render fires no blur and runs no effect, so none of it
+ * is reachable from `scripts/preview.jsx`. The last is a POST count, the fixture replying with the
+ * pre-write board: reverting `remove()` in TaskDetail.jsx to a bare `onDelete(task)` prints
+ * `["delete:a5:", "update:a5:Edited, then deleted"]`.
  *
- * `scripts/preview.jsx` renders every surface statically, which is what a screenshot needs and
- * all it can be: a static render fires no blur, runs no effect, and never mounts a native date
- * picker. This file covers the other half — the accordion, commit-on-blur, the create sheet, and
- * the one measurement that mattered most in this redesign: whether `input[type=date]` stays
- * inside the row it is drawn in.
+ * Three ways this file can verify nothing:
  *
- * IT ALSO COVERS THE TWO THINGS ONLY A CLICK CAN REACH: that ticking a row under a filter does
- * not make it vanish, and that deleting a task you have just EDITED does not resurrect it. The
- * second is a POST count, deliberately — the fixture replies with the board as it was before the
- * write, so a resurrection is invisible in the DOM and visible only in the request list. Reverting
- * `remove()` in TaskDetail.jsx to a bare `onDelete(task)` makes it print
- * `["delete:a5:", "update:a5:Edited, then deleted"]`, which is the defect.
+ * - Without `Emulation.setFocusEmulationEnabled`, headless Chrome dispatches no focus or focusout,
+ *   so every commit-on-blur check passes against a board that saved nothing.
+ * - A Chrome left on the debugging port from an earlier run keeps it, so this attaches to that
+ *   browser and reports its board. The page-target count below is the check.
+ * - The fixture replies in milliseconds, so no optimistic state lasts long enough to measure:
+ *   `tickUnderFilter.done` and `pendingKeepsTheTick` are read after the reply rolled the tick
+ *   back. The row staying is the first one's assertion; the second is pinned as a CSS fact in
+ *   `test/ui.test.jsx`.
  *
- * WHAT THE FIXTURE CANNOT SHOW, and do not read these as passes: the optimistic window. The dev
- * server answers in milliseconds, so `tickUnderFilter.done` and `pendingKeepsTheTick` are measured
- * after the stale reply has already rolled the tick back. The row STAYING is the real assertion in
- * the first; the second is pinned as a CSS fact in `test/ui.test.jsx` instead.
- *
- * EVERY POST COUNT HERE ASSUMES A HEALTHY ENDPOINT. `send` retries a non-terminal failure, so one
- * app-level write against a flaky one is legitimately two or three requests — a count of 2 read as
- * "the unmount flush fired twice" when the endpoint had simply blinked would be a hunt for a defect
- * that is not there. The fixture never fails, which is what keeps these numbers meaningful.
- *
- * No new dependency: `WebSocket` and `fetch` are built into node.
+ * Counts assume a healthy endpoint: `send` retries a non-terminal failure, so one write against a
+ * flaky one is legitimately two or three requests. The fixture never fails.
  *
  *   1. node scripts/stub-endpoint.mjs
  *   2. npx vite --port 5199 --strictPort --host 127.0.0.1
  *   3. cp scripts/drive.mjs /tmp/cdp-wedding.mjs && node /tmp/cdp-wedding.mjs
  *
- * THE STUB IS NOT OPTIONAL ANY MORE. A static JSON fixture could stand in for the old endpoint
- * because every read and write went to one URL; an editor now mints a token and writes to the
- * Sheets API, so a fixture would leave the whole write path unexercised and every count below at
- * zero. `.env.local` has to carry BOTH routes, and `vite.config.js` proxies them:
+ * No new dependency: node has `WebSocket` and `fetch`. Step 3's copy is required — the sandbox
+ * refuses `connect 127.0.0.1:<port>` unless the command matches an allowlist entry, and the
+ * sanctioned pattern is `node /tmp/cdp-*`. The stub is not optional either: an editor writes to
+ * the Sheets API, so a static JSON fixture leaves the write path unexercised and every count at
+ * zero. `.env.local` carries both routes, proxied by `vite.config.js`:
  *
  *     VITE_SCRIPT_URL=/wedding/__endpoint
  *     VITE_SHEETS_BASE=/wedding/__sheets
  *
- * The copy in step 3 is not decoration: the sandbox refuses `connect 127.0.0.1:<port>` unless
- * the command matches an allowlist entry, and the sanctioned pattern for CDP drivers is
- * `node /tmp/cdp-*`.
- *
- * WHAT THE STUB DOES AND DOES NOT PROVE. It applies writes to a real in-memory grid and serves
- * `doGet` from that same grid, so "was it stored" is now a question with an answer — a write, then
- * a refresh, then the new value on screen. What it cannot prove is anything about Google: the
- * ranges are parsed by our own code in both directions, so a range the real API would reject can
- * still pass here. A deployed script and a real spreadsheet are the only check for that.
+ * The stub applies writes to a real in-memory grid and serves `doGet` from it, so "was it stored"
+ * has an answer. It proves nothing about Google: our own code parses the ranges both ways, so a
+ * range the real API would reject can pass here. Only a deployed script and a real spreadsheet
+ * check that.
  */
 
 import { spawn } from 'node:child_process'
@@ -55,9 +46,8 @@ import { writeFileSync } from 'node:fs'
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const KEY = 'a'.repeat(64)
 const URL = `http://localhost:5199/wedding/#k=${KEY}`
-// A FRESH profile every run. Reusing one leaves other tabs in the target list, and
-// `find(type === 'page')` then attaches to somebody else's page — which is how a console
-// error from an unrelated app on :3000 turned up in this board's report.
+// A fresh profile every run: a reused one leaves other tabs in the target list, and the lookup
+// below attaches to somebody else's page.
 const PROFILE = `/tmp/cdp-wedding-profile-${process.pid}`
 
 const chrome = spawn(CHROME, [
@@ -69,15 +59,9 @@ const chrome = spawn(CHROME, [
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 await wait(2500)
 
-/**
- * VERIFY WE ATTACHED TO THE BROWSER WE JUST STARTED. A Chrome left running from an earlier
- * run still holds the debugging port, so a second spawn silently fails to bind and this
- * connects to the OLD browser — which reported the previous run's filtered, half-open board
- * as if it were a first paint. `Browser.getVersion` is checked against the process we own.
- */
-
 const list = await (await fetch('http://127.0.0.1:9333/json/list')).json()
 const target = list.find((t) => t.type === 'page')
+// Exactly one page target, or this is attached to a browser from an earlier run.
 if (list.filter((t) => t.type === 'page').length !== 1) {
   throw new Error(`expected one page target, found ${list.filter((t) => t.type === 'page').length}`)
 }
@@ -102,21 +86,13 @@ const send = (method, params = {}) =>
 
 await send('Runtime.enable')
 await send('Page.enable')
-/**
- * WITHOUT THIS, NO FOCUS EVENT EVER FIRES. Headless Chrome treats the page as unfocused, so
- * `element.focus()` moves `document.activeElement` but dispatches neither focus nor focusout —
- * and every commit-on-blur assertion below then passes against a board that saved nothing.
- * Confirmed by instrumenting the input: only `input` was seen, never `focusout`.
- */
+/** Focus and focusout: see the header. */
 await send('Emulation.setFocusEmulationEnabled', { enabled: true })
 await send('Emulation.setDeviceMetricsOverride', { width: 393, height: 900, deviceScaleFactor: 2, mobile: true })
 /**
- * COUNT THE WRITES. "One write per edit session" is the claim this file exists to check, and
- * counting toasts or watching the row cannot check it — the version before this batched nothing
- * and looked identical on screen while costing a whole round trip per field.
- *
- * THE OP IS NO LONGER IN THE BODY, so it is read off the RANGE instead. Writes go to the Sheets
- * API now, whose request says what cells it touches rather than what the app meant:
+ * Count the writes: "one write per edit session" is what this file checks, and neither a toast
+ * count nor the row on screen can. A Sheets request names the cells it touches rather than the
+ * op, so the op is read off the range:
  *
  *   append                 a create
  *   tasks!A{r}:I{r}        a whole-row write — an update, or a create replayed in place
@@ -124,9 +100,8 @@ await send('Emulation.setDeviceMetricsOverride', { width: 393, height: 900, devi
  *                          a restore if it is blank
  *   config!B{r}            a settings write
  *
- * That is enough for every count below, AND for the one assertion that needs more than a count:
- * the resurrection check wants "one delete-span write and no whole-row write for that row", which
- * the ranges state exactly. The mint is excluded — it is not a write.
+ * Enough for every count below and for the resurrection check, which wants "one delete-span write
+ * and no whole-row write for that row". The mint is not a write.
  */
 await send('Network.enable')
 const posts = []
@@ -191,7 +166,6 @@ report.months = await evaluate(`[...document.querySelectorAll('.plan__month')].m
 report.stickyMonth = await evaluate(`getComputedStyle(document.querySelector('.plan__month')).position`)
 await shot('01-top')
 
-// Open the row that has a checklist.
 await evaluate(`
   (() => {
     const row = [...document.querySelectorAll('.tcard')].find(c => c.querySelector('.tcard__tally'))
@@ -204,9 +178,8 @@ await wait(600)
 report.openRows = await evaluate(`document.querySelectorAll('.tcard--open').length`)
 
 /**
- * READ MODE IS THE DEFAULT AND IS INERT. Opening a row must not arm a single field of the task
- * itself — the editor commits on blur, so a caret landing in the title on the tap that opened the
- * row is one stray blur away from renaming it.
+ * Read mode is the default and inert: the editor commits on blur, so a caret in the title on the
+ * tap that opened the row is one stray blur from renaming it.
  */
 report.readMode = await evaluate(`({
   editor: document.querySelectorAll('.tcard--open .editor').length,
@@ -219,7 +192,7 @@ report.readMode = await evaluate(`({
   addField: document.querySelectorAll('.tcard--open .subtask-add__field').length,
 })`)
 
-// And the toggle actually toggles, both ways.
+// The toggle both ways.
 await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
 await wait(400)
 report.editMode = await evaluate(`({
@@ -231,7 +204,7 @@ report.editMode = await evaluate(`({
 })`)
 report.editorFields = await evaluate(`[...document.querySelectorAll('.tcard--open .editor input, .tcard--open .editor select')].map(n=>n.type||n.tagName)`)
 
-// Closing the row and reopening it must come back in READ mode, which is what unmounting buys.
+// Closing the row and reopening it must come back in read mode, which is what unmounting buys.
 await evaluate(`document.querySelector('.tcard--open .tcard__head').click()`)
 await wait(300)
 await evaluate(`(()=>{const r=[...document.querySelectorAll('.tcard')].find(c=>c.querySelector('.tcard__tally'));r.querySelector('.tcard__head').click();return true})()`)
@@ -239,7 +212,7 @@ await wait(400)
 report.modeAfterReopen = await evaluate(`document.querySelector('.tcard--open .tcard__edit')?.getAttribute('aria-pressed')`)
 await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
 await wait(400)
-// THE REPORTED BUG: does the date control fit inside its card?
+// Does the date control fit inside its card?
 report.dateFits = await evaluate(`
   (() => {
     const input = document.querySelector('.tcard--open input[type=date]')
@@ -258,13 +231,10 @@ report.deleteIsLast = await evaluate(`
 await shot('02-open')
 
 /**
- * THREE FIELDS, ONE WRITE. Blurring between fields must send NOTHING — that is the whole
- * performance fix, and the only honest way to see it is to count the POSTs.
- *
- * Each field is driven in its own tick. Typing and blurring in one synchronous block means React
- * has not flushed the onChange update when the handler runs, so it would read a stale draft; and
- * `focus()` must come first, because React listens for focusout and that never fires on an
- * element which never had focus. Both of those silently made this check verify nothing.
+ * Three fields, one write: blurring between fields must send nothing, and only the POST count shows
+ * it. Each field is driven in its own tick, or React has not flushed the onChange update and the
+ * handler reads a stale draft; `focus()` comes first because React listens for focusout, which
+ * never fires on an element that never had focus. Either mistake verifies nothing.
  */
 const setField = async (selector, value) => {
   await evaluate(`
@@ -294,7 +264,7 @@ report.draftOnScreen = await evaluate(`({
 })`)
 // Nothing may have gone out yet: the session has not ended.
 report.writesWhileEditing = posts.length - postsBeforeEdit
-// The row still reads its stored values, because nothing has been written.
+// The row still reads its stored values.
 report.rowWhileEditing = await evaluate(`document.querySelector('.tcard--open .tcard__title')?.textContent`)
 
 await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
@@ -308,8 +278,7 @@ report.dayAfterReply = await evaluate(`document.querySelector('.tcard--open .tca
 report.toast = await evaluate(`[...document.querySelectorAll('.toast')].map(n=>n.textContent)`)
 await shot('03-saved')
 
-// Tick a subtask. One write, and it is the only path still writing on a single gesture — which
-// is right: a tick IS the whole edit.
+// Tick a subtask: one write, and the only single-gesture write left, a tick being the whole edit.
 const postsBeforeTick = posts.length
 await evaluate(`document.querySelector('.tcard--open .subtask__toggle').click()`)
 await wait(1800)
@@ -317,18 +286,13 @@ report.tickWrites = posts.length - postsBeforeTick
 report.tallyAfterTick = await evaluate(`document.querySelector('.tcard--open .tcard__tally')?.textContent`)
 
 /**
- * THE REPORTED BUG, end to end: an UNDATED task given a date.
- *
- * It has to leave the "No date" group at the foot of the list, land in a dated month, and still
- * be there after a fresh read. Every part of that was broken at once — the deployed script had
- * never heard of `due` so the write dropped it, and its reads carried no `due` either, so the
- * whole board came back undated and the row appeared to revert.
+ * An undated task given a date has to leave the "No date" group, land in a dated month, and still
+ * be there after a fresh read.
  */
 await evaluate(`
   (() => {
-    // COLLAPSE EVERYTHING FIRST. \`.tcard--open\` picks the first match in document order, so
-    // with an earlier row still open every selector below silently addressed the WRONG task —
-    // and this check reported the app losing a date it had in fact stored on another row.
+    // Collapse everything first: \`.tcard--open\` picks the first match in document order, so an
+    // earlier open row makes every selector below address the wrong task.
     for (const open of document.querySelectorAll('.tcard--open .tcard__head')) open.click()
     return true
   })()
@@ -354,13 +318,12 @@ await wait(2200)
 report.dating = {
   from: undatedRow,
   writes: posts.length - postsBeforeDating,
-  // Where the row is NOW: its group heading, and the day its column prints.
   group: await evaluate(
     `document.querySelector('.tcard--open')?.closest('.plan__group')?.querySelector('.plan__month')?.textContent`,
   ),
   day: await evaluate(`document.querySelector('.tcard--open .tcard__day')?.textContent`),
 }
-// And after a real re-read, which is where it reverted before.
+// And after a real re-read.
 await evaluate(`document.querySelector('.tcard--open .tcard__head').click()`)
 await wait(200)
 await send('Page.reload', { ignoreCache: true })
@@ -398,12 +361,9 @@ await evaluate(`document.querySelector('.sheet .btn--secondary').click()`)
 await wait(400)
 
 /**
- * THE OVERDUE FILTER. There is no overdue BUTTON any more — the chip is the control, which is the
- * whole claim behind deleting the card that used to hold one.
- *
- * `filterBefore` is recorded so this cannot pass by accident: the previous version clicked
- * `.overall__alert`, which stopped existing, and optional-chained into a no-op — so it reported
- * the chip that was already pressed and the unfiltered row count, and looked like a pass.
+ * The overdue filter: the chip is the control, there is no button. `filterBefore` is recorded so
+ * this cannot pass by accident — a selector that stops matching optional-chains into a no-op and
+ * reports the chip already pressed and the unfiltered row count.
  */
 report.overdueChip = await evaluate(`
   (() => {
@@ -423,14 +383,10 @@ report.rowsAfterFilter = await evaluate(`document.querySelectorAll('.tcard').len
 await shot('05-overdue')
 
 /**
- * TICKING SOMETHING OFF UNDER A FILTER MUST NOT MAKE IT VANISH.
- *
- * The highest-frequency gesture in the app meeting its most-used filter. Ticking deliberately
- * raises no toast, so if the row also leaves the list there is NO feedback at all — the tap
- * reads as having done nothing. `App` holds the ticked ids for as long as the filter lasts, so
- * the row stays put wearing its tick while the chip's count drops.
- *
- * A static render cannot see any of this: the state is set by a click.
+ * Ticking under a filter must not make the row vanish: ticking raises no toast, so a row that also
+ * leaves the list gives no feedback for the app's most frequent gesture. `App` holds the ticked
+ * ids for the life of the filter, so the row stays put wearing its tick while the chip's count
+ * drops. A click sets the state, so no static render sees it.
  */
 const beforeTickUnderFilter = posts.length
 const tickTarget = await evaluate(`
@@ -450,7 +406,7 @@ report.tickUnderFilter = {
       return {
         rowsAfter: titles.length,
         stillThere: titles.includes(${JSON.stringify(tickTarget.title)}),
-        // Struck through where it stands, which IS the confirmation.
+        // Struck through where it stands, which is the confirmation.
         done: document.querySelectorAll('.tcard--done').length,
         chip: document.querySelector('.chip[aria-pressed=true]')?.textContent,
       }
@@ -460,9 +416,8 @@ report.tickUnderFilter = {
 }
 
 /**
- * AND THE TICK STAYS AT FULL INK WHILE THE WRITE IS IN FLIGHT. Dimming the whole card took the
- * check with it, so the confirmation of that same gesture faded for ~3s — which reads as
- * un-pressed. Measured as a computed opacity on the check inside a pending row.
+ * The tick stays at full ink while the write is in flight: dimming the whole card takes the check
+ * with it, and a confirmation fading for ~3s reads as un-pressed.
  */
 report.pendingKeepsTheTick = await evaluate(`
   (() => {
@@ -480,17 +435,11 @@ await evaluate(`[...document.querySelectorAll('.chip')].find(c=>!c.disabled)?.cl
 await wait(500)
 
 /**
- * DELETING A TASK YOU HAVE JUST EDITED MUST NOT BRING IT BACK.
- *
- * The defect: `TaskDetail` arms an unmount flush on every render while a session is open, and
- * only `done()` disarmed it. The optimistic delete drops the row from the plan, the component
- * unmounts, and the cleanup resolved the buffered draft against the PRE-delete task — a payload
- * carrying an empty `deleted_at`, which `update` writes over the whole row. The two serialise, so
- * the resurrection landed second and won: the task returned ~3s later wearing the edit, with its
- * subtasks gone.
- *
- * The only honest check is the write list. ONE delete-span write for that row, and NO whole-row
- * write after it — the ranges say which is which, so a resurrecting `update` cannot hide.
+ * Deleting a task just edited must not bring it back. `TaskDetail` arms an unmount flush while a
+ * session is open, so an optimistic delete unmounts the row and the cleanup resolves the draft
+ * against the pre-delete task, carrying an empty `deleted_at` into an `update` that rewrites the
+ * whole row and lands second. The check is the write list: one delete-span write for that row, no
+ * whole-row write after it.
  */
 await evaluate(`
   (() => {
@@ -509,7 +458,7 @@ await evaluate(`document.querySelector('.tcard--open .btn--danger-quiet').click(
 await wait(500)
 report.deleteAfterEdit = {
   confirmSheet: await evaluate(`document.querySelectorAll('.sheet').length`),
-  // The session has ended, so there is no buffered draft left to flush.
+  // The session has ended, so no buffered draft is left to flush.
   editorStillOpen: await evaluate(`document.querySelectorAll('.tcard--open .editor').length`),
 }
 await evaluate(`[...document.querySelectorAll('.sheet .btn')].find(b=>b.className.includes('danger'))?.click()`)
@@ -522,10 +471,8 @@ report.deleteAfterEdit.titleBack = await evaluate(
 await shot('07-deleted')
 
 /**
- * THE SIGN AND THE TODAY LINE, in the live document rather than a fixture page.
- *
- * The line is a boundary, so what has to be true is its POSITION: every row above it is due
- * before today and the first row below it is not. A line in the wrong place is worse than none.
+ * The sign and the Today line in the live document. The line is a boundary, so its position is what
+ * has to be true: every row above it is due before today, the first row below it is not.
  */
 await send('Page.reload', { ignoreCache: true })
 await wait(4000)
@@ -541,7 +488,6 @@ report.sign = await evaluate(`
       label,
       rowsAbove: index,
       rowsBelow: rows.length - index - 1,
-      // The heading directly above it, and the one carrying the wedding.
       weddingPlaques: plaques,
       tallies: [...document.querySelectorAll('.plan__tally')].map(n => n.textContent),
       // aria-hidden, so the heading's own name is the month alone.
@@ -563,11 +509,10 @@ report.docOverflow = await evaluate(`
 `)
 
 /**
- * THE GEAR IS REACHABLE. Two positioned siblings with no z-index paint in DOM order, so putting
- * the full-width text block after the button makes the button unhittable while leaving it
- * perfectly visible AND perfectly keyboard-focusable — the worst possible failure profile, and one
- * that no screenshot and no static render can see. Settings is the only route to the language, the
- * accent, the wedding date, the read-only preview, restore and the edit key.
+ * The gear is reachable. Two positioned siblings with no z-index paint in DOM order, so a
+ * full-width text block after the button leaves it visible and keyboard-focusable but unhittable —
+ * invisible to a screenshot and to a static render. Settings is the only route to the language,
+ * the accent, the wedding date, the read-only preview, restore and the edit key.
  */
 report.gearReachable = await evaluate(`
   (() => {
@@ -575,10 +520,9 @@ report.gearReachable = await evaluate(`
     if (!gear) return 'no gear'
     const r = gear.getBoundingClientRect()
     const at = (x, y) => document.elementFromPoint(x, y)?.closest('.hero__gear') ? 'gear' : 'blocked'
-    // Sampled INSIDE the circle. The corners of a fully-rounded bounding box are not part of the
-    // control, so a hit test there correctly reports whatever sits behind it -- asserting on them
-    // would fail forever for the wrong reason. (No backticks in here: this string IS a template
-    // literal, and one would close it.)
+    // Inside the circle: the corners of a fully-rounded bounding box are not part of the control,
+    // so a hit test there reports whatever is behind it. (No backticks: this is a template
+    // literal.)
     const inset = r.width * 0.15
     return {
       centre: at(r.left + r.width / 2, r.top + r.height / 2),
@@ -591,12 +535,11 @@ report.gearReachable = await evaluate(`
 `)
 
 /**
- * THE SAFE-AREA GEOMETRY, with a faked inset — an iframe and a headless viewport both report 0px,
- * so `--safe-top` is the one token whose consequences the harness structurally cannot show.
- *
- * `border-box` means a `padding-top` on a fixed-height band comes OUT of the band: the names end
- * up under the clock, `overflow: hidden` clips the gear, and `--hero-height` (which counts the
- * inset) exceeds the header's real height, so the sticky month heading parks in mid-air.
+ * The safe-area geometry, with a faked inset: an iframe and a headless viewport both report 0px, so
+ * `--safe-top` is the one token the harness cannot show. `border-box` means a `padding-top` on a
+ * fixed-height band comes out of the band — the names land under the clock, `overflow: hidden`
+ * clips the gear, and `--hero-height`, which counts the inset, exceeds the header's real height,
+ * so the sticky month heading parks in mid-air.
  */
 report.safeArea = await evaluate(`
   (() => {

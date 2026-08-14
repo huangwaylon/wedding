@@ -1,16 +1,12 @@
-/* app.css — app-specific layout and components. Generic pieces are in
-   primitives.css; every value comes from tokens.css.
+/* app.css — app-specific layout and components; generic pieces are in primitives.css, values in
+   tokens.css. Mobile-first, one column at every width, capped at --column-max and centred. The only
+   breakpoint is 48rem: rounded header corners, a chip row that stops scrolling, more padding on a
+   task row. The photograph's height is a clamp, so it needs no query.
 
-   Mobile-first, ONE column at every width, capped at --column-max and centred. The
-   only breakpoint is 48rem, and all it does is spend the extra room: rounded corners on
-   the header, a chip row that no longer scrolls, and a little more padding on a task row.
-   The photograph's height is a clamp, not a step, so it needs no query of its own. */
-
-/* ---- Shell -------------------------------------------------------------
-   ONE column, ONE scroller, and TWO pinned things: the header at the top and the FAB at
-   the bottom. `.views` reserves the FAB's clearance below its content, once, so the button
-   can never cover the last row; the header's own cost is `--hero-height`, which the sticky
-   month heading offsets itself by. */
+   ---- Shell -------------------------------------------------------------
+   One scroller and two pinned things, the header and the FAB. Neither is in flow, so `.views`
+   reserves --hero-height above its content and the FAB's clearance below, or the button covers the
+   last row. */
 .app {
   min-height: 100dvh;
 }
@@ -19,13 +15,18 @@
   width: 100%;
   max-width: var(--column-max);
   margin: 0 auto;
+  padding-top: var(--hero-height);
   padding-bottom: calc(var(--fab-size) + var(--space-6) + var(--safe-bottom));
 }
 
-/* Padding only. `.stack` supplies the rhythm, and the two are always used together —
-   a container that also declared a gap would set it twice with two different meanings. */
+/* Padding only; `.stack` owns the rhythm. A gap here would set it twice, with two meanings. */
 .view {
   padding: var(--space-4);
+}
+
+/* The unconfigured screen renders no header, so it carries the top inset itself. */
+.view--bare {
+  padding-top: calc(var(--safe-top) + var(--space-4));
 }
 
 .stack {
@@ -35,38 +36,34 @@
 }
 
 /* ---- Hero --------------------------------------------------------------
-   THE ONE PINNED THING BESIDES THE FAB, and the reason it is worth pinning is that it
-   answers whose wedding, how many days and how much is done without anybody scrolling back
-   up. A tenth of the viewport is what makes that affordable: at the old 52vh it would have
-   been the whole screen.
-
-   It is TWO bands. The photograph, whose backdrop is unknown and whose type therefore leans
-   on the scrim; and the progress strip, which is opaque so every measured meter figure in
-   tokens.css still applies to it. Putting the meter over the photo is the tempting version
-   and it is the one where an empty bar disappears into a bright sky.
-
-   `--hero-height` is this element's total occupied height and `.plan__month` offsets by it.
-   Anything added here has to go into that token or the month heading lands under the strip. */
+   Pinned, so whose wedding, how many days and how much is done need no scrolling. Two bands: the
+   photograph, whose type leans on the scrim because its backdrop is unknown, and the progress strip,
+   which is opaque so tokens.css's measured meter figures apply — over the photograph an empty bar
+   disappears into a bright sky. `fixed`, not `sticky`: WebKit positions a sticky element on the
+   scrolling thread without a layer of its own, so a later promoted element (`.chips` has a
+   `mask-image`, rows have images) composites above it and the list draws over the photograph
+   mid-flick; it also ends the sticky-under-sticky pairing with `.plan__month`. A fixed element
+   reserves no flow space, so --hero-height must be exact and `.hero__progress` renders always, even
+   empty; the containing block is the viewport, so the horizontal insets repeat here or a landscape
+   notch clips the type, and `margin-inline: auto` inside them holds it over the column `.views`
+   centres. */
 .hero {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: var(--safe-left);
+  right: var(--safe-right);
+  margin-inline: auto;
+  max-width: var(--column-max);
   z-index: var(--z-header);
-  /* Keeps the scrim, the settings control and the type in one local stacking context, so
-     none of them can be raised above the FAB by an ancestor's z-index later. */
+  /* One local stacking context, so no ancestor's z-index lifts the scrim, the gear or the type
+     above the FAB. */
   isolation: isolate;
 }
 
-/* The photograph's own band: `--hero-photo` of picture PLUS the inset, so the image runs up behind
-   the status bar while the type stays clear of it.
-
-   THE INSET IS IN THE HEIGHT, NOT ONLY IN THE PADDING. Everything here is `border-box`, so
-   `height: var(--hero-photo)` with `padding-top: var(--safe-top)` takes the inset OUT of the band
-   instead of adding it: on an iPhone that leaves 26px of content box, `justify-content: flex-end`
-   pushes the names up under the clock, `overflow: hidden` clips the gear to a sliver, and
-   `--hero-height` — which does count the inset — ends up 59px taller than the header really is, so
-   the sticky month heading parks in mid-air with rows scrolling through the gap. One `calc` is
-   what keeps the token and the layout agreeing. `test/ui.test.jsx` pins the composition of the
-   token; only a driven browser with a fake inset can pin this, because an iframe reports 0. */
+/* Picture plus inset, so the image runs behind the status bar while the type stays clear. The inset
+   is in the height, not only the padding: with `border-box`, `height: var(--hero-photo)` plus
+   `padding-top` takes it out of the band, putting the names under the clock and leaving --hero-height
+   taller than the header. An iframe reports 0, so only a driven browser can pin this. */
 .hero__photo {
   position: relative;
   display: flex;
@@ -83,33 +80,31 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* Above centre, and this is a CROP OF A CROP: the band is short enough that no offset holds
-     the faces in it, so this is not framing them — it is choosing the part of the picture that
-     reads best as texture behind two lines of type, which is the canopy rather than the sky.
-     A percentage here cannot be reasoned about from the source photograph's composition; it has
-     to be looked at, at 393px and at the 48rem plate both. */
+  /* Above centre: at a fifth of the viewport the band holds faces. The percentage cannot be derived
+     from the source composition; it has to be looked at, at 393px and at the 48rem plate.
+
+     The top ~60px is under the iOS status bar, whose glyphs are dark and which the scrim does not
+     reach. A crop whose top strip is dark makes the clock unreadable; README says so where it
+     covers replacing the photograph. */
   object-position: 50% 42%;
 }
 
-/* The gradient IS the contrast mechanism for every word over the photograph — see
-   --photo-scrim in tokens.css for the measured worst case. Not decoration: lighten its end
-   stop and white type over a bright sky fails AA. */
+/* The contrast mechanism for every word over the photograph — see --photo-scrim for the measured
+   worst case. Lighten its end stop and white type over a bright sky fails AA. */
 .hero__scrim {
   position: absolute;
   inset: 0;
   background: var(--photo-scrim);
 }
 
-/* On the photograph rather than in a bar of its own. The disc is what lets a white glyph stay
-   legible over an unknown pixel. Centred in the PICTURE, not in the band: the band's height now
-   includes `--safe-top`, so a `50%` here would already carry the inset and adding it again pushes
-   the control out through `overflow: hidden`. Halving the picture token is the one form that
-   cannot double-count. */
+/* On the photograph, not in a bar of its own, which would cost a row of chrome for one rarely
+   pressed control; the disc keeps a white glyph legible over any pixel. Top of the picture and
+   clear of the inset: centred vertically it reads as floating, and the top corner is where a
+   settings control is looked for. */
 .hero__gear {
   position: absolute;
-  top: calc(var(--safe-top) + var(--hero-photo) / 2);
-  right: var(--space-3);
-  transform: translateY(-50%);
+  top: calc(var(--safe-top) + var(--space-2));
+  right: var(--space-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -125,24 +120,22 @@
   background-color: var(--photo-control-hover);
 }
 
-/* Padded off the gear's tap target on the trailing edge, so a long name does not run under it. */
+/* The gear is at the top, so this needs no clearance and a long name gets the full width. */
 .hero__text {
   position: relative;
   min-width: 0;
-  padding: var(--space-2) var(--space-4);
-  padding-right: calc(var(--tap-target) + var(--space-4));
+  padding: var(--space-3) var(--space-4);
 }
 
-/* No tracking and no line-height below 1.5, at any size: these are names, and a name here can
-   be Japanese. The size is fluid instead — a clamp, so the desktop plate gets display type
-   without a second breakpoint and the phone band still fits two lines. */
+/* No tracking and no line-height under 1.5: these are names and a name can be Japanese. The size is
+   a clamp, so the desktop plate gets display type without a second breakpoint. */
 .hero__title {
   font-size: clamp(var(--fs-lg), 4.6vw, var(--fs-xl));
   font-weight: 600;
   line-height: var(--lh-tight);
   color: var(--photo-ink);
   text-shadow: var(--photo-shadow);
-  /* One line, always. A wrapped pair of names would push the countdown out of the band. */
+  /* One line: wrapped names push the countdown out of the band. */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -158,17 +151,15 @@
   text-shadow: var(--photo-shadow);
 }
 
-/* THE COUNTDOWN NEVER WRAPS AND NEVER SHRINKS. It is the one number up here, and with a long
-   venue name beside it and the View only badge after that, a wrapped "427 days to go" pushes
-   the names out of a band this short. */
+/* Never wraps, never shrinks: sharing the row with a long venue name and the View only badge, a
+   wrapped "427 days to go" pushes the names out of the band. */
 .hero__count {
   flex: none;
   font-weight: 500;
   white-space: nowrap;
 }
 
-/* The venue gives way instead — it is the one part of this row that can be truncated and still
-   say something useful. */
+/* The venue gives way instead: truncated, it still says something useful. */
 .hero__venue {
   flex: 0 1 auto;
   min-width: 0;
@@ -178,13 +169,9 @@
 }
 
 /* ---- The progress strip ------------------------------------------------
-   The whole tracker, on one line, in the one place that is always on screen: the percentage, a
-   bar carrying the on-schedule mark, and the count that makes the percentage checkable by
-   arithmetic. Three small figures earn their room here in a way a card with a 44px number does
-   not — it says the same thing and costs a screenful.
-
-   A FIXED HEIGHT, because --hero-height is derived from it and the sticky month heading offsets
-   by that. Content is centred inside rather than allowed to set the height. */
+   The whole tracker on one line: the percentage, a bar carrying the on-schedule mark, and the count
+   that makes the percentage checkable. A fixed height, because --hero-height derives from it and
+   the sticky month heading offsets by that; content is centred rather than setting the height. */
 .hero__progress {
   display: flex;
   align-items: center;
@@ -197,8 +184,8 @@
   line-height: var(--lh-tight);
 }
 
-/* The bar takes the room; the two figures take what they need. `flex: none` on both, or a long
-   Japanese tally shrinks the bar to nothing. */
+/* The bar takes the room; both figures are `flex: none`, or a long Japanese tally shrinks it to
+   nothing. */
 .hero__progress .meter {
   flex: 1 1 auto;
   min-width: 0;
@@ -206,10 +193,8 @@
 
 .hero__percent {
   flex: none;
-  /* One step above the rest of the strip, and the only thing in the header that is not 13px or
-     the names. Without it the board's headline figure is tied for smallest text on the screen.
-     16px * 1.5 leaves 5px of slack in the 29px content box, so --hero-strip does not move — see
-     the strip's own note about that budget. */
+  /* One step above the rest of the strip, or the headline figure ties for smallest text on screen.
+     16px * 1.5 leaves 5px of slack in the 29px content box, so --hero-strip does not move. */
   font-size: var(--fs-body);
   font-weight: 600;
   color: var(--ink);
@@ -221,18 +206,16 @@
 }
 
 @media (min-width: 48rem) {
-  /* Past the phone the column is centred with paper on both sides, so the header stops being
-     edge-to-edge and becomes a plate. The radius goes on the STRIP, which is the bottom of the
-     pinned block; the photograph's own corners stay square because it has the strip beneath it.
-     The top stays square either way — it runs off the top of the screen. */
+  /* The header becomes a plate. The radius goes on the strip, the bottom of the pinned block; the
+     photograph's corners stay square beneath the strip, and the top runs off the screen. */
   .hero__progress {
     border-radius: 0 0 var(--radius-xl) var(--radius-xl);
   }
 }
 
 /* ---- The plan ----------------------------------------------------------
-   A stack of month groups. The gap between groups is larger than the gap between rows
-   inside one, because that difference is what separates "next month" from "next task". */
+   Month groups, with a larger gap between groups than between the rows inside one: that difference
+   is what separates "next month" from "next task". */
 .plan {
   display: flex;
   flex-direction: column;
@@ -245,29 +228,15 @@
   gap: var(--space-2);
 }
 
-/* THE MONTH, AND IT STAYS ON SCREEN. A heading that does not scroll away NAMES the month, which
-   is what lets a row print a bare `18` instead of restating APR on all forty of them.
-
-   Three things it depends on, none of them optional. The background is REQUIRED, not
-   decoration: rows scroll underneath it. `top` is `--hero-height`, because the header above it
-   is pinned too — a bare `--safe-top` here parks the heading UNDER the photograph, where it is
-   invisible until you scroll past it, and that token is the header's whole occupied height so
-   the two cannot drift. And it sticks within `.plan__group`, which is a flex column, so the
-   next month's heading pushes this one out — exactly the wanted behaviour, and the reason the
-   heading is inside the group rather than above it.
-
-   ITS z-index STAYS AT 1, below `--z-header`. Both are sticky and they meet: the heading has to
-   slide under the header rather than over it.
-
-   IT IS A SIGN, AND THE RULE UNDER IT IS WHAT MAKES IT ONE. A hairline the full width of the
-   column reads as a board somebody planted; without it a heading carrying a figure at its far
-   edge reads as two unrelated labels floating over the first row. The rule cannot be a shadow —
-   see the elevation test — and it is drawn in --line, the same hairline as every card boundary,
-   so it is structure rather than a mark.
-
-   No text-transform and no letter-spacing: a short month is Japanese-capable (4月), uppercase
-   is a no-op on kanji, and tracking inserts a gap between every kana. Size, weight and ink
-   carry the micro-label instead. */
+/* A heading that does not scroll away names the month, so a row can print a bare `18`. The opaque
+   background is required, not decoration: rows scroll underneath it. `top` is --hero-height, the
+   pinned header's whole occupied height; a bare --safe-top parks the heading under the photograph. It
+   sticks within `.plan__group`, a flex column, so the next month's heading pushes this one out —
+   hence the heading inside the group — and its z-index stays at 1, below --z-header, so it slides
+   under the header. The rule beneath it is a hairline in --line, the same as every card boundary, and
+   never a shadow; without it a heading carrying a figure at its far edge reads as two labels floating
+   over the first row. No text-transform and no letter-spacing: a short month can be Japanese (4月),
+   uppercase is a no-op on kanji, tracking gaps every kana. */
 .plan__month {
   position: sticky;
   top: var(--hero-height);
@@ -284,15 +253,10 @@
   color: var(--ink-2);
 }
 
-/* The wedding's own month, marked once in the whole board. A wash rather than a hue on the type:
-   the heading is the one place a plan running to a single fixed day can name its last sign, and it
-   must not become a sixth state colour.
-
-   THE NEGATIVE MARGIN IS WHAT KEEPS THE MONTHS IN ONE COLUMN. Padding alone pushes "April 2027"
-   8px right of every other heading, so the one month that matters is the one that does not line
-   up — the tint bleeds outward instead and the text stays where it was. It stays inside `.view`'s
-   own --space-4, so nothing touches the screen edge. The wash is opaque, so this heading still
-   occludes the rows scrolling under it. */
+/* The wedding's month, marked once per board: a wash rather than a hue on the type, so it does not
+   become a sixth state colour. The negative margin keeps every month name in one column — padding
+   alone pushes "April 2027" 8px right of the others — and stays inside `.view`'s --space-4. Opaque,
+   so the heading still occludes the rows under it. */
 .plan__month--day {
   margin-inline: calc(var(--space-2) * -1);
   padding-inline: var(--space-2);
@@ -300,39 +264,29 @@
   background-color: var(--accent-wash);
 }
 
-/* "The day". Weight 400 against the month's 600, because the month is the heading and this is an
-   aside on it. --ink-2 is 6.7:1 or better on every preset's wash. */
+/* "The day": weight 400 against the month's 600, an aside on the heading. --ink-2 is 6.7:1 or
+   better on every preset's wash. */
 .plan__day {
   font-weight: 400;
   color: var(--ink-2);
 }
 
-/* The month's own tally. `auto` rather than `space-between` on the container, so the month and
-   the "the day" aside stay together at the leading edge whether or not the figure is rendered —
-   with `space-between` the aside would be flung to the far side on a two-child heading.
-
-   --ink-2, NOT the --ink-3 a quiet figure would otherwise take, and that is a measurement rather
-   than a preference: on the wedding month this sits on --accent-wash, where --ink-3 is 4.47:1
-   under the plum preset and fails AA outright (4.56–4.64:1 on the other four, which is no margin
-   at all). --ink-2 is 6.71:1 on the worst of them. `scripts/check-contrast.js` measures every wash
-   against both inks.
-
-   NEVER coloured, for the same reason `.tcard__tally` is not: a whole month in --good would claim
-   something about the month rather than about its tasks, and this figure is deliberately the one
-   thing on screen checkable by counting the rows underneath it. */
+/* The month's tally. `auto` rather than `space-between` on the container, so the month and the aside
+   stay together at the leading edge whether or not the figure renders. --ink-2 rather than --ink-3,
+   measured: on the wedding month this sits on --accent-wash, where --ink-3 is 4.69–4.70:1 — no margin
+   at 13px — and --ink-2 is 6.72:1 on the worst wash; `scripts/check-contrast.js` measures every wash
+   against both inks. Never coloured, as `.tcard__tally` is not: a month in --good would claim
+   something about the month rather than its tasks, and this figure is checkable by counting rows. */
 .plan__tally {
   margin-inline-start: auto;
   font-weight: 500;
   color: var(--ink-2);
 }
 
-/* YOU ARE HERE. One line per board, between two rows, at the boundary between what has passed
-   and what has not.
-
-   The rule is drawn on the LINE rather than as a border on a row, which is what keeps it out of
-   the one-coloured-mark-per-row budget — it belongs to the list, not to any task. --accent for
-   the same reason `.dot--soon` uses it: "now" is this app's own emphasis, not a warning. The
-   flex-basis trick is a hairline that fills whatever the word leaves. */
+/* One line per board, between two rows, at the boundary between what has passed and what has not.
+   Drawn on the line rather than as a border on a row, so it stays outside the
+   one-coloured-mark-per-row budget: it belongs to the list, not to a task. --accent, as
+   `.dot--soon` does: "now" is emphasis, not a warning. */
 .plan__now {
   display: flex;
   align-items: center;
@@ -348,8 +302,8 @@
   font-weight: 600;
 }
 
-/* The rule itself. A pseudo-element rather than a `border-top` on the paragraph, because the word
-   sits ON the line rather than above it. */
+/* A pseudo-element rather than a `border-top`, so the word sits on the line; the flex-basis fills
+   whatever the word leaves. */
 .plan__now::after {
   content: "";
   flex: 1;
@@ -358,15 +312,11 @@
 }
 
 /* ---- A task row -------------------------------------------------------
-   Two columns: the 44px check, then everything else. The check cannot live inside the head
-   — a button inside a button is dropped by the parser — so it is a sibling, and the grid is
-   what keeps the two on one row with the open content spanning beneath them. It is also why
-   the check LEADS: the head cannot be split around it.
-
-   The column gap is not cosmetic. Without it a 44px toggle sits flush against the day number
-   a thumb aims at to OPEN the row, and the two most consequential taps on the screen are
-   pixels apart. A gap, never a negative margin — the reasoning for that is on
-   `.subtask__toggle`. */
+   Two columns: the 44px check, then everything else. The check is a sibling of the head, not a child
+   — a button inside a button is dropped by the parser — so the grid keeps them on one row with the
+   open content spanning beneath, and it is why the check leads. Without the column gap a 44px toggle
+   sits flush against the day a thumb aims at to open the row, putting the two most consequential taps
+   pixels apart. A gap, never a negative margin — see `.subtask__toggle`. */
 .tcard {
   display: grid;
   grid-template-columns: var(--tap-target) minmax(0, 1fr);
@@ -378,30 +328,22 @@
   border-radius: var(--radius-lg);
 }
 
-/* An open row contains form controls of its own, and 1.4.11 wants 3:1 for the boundary that
-   identifies one — which --line is nowhere near. */
+/* An open row holds form controls, and 1.4.11 wants 3:1 for the boundary identifying one, which
+   --line is nowhere near. */
 .tcard--open {
   border-color: var(--line-input);
 }
 
-/* An unsaved row. Opacity only — no spinner and no skeleton: the row is real and readable,
-   it just has not landed yet.
-
-   THE CHECK IS DELIBERATELY EXCLUDED. Dimming the whole card takes the tick with it, so the
-   confirmation of the app's highest-frequency gesture fades for as long as the write is in
-   flight — which reads as un-pressed, the exact opposite of what is true. The head recedes; the
-   tick somebody just made stays at full ink. */
+/* An unsaved row: opacity only, no spinner, since the row is real and readable. The check is
+   excluded — a tick that fades for the life of the write reads as un-pressed. */
 .tcard--pending .tcard__head {
   opacity: var(--dim);
 }
 
 /* ---- The check --------------------------------------------------------
-   The primary interaction of the whole app, at the full tap target and in the same ink as the
-   icon buttons elsewhere.
-
-   --radius-sm, not --radius-md: an inner radius may be at most the outer one minus the padding
-   between them, and this sits inside a --radius-lg (16px) card padded by --space-2 (8px), which
-   leaves 8. At 12px the corner cut into the card's own. */
+   The app's primary interaction, at the full target and in the icon buttons' ink. --radius-sm, not
+   --radius-md: an inner radius is at most the outer minus the padding between, and this sits in a
+   --radius-lg (16px) card padded by --space-2 (8px). At 12px the corner cut into the card's own. */
 .tcard__check {
   grid-column: 1;
   display: flex;
@@ -425,22 +367,17 @@
   color: var(--good);
 }
 
-/* Read-only: the same slot, so a viewer's rows line up with an editor's rather than shifting
-   44px. */
+/* Read-only keeps the same slot, so a viewer's rows line up with an editor's. */
 .tcard__check--static {
   cursor: default;
 }
 
 /* ---- The head --------------------------------------------------------
-   One target for the whole collapsed row, so a row costs two controls instead of five.
-
-   CENTRED. What the eye weighs the day against is the whole right-hand block, not its first
-   line, so the day's centre has to match the block's — `baseline` would lock it to the TITLE's
-   first line instead, and on a row that also carries a meta line that puts the day's optical
-   centre 16.7px above the centre of the block beside it (measured over CDP). Centring costs the
-   day a fixed y, which is not what the day column is for: what has to line up down a month is
-   the COLUMN, and that is `width: 2rem` plus `text-align: center`, neither of which alignment
-   touches. */
+   One target for the whole collapsed row, so a row costs two controls instead of five. Centred,
+   because the eye weighs the day against the whole right-hand block: `baseline` locks it to the
+   title's first line, which on a row with a meta line puts the day's optical centre 16.7px above the
+   block's (measured over CDP). What lines up down a month is the column, and that is `width: 2rem`
+   plus `text-align: center`, which alignment does not touch. */
 .tcard__head {
   grid-column: 2;
   display: flex;
@@ -452,24 +389,18 @@
 }
 
 /* ---- The day ----------------------------------------------------------
-   ONE LINE, day only, fixed width so every title in a group starts in the same column.
-   The month is in the sticky heading above and is identical for every row under it.
-
-   `flex: none` because the day is the thing a month of rows is scanned for and must never be
-   squeezed by a long title. NEVER state-coloured — see the state table in primitives.css.
-   Tabular digits and --lh-tight; nothing in this app goes under 1.5. */
+   Day only, one line, fixed width so every title in a group starts in the same column; the month is
+   in the sticky heading. `flex: none`, or a long title squeezes the one thing a month of rows is
+   scanned for. Never state-coloured — see the state table in primitives.css. */
 .tcard__day {
   flex: none;
   display: block;
-  /* 2rem, and `nowrap` is the guard rather than the width. Two tabular digits at --fs-xl
-     measure ~29px, so a 1.75rem box breaks "18" into "1" and "8" on two lines and prints the
-     day as a column of single digits. */
+  /* 2rem, with `nowrap` as the guard rather than the width: two tabular digits at --fs-xl measure
+     ~29px, so a 1.75rem box breaks "18" over two lines. */
   width: 2rem;
   white-space: nowrap;
-  /* CENTRED IN THAT BOX, not aligned to either edge. The box is what repeats down a month, so
-     its centre is the one x every row shares whether the day is one digit or two; aligning to
-     an edge instead leaves a `1` sitting a half-figure away from where the `27` above it was
-     read, which is the ragged margin the fixed width exists to prevent. */
+  /* Centred in the box, not against an edge: the box repeats down a month, so its centre is the one
+     x every row shares whether the day is one digit or two. */
   text-align: center;
   font-size: var(--fs-xl);
   font-weight: 600;
@@ -477,8 +408,7 @@
   color: var(--ink);
 }
 
-/* A finished row recedes as a whole, the date with it. At full ink the day is the loudest
-   thing on a row whose title is already struck through. */
+/* A finished row recedes whole: at full ink the day is the loudest thing on it. */
 .tcard--done .tcard__day {
   color: var(--ink-3);
 }
@@ -500,8 +430,7 @@
   color: var(--ink);
 }
 
-/* A finished row reads as finished without its colour: the strikethrough is the second
-   channel, and the tick beside it is the third. */
+/* The strikethrough is the second channel and the tick the third, so done reads without colour. */
 .tcard--done .tcard__title {
   color: var(--ink-2);
   text-decoration: line-through;
@@ -509,10 +438,8 @@
   text-decoration-thickness: 1px;
 }
 
-/* The facts line: how near the date is, the checklist tally, the category. Rendered only
-   when it holds something, which on a freshly seeded board is a minority of rows. It WRAPS
-   rather than clipping — at 320pt three items do not fit one line, and a wrapped second line
-   is better than a truncated first. */
+/* Nearness, tally, category; rendered only when it holds something. It wraps rather than clips: at
+   320pt three items do not fit one line. */
 .tcard__meta {
   display: flex;
   flex-wrap: wrap;
@@ -523,8 +450,7 @@
   color: var(--ink-3);
 }
 
-/* How near the due date is. The WORDS carry the meaning and the dot carries the hue, which
-   is what keeps a state colour off type. */
+/* The words carry the meaning, the dot the hue: that is what keeps a state colour off type. */
 .due {
   display: inline-flex;
   align-items: center;
@@ -532,18 +458,16 @@
   color: var(--ink-2);
 }
 
-/* NEVER coloured. `5/5` in the done colour would claim a `done_at` the sheet does not have —
-   all subtasks done deliberately does not make a parent done. --ink-2 rather than the meta
-   line's --ink-3: it is the only progress figure a task has. It sits in the meta line rather
-   than a column of its own, so every chevron in the list sits at the same x whether or not the
-   row has a checklist. */
+/* Never coloured, as `.plan__tally` is not: `5/5` in the done colour would claim a `done_at` the
+   sheet has not, since all subtasks done does not make a parent done. --ink-2, not the meta line's
+   --ink-3, being a task's only progress figure; in the meta line rather than a column of its own, so
+   every chevron sits at the same x. */
 .tcard__tally {
   font-weight: 500;
   color: var(--ink-2);
 }
 
-/* Centred with everything else in the head, and carrying no margin of its own: with the head
-   centred there is no baseline to correct for. */
+/* No margin: with the head centred there is no baseline to correct for. */
 .tcard__chev {
   flex: none;
   color: var(--ink-3);
@@ -555,15 +479,10 @@
 }
 
 /* ---- The open row ----------------------------------------------------
-   Spans both columns, so the fields get the row's full width rather than the head's. A
-   hairline, not a gap, marks the seam: the content belongs to this row and a gap would read
-   as a second one.
-
-   NOT ANIMATED, and that is deliberate. Height and max-height are layout properties —
-   max-height slips past the "never transition width/height" test while being exactly the
-   thrash that test exists to prevent — and a mount is not a transition, so the only
-   alternative is a keyframe animation on every row that opens. The disclosure is instant; the
-   chevron carries the motion. */
+   Spans both columns, so the fields get the row's full width. A hairline marks the seam, not a gap,
+   which would read as a second row. Not animated: height and max-height are layout properties, and
+   max-height slips past the "never transition width/height" test while being the thrash it forbids.
+   A mount is not a transition either. The chevron carries the motion. */
 .tcard__content {
   grid-column: 1 / -1;
   margin-top: var(--space-2);
@@ -572,10 +491,8 @@
 }
 
 /* ---- The checklist ----------------------------------------------------
-   ONE vertical hairline descending from the parent, and no horizontal ones. The
-   rule ties the group to the card it belongs to; five rules BETWEEN five items
-   would make a checklist a table. --line is the same hairline as the card
-   boundaries, so it reads as structure rather than as a mark. */
+   One vertical hairline from the parent and no horizontal ones: five rules between five items would
+   make a checklist a table. --line, so it reads as structure. */
 .subtasks {
   margin-top: var(--space-2);
   margin-inline-start: var(--space-2);
@@ -584,8 +501,8 @@
   padding-bottom: var(--space-1);
 }
 
-/* Roomier than the tap target it contains. A checklist is aimed at while
-   scrolling, and 48px of row is what stops the next item catching the thumb. */
+/* Roomier than the target it contains: a checklist is aimed at while scrolling, and 48px of row is
+   what stops the next item catching the thumb. */
 .subtask {
   display: flex;
   align-items: center;
@@ -593,16 +510,14 @@
   min-height: 3rem;
 }
 
-/* Same reasoning as `.tcard--pending`: the TITLE recedes while the write is in flight, and the
-   glyph carrying the tick does not. Ticking five items down a checklist is what this row is for,
-   and a tick that fades on contact reads as a tap that missed. */
+/* As `.tcard--pending`: the title recedes, the glyph does not. A tick that fades on contact reads as
+   a tap that missed. */
 .subtask--pending .subtask__title {
   opacity: var(--dim);
 }
 
-/* THE WHOLE ROW IS THE CONTROL — glyph and title inside one button, which is
-   what makes an item tappable where somebody actually aims. With only the 44px
-   glyph live, a tap on the text does nothing and the feature reads as broken. */
+/* Glyph and title in one button, so the whole row is the control: with only the 44px glyph live, a
+   tap on the text does nothing. */
 .subtask__toggle {
   display: flex;
   flex: 1;
@@ -610,8 +525,7 @@
   align-items: center;
   gap: var(--space-2);
   min-height: var(--tap-target);
-  /* Padded rather than pulled: the pressed area extends past the glyph on both
-     sides, and a negative margin would drag its hover square onto the rail. */
+  /* Padded, not pulled: a negative margin would drag the hover square onto the rail. */
   padding-inline: var(--space-2);
   border-radius: var(--radius-md);
   text-align: start;
@@ -622,10 +536,8 @@
   background-color: var(--sunken);
 }
 
-/* A step smaller than the parent's check, which is a second subordination
-   channel that costs no contrast and no legibility — the type stays at 16px. The
-   colour is on the GLYPH, never on the button: on the button it would tint the
-   title green too. */
+/* A step smaller than the parent's check: subordination at no cost in contrast, the type staying
+   16px. The colour is on the glyph, never the button, which would tint the title too. */
 .subtask__toggle > svg {
   flex: none;
   font-size: 0.9em;
@@ -643,10 +555,8 @@
   cursor: default;
 }
 
-/* 16px and weight 400 against the parent title's 16px and 500. Subordination
-   comes from weight, ink, the glyph size and the indent — never from going under
-   the 13px floor. --ink-2 is 7.95:1, so it is a step in emphasis, not in
-   legibility. */
+/* 16px and weight 400 against the parent title's 16px and 500: subordination comes from weight, ink,
+   glyph size and indent, never from going under the 13px floor. --ink-2 is 7.90:1. */
 .subtask__title {
   flex: 1;
   min-width: 0;
@@ -656,8 +566,8 @@
   color: var(--ink-2);
 }
 
-/* Struck through as well as dimmed: colour is never the only channel, and a
-   viewer's ticked item has no control to read state from. */
+/* Struck through as well as dimmed: colour is never the only channel, and a viewer's ticked item has
+   no control to read state from. */
 .subtask--done .subtask__title {
   color: var(--ink-3);
   text-decoration: line-through;
@@ -665,16 +575,12 @@
   text-decoration-thickness: 1px;
 }
 
-/* Always last, never moved, never remounted — a changed key or position drops
-   the iOS keyboard mid-checklist. Aligned with the item TITLES rather than their
-   ticks, so the glyph column stays a clean column and the field reads as "type
-   the next one" instead of as another item.
-
-   THE INDENT IS A CLAMP BECAUSE OF ONE PHONE. At a flat --space-7 the field itself measures
-   ~139px of usable text on a 320pt screen — about ten characters, for the entry this app most
-   needs width for: 288 of viewport, less the view's 32, the card's 22 and its border, the rail's
-   17, this 32, then the 8 gap and the 44px submit. It relaxes to --space-2 there and is
-   unchanged from 393pt up, where the alignment is worth its 32px. */
+/* Always last, never moved, never remounted: a changed key or position drops the iOS keyboard
+   mid-checklist. Aligned with the item titles rather than their ticks, so the glyph column stays a
+   column. The indent is a clamp because of one phone: at a flat --space-7 the field holds ~139px of
+   text on a 320pt screen — 288 of viewport, less the view's 32, the card's 22 and its border, the
+   rail's 17, this 32, the 8 gap and the 44px submit — so it relaxes to --space-2 there, unchanged
+   from 393pt up. */
 .subtask-add {
   display: flex;
   align-items: center;
@@ -684,53 +590,45 @@
 }
 
 .subtask-add__field {
-  /* Inherits `.input`'s 16px floor. Do NOT shrink it to look more subordinate:
-     mobile Safari zooms on focus below 16px and will not zoom back out. */
+  /* Inherits `.input`'s 16px floor; do not shrink it to look subordinate. See base.css. */
   min-height: var(--tap-target);
 }
 
-/* The full target, not the 36px secondary one: it is a thumb target next to a
-   field, and it commits text that exists nowhere else yet. */
+/* The full target: a thumb aims at it, and it commits text that exists nowhere else yet. */
 .subtask-add__submit {
   flex: none;
 }
 
 /* ---- The filter chips -------------------------------------------------
-   Five chips measure ~453px against a 361px card, so they scroll as one line
-   rather than wrapping to two rows above the first card — and one line is what
-   lets each chip keep the full 44px target. */
+   Five chips measure ~453px against a 361px card, so they scroll as one line rather than wrapping
+   to two rows — one line is what lets each keep the full 44px target. */
 .chips {
   display: flex;
   flex-wrap: nowrap;
   gap: var(--space-2);
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  /* Bleed to the shell's edge and pad back, so a chip scrolls off the screen
-     edge rather than stopping short inside the padding — which reads as a broken
-     row rather than a scrollable one. */
+  /* Bleed to the shell's edge and pad back, so a chip scrolls off the screen edge rather than
+     stopping short inside the padding, which reads as a broken row. */
   margin-inline: calc(var(--space-4) * -1);
   padding-inline: var(--space-4);
-  /* Room for the focus ring, which a scroll container would otherwise clip. */
+  /* Room for the focus ring, which a scroll container would clip. */
   padding-block: 2px;
   scroll-padding-inline: var(--space-4);
-  /* THE ONLY SIGN THAT THIS ROW MOVES. The overlay scrollbar is hidden below, so without the
-     fade two of the filters sit off the right edge of a 320pt phone with nothing at all
-     indicating they exist. It is horizontal ONLY — a mask on both axes would clip the focus
-     ring the padding above exists to keep. Removed at 48rem, where the row no longer
-     scrolls. */
+  /* The only sign the row moves, the overlay scrollbar being hidden below: without it two filters
+     sit off the right edge of a 320pt phone with nothing saying they exist. Horizontal only — on
+     both axes it would clip the focus ring the padding above keeps. Removed at 48rem. */
   mask-image: linear-gradient(to right, #000 calc(100% - var(--space-6)), transparent);
 }
 
-/* An overlay scrollbar on touch; hidden on desktop, where the row does not
-   overflow anyway. */
+/* An overlay scrollbar on touch; hidden on desktop, where the row does not overflow. */
 .chips::-webkit-scrollbar {
   display: none;
 }
 
 @media (min-width: 48rem) {
-  /* Past the phone there is room for every chip, so the row stops being a
-     scroller — and the fade goes with it, or it would dim a chip that is fully
-     visible. */
+  /* Room for every chip, so the row stops scrolling — and the fade goes with it, or it would dim a
+     fully visible chip. */
   .chips {
     flex-wrap: wrap;
     overflow: visible;
@@ -739,43 +637,33 @@
     mask-image: none;
   }
 
-  /* A row can afford more air once the column is not 361px. Same tokens, no new
-     breakpoint. */
+  /* More air once the column is not 361px. Same tokens, no new breakpoint. */
   .tcard {
     padding-inline: var(--space-3) var(--space-4);
   }
 }
 
 /* ---- The inline editor -------------------------------------------------
-   The fields inside an open row, not a form on its own surface. There is no Save button and
-   no footer of actions: the whole session commits when the row closes, so the only thing at
-   the foot is the delete affordance.
-
-   ONE COLUMN. A title, one day and a category — a single column is both simpler and wider than
-   a track per field, and width is what keeps the date control inside the card. */
+   Fields inside an open row, not a form on its own surface: the session commits when the row closes,
+   so there is no Save button and only the delete at the foot. One column — simpler and wider than a
+   track per field, and width is what keeps the date control inside the card. */
 .editor {
   display: grid;
-  /* space-3, not the `.field` margin of space-4. This block sits inside a card that already
-     carries its own padding, and at form spacing an opened card runs past the bottom of a
-     phone before its checklist begins. */
+  /* space-3, not the `.field` margin of space-4: this sits in a card that already has padding, and
+     at form spacing an opened card runs past the bottom of a phone before its checklist begins. */
   gap: var(--space-3);
 }
 
 .editor__field {
-  /* A grid item's minimum content size is its intrinsic width, and a date control's is wide.
-     The real fix for that lives on `.input[type="date"]` in primitives.css; this keeps the
-     track from being widened by it as well. */
+  /* A grid item's minimum content size is its intrinsic width, and a date control's is wide. The fix
+     is on `.input[type="date"]` in primitives.css; this keeps the track from widening too. */
   min-width: 0;
 }
 
-/* ONE QUIET LABEL, TWO PLACES IT SITS: above a field in the inline editor, and in front of a
-   fact on a closed row. They were two rules with identical declarations and a copy-pasted
-   comment, which is two places to keep one decision.
-
-   Quiet by size, weight and ink alone. NO uppercase and NO tracking: any of these labels can be
-   Japanese, where tracking inserts a gap between every kana and text-transform does nothing but
-   break the Latin ones. --ink-3 is the lightest ink measured to pass AA at 13px; a label is
-   information, so it does not get the --ink-4 placeholder treatment. */
+/* One quiet label, two places: above a field in the editor, and in front of a fact on a closed row.
+   Quiet by size, weight and ink alone — no uppercase and no tracking, since any label can be
+   Japanese, where tracking gaps every kana and text-transform only breaks the Latin ones. --ink-3 is
+   the lightest ink that passes AA at 13px; a label is information, so not the --ink-4 tier. */
 .editor__label,
 .tcard__factLabel {
   font-size: var(--fs-caption);
@@ -790,9 +678,8 @@
   margin-bottom: var(--space-1);
 }
 
-/* The one fact an open row shows in read mode: its due date, spelled out. `space-between` on
-   the label, so the value sits against the right edge under the Edit toggle rather than
-   floating mid-row. */
+/* The one fact an open row shows in read mode: the due date, spelled out. `space-between`, so the
+   value sits at the right edge under the Edit toggle. */
 .tcard__fact {
   display: flex;
   align-items: baseline;
@@ -807,10 +694,9 @@
   flex: none;
 }
 
-/* The controls at the foot of an open row: the Edit toggle, always, and the delete only while
-   editing. `space-between` puts the destructive one at the far end from the toggle a thumb is
-   returning to; with one control `flex-end` is what the toggle gets, which is where it stays as
-   the mode changes. The hairline says everything above is the task and this is not part of it. */
+/* The Edit toggle always, the delete only while editing. `space-between` keeps the destructive
+   control at the far end from the toggle a thumb is returning to; with one control the toggle takes
+   `flex-end`, where it stays as the mode changes. */
 .tcard__foot {
   display: flex;
   align-items: center;
@@ -821,21 +707,17 @@
   border-top: 1px solid var(--line);
 }
 
-/* Last, always, so it does not move between the two modes — the delete appears to its LEFT.
-   `margin-inline-start: auto` rather than a second justification rule, because that is what
-   makes a one-control row and a two-control row put this in the same place. */
+/* Last always, so it does not move between modes; the delete appears to its left.
+   `margin-inline-start: auto` is what puts it at the same x on a one- and a two-control row. */
 .tcard__edit {
   margin-inline-start: auto;
 }
 
-/* Quiet, and never a filled destructive button: filled, it would be the loudest thing in an open
-   row, competing with the checklist for a control that most people never press. The WORD
-   carries it — the ink is a second channel, not the only one — and it opens the confirmation
-   sheet rather than deleting anything.
-
-   Worn with `.btn--ghost`, whose own hover sets `color: var(--ink)`. Same specificity, so this
-   wins on order alone: app.css is loaded after primitives.css. Not `.btn--sm` — a thumb aims
-   at this, so it keeps the full --tap-target from `.btn`. */
+/* Never a filled destructive button: filled, it would be the loudest thing in an open row, for a
+   control most people never press. The word carries it, the ink is a second channel, and it opens the
+   confirmation sheet rather than deleting. Worn with `.btn--ghost`, whose hover sets
+   `color: var(--ink)`; same specificity, so this wins on order, app.css loading second. Not
+   `.btn--sm`: a thumb aims at it, so it keeps `.btn`'s full target. */
 .btn--danger-quiet {
   color: var(--critical);
 }
@@ -848,9 +730,8 @@
 /* ---- Empty and seeding ------------------------------------------------- */
 .empty {
   text-align: center;
-  /* Block padding only: the inline padding comes from `.card`, so the empty state's
-     left edge lines up with every other card in the column rather than missing it by
-     4px. */
+  /* Block padding only: the inline padding comes from `.card`, so the left edge lines up with every
+     other card in the column. */
   padding-block: var(--space-5);
 }
 
@@ -860,10 +741,8 @@
   margin-bottom: var(--space-2);
 }
 
-/* The wordless mark above an empty board. Its ink lives here rather than in an inline style: it
-   was the one place in the JSX that named a design token, so an ink change had to be grepped in
-   two languages. --ink-4 is the placeholder tier, which is right for a glyph carrying no
-   information — the words below it do that. */
+/* The mark above an empty board. Its ink lives here because no design token may be named in JSX.
+   --ink-4 is the placeholder tier, right for a glyph carrying no information. */
 .empty__mark {
   color: var(--ink-4);
 }
@@ -903,8 +782,7 @@
   justify-content: space-between;
   gap: var(--space-3);
   margin-top: auto;
-  /* The name and the foot are not the same line of thought, and nothing else holds them
-     apart. */
+  /* The name and the foot are not the same thought, and nothing else holds them apart. */
   padding-top: var(--space-2);
 }
 
@@ -942,7 +820,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: var(--tap-target-sm);
+  min-height: var(--tap-target);
   padding: 0 var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-full);
@@ -962,6 +840,6 @@
   flex: none;
   border-radius: var(--radius-full);
   /* Painted by the preset the swatch scopes locally — the reason the accent rules are
-     attribute-scoped rather than :root-scoped. */
+     attribute-scoped. */
   background-color: var(--accent);
 }

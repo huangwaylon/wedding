@@ -1,17 +1,11 @@
 /**
- * The empty board, and the one place a starter checklist is offered.
+ * The empty board, and the only place a starter checklist is offered. A viewer gets a sentence and
+ * nothing else: buttons they cannot press are worse, and "the board is empty" alone would read as a
+ * fault.
  *
- * A viewer gets a sentence and nothing else — a planner arriving before the couple has added
- * anything should not be shown two buttons they cannot press, and "the board is empty" alone
- * would read as a fault.
- *
- * Seeding needs the wedding date, because every template offset is counted backwards from it.
- * Rather than disable the buttons and leave somebody guessing why, the empty state says what is
- * missing and offers the way to fix it.
- *
- * A template is its name, its size and a button. What each list contains is fifty-two rows
- * long and appears on the board the moment it is chosen, so a paragraph describing it here
- * would be read once and never again.
+ * Seeding needs the wedding date, every template offset counting backwards from it, so the empty
+ * state says what is missing rather than disabling the buttons. A template is its name, its size
+ * and a button; each list appears on the board the moment it is chosen.
  */
 
 import { TEMPLATES } from '../lib/templates.js'

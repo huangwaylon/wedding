@@ -1,20 +1,18 @@
 /**
  * The app shell: access, board state, the ticking clock, and one scroll.
  *
- * ACCESS IS RESOLVED ONCE, AT BOOT, from the URL fragment (see `lib/access.js`), and
- * the fragment is only cleared once running as an installed app — in Safari it has to
- * stay so that "Add to Home Screen" records a URL still carrying the key, because an
- * installed web app gets its own storage bucket.
+ * Access is resolved once, at boot, from the URL fragment (`lib/access.js`), and the fragment is
+ * stripped only when running as an installed app: in Safari it has to stay, so that "Add to Home
+ * Screen" records a URL still carrying the key, an installed web app getting its own storage
+ * bucket.
  *
- * `canEdit` decides what renders, but it is NOT the security boundary. The endpoint
- * refuses any write without the key, so a planner who reaches into the DOM gains
- * nothing — which is why nothing here needs to be defensive beyond hiding controls.
+ * `canEdit` decides what renders but is not the security boundary — the endpoint refuses every
+ * keyless write — so nothing here need be defensive beyond hiding controls.
  *
- * ONE SCROLL, AND THE PHOTOGRAPH IS THE HEADER. No tabs and no fixed bar but the FAB: a phone
- * cannot spare a permanent 56px plus its safe-area inset on the vertical axis, the standing
- * notices are global (a refused edit link and a board that could not be read are facts about the
- * whole app, not about a row), and there is exactly one document scroller. Returning to the
- * photograph is one tap on the status bar.
+ * One scroll, and the photograph is the header. No tabs and no fixed bar but the FAB: a phone
+ * cannot spare a permanent 56px plus safe-area inset, the standing notices are global (a refused
+ * edit link and an unreadable board are facts about the app, not about a row), and there is exactly
+ * one document scroller. Returning to the photograph is one tap on the status bar.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -23,10 +21,10 @@ import { isStandalone, markKeyRejected, resolveAccess, writeEditKey } from './li
 import { API_ERROR, isTerminal } from './lib/api.js'
 import { forgetToken } from './lib/connection.js'
 import { overallProgress, withProgress } from './lib/progress.js'
-import { monthOf, resolveTimeZone, todayIn } from './lib/time.js'
+import { monthOf, resolveTimeZone } from './lib/time.js'
 import { setSafeToReload } from './lib/serviceWorker.js'
 import { STATUS, useBoard } from './state/useBoard.js'
-import { useNow } from './state/useNow.js'
+import { useToday } from './state/useToday.js'
 import { useToasts } from './state/useToasts.js'
 import { useT } from './i18n/index.js'
 import { ConfirmDeleteSheet } from './components/Deleted.jsx'
@@ -41,9 +39,8 @@ import Toasts from './components/Toasts.jsx'
 import { ICON_SIZE, PlusIcon, RefreshIcon } from './components/icons.jsx'
 
 /**
- * Read the fragment before React renders anything, so the first paint already knows
- * whether the controls belong on screen — resolving it in an effect would flash a
- * view-only board at an editor on every launch.
+ * Read before React renders, so the first paint knows whether the controls belong on screen;
+ * resolved in an effect it would flash a view-only board at an editor on every launch.
  */
 const boot = resolveAccess({
   hash: typeof window === 'undefined' ? '' : window.location.hash,
@@ -51,23 +48,16 @@ const boot = resolveAccess({
 })
 
 if (boot.strip && typeof window !== 'undefined') {
-  // replaceState, not a navigation: it leaves the Home Screen shortcut's recorded URL
-  // alone and only cleans up what is on screen.
+  // replaceState, not a navigation: it leaves the Home Screen shortcut's recorded URL alone.
   window.history.replaceState(null, '', window.location.pathname + window.location.search)
 }
 
-/**
- * The api error codes that carry a second line worth showing. The others state the whole
- * problem in their title, and a hint that repeats the title is noise.
- */
+/** The api error codes with a second line worth showing; the rest say it all in their title. */
 const HINTED = new Set([API_ERROR.UNCONFIGURED, API_ERROR.NOT_EMPTY, API_ERROR.MISCONFIGURED])
 
 /**
- * Terminal codes that already have a better notice of their own.
- *
- * A rejected key sets `error` to `unauthorized` AND calls `onUnauthorized`, so both
- * branches fired and the screen carried "This edit link was rejected" stacked on top of
- * "The edit link was refused". The `access.*` pair wins because it names the recovery.
+ * Terminal codes with a better notice of their own. A rejected key sets `error` to `unauthorized`
+ * and calls `onUnauthorized`, so both branches fire; `access.*` wins because it names the recovery.
  */
 const SILENCED = new Set([API_ERROR.UNAUTHORIZED])
 
@@ -98,42 +88,34 @@ export default function App() {
   }, [])
 
   const board = useBoard({ editKey, onUnauthorized })
-  const now = useNow()
+  const timeZone = resolveTimeZone(board.config.timezone)
+  /**
+   * A day string; every figure derives from it, the countdown included, and it keys `withProgress`,
+   * so nothing recomputes more than once a day. See `useToday`.
+   */
+  const today = useToday(timeZone)
 
   const [filter, setFilter] = useState(() => readStored(STORAGE_KEYS.filter) || FILTER_ALL)
-  /**
-   * Which cards are open. Session-only, never `localStorage`: relaunching into twelve
-   * expanded cards is a board nobody can read.
-   */
+  /** Which cards are open. Never `localStorage`: twelve open cards on relaunch cannot be read. */
   const [expanded, setExpanded] = useState(() => new Set())
   /**
-   * Rows that have been ticked since the filter was last chosen, and which therefore stay on
-   * screen even though they no longer match it.
-   *
-   * TICKING SOMETHING OFF MUST NOT MAKE IT VANISH. Filter to Overdue, work down the list, tick a
-   * row — and the row left the only list on screen, with no toast (ticking deliberately has
-   * none) and nothing to confirm the tap landed. That is the app's highest-frequency gesture
-   * meeting its most-used filter, and the feedback was total absence. Held here, the row stays
-   * put, wearing its tick and its strikethrough, while the count on the chip beside it drops:
-   * the confirmation is the row changing rather than the row leaving.
-   *
-   * Session state, never `localStorage`, for the same reason `expanded` is.
+   * Rows ticked since the filter was last chosen, kept on screen though they no longer match it.
+   * Ticking raises no toast, so a row that also left the only list would give no feedback at all
+   * for the app's most frequent gesture; held here it stays put wearing its tick while the chip's
+   * count drops. Session state, never `localStorage`, like `expanded`.
    */
   const [ticked, setTicked] = useState(() => new Set())
   /**
-   * How many things are holding text that exists nowhere else — an open edit SESSION, or the
-   * add-a-subtask field while it has focus. Two things ride on it being non-zero: the fixed FAB
-   * gets out of the way (it does not move with the keyboard, and it sat over the trailing end of
-   * the add field, where a tap opened the new-task sheet and discarded what was typed), and a
-   * reload is held off, because the text in an open session exists nowhere else yet.
+   * How many things hold text that exists nowhere else: an open edit session, or the add-a-subtask
+   * field while focused. Non-zero moves the fixed FAB out of the way — it does not move with the
+   * keyboard and sits over the trailing end of the add field, where a tap opens the new-task sheet
+   * and discards what was typed — and holds off a service-worker reload.
    *
-   * A COUNT, NOT A FLAG, and that is a fix rather than a tidy-up. Both producers wrote one
-   * boolean and blur was the last writer, so tapping the subtask field inside an open edit
-   * session and then tapping away reported `false` with the session still open and the title
-   * buffer still full — dropping the guard at exactly the moment it is load-bearing. Two rows
-   * open in Edit at once had the same shape: closing either released both. Every producer calls
-   * in balanced pairs (an effect and its cleanup, a focus and its blur); the floor is so an
-   * unbalanced one degrades to "the FAB stays hidden" rather than "the guard never releases".
+   * A count, not a flag: with one boolean and two producers, blur is the last writer, so tapping
+   * the subtask field inside an open session and then away would report `false` with the session's
+   * buffer still full, and two rows open in Edit would release the guard when either closed. Every
+   * producer calls in balanced pairs (an effect and its cleanup, a focus and its blur); the floor
+   * keeps an unbalanced one to "the FAB stays hidden" rather than "the guard never releases".
    */
   const [typists, setTypists] = useState(0)
   const reportTyping = useCallback((on) => {
@@ -144,15 +126,10 @@ export default function App() {
   const [pendingDelete, setPendingDelete] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   /**
-   * An editor looking at the board the way a guest sees it.
-   *
-   * Two different questions, and keeping them apart is the whole of this: `hasKey` is what this
-   * device CAN do, and `canEdit` is what it currently shows. Only the second one moves, so nothing
-   * is revoked, nothing is re-pasted, and the way back is a toggle rather than a link somebody has
-   * to find again — which is what separates this from "Stop editing on this device".
-   *
-   * Per-device and remembered, like the language and the accent: it is also the way to hand a phone
-   * to somebody, or to stop yourself editing a board you only want to read.
+   * An editor looking at the board the way a guest sees it. `hasKey` is what this device can do,
+   * `canEdit` what it currently shows; only the second moves, so nothing is revoked, nothing is
+   * re-pasted, and the way back is a toggle. Per-device and remembered, like the language and the
+   * accent: it is also how to hand a phone to somebody.
    */
   const [readOnly, setReadOnly] = useState(() => readStored(STORAGE_KEYS.readOnly) === '1')
   const toggleReadOnly = useCallback(() => {
@@ -165,16 +142,7 @@ export default function App() {
 
   const hasKey = Boolean(editKey) && !rejected
   const canEdit = hasKey && !readOnly
-  const timeZone = resolveTimeZone(board.config.timezone)
 
-  /**
-   * TODAY, AS A DAY STRING, AND EVERY FIGURE IN THE APP DERIVES FROM IT.
-   *
-   * The board is day-granular, so nothing on screen can change between midnights and
-   * `withProgress` recomputes at most once a day. The clock still ticks for the hero's
-   * countdown; keying this on it would reallocate every task object sixty times an hour.
-   */
-  const today = useMemo(() => todayIn(timeZone, now), [timeZone, now])
   const tasks = useMemo(() => withProgress(board.tasks, today), [board.tasks, today])
   const overall = useMemo(() => overallProgress(tasks), [tasks])
 
@@ -202,21 +170,17 @@ export default function App() {
     writeStored(STORAGE_KEYS.filter, next)
   }, [])
 
-  // A reload must not land between a keystroke and a save. Every half matters: an open
-  // sheet and a focused inline field both hold text that exists nowhere else, and `saving`
-  // covers the window where a write has left the device but not yet reached the sheet.
+  // A reload must not land between a keystroke and a save: an open sheet and a focused inline field
+  // both hold text that exists nowhere else, and `saving` covers a write in flight.
   const busy = Boolean(adding || pendingDelete || settingsOpen || typing) || board.saving > 0
   useEffect(() => {
     setSafeToReload(() => !busy)
   }, [busy])
 
   /**
-   * Every optimistic mutation reports through here.
-   *
-   * A FAILURE NEEDS A TOAST OF ITS OWN. Mutations are optimistic and the sheets close before
-   * the write lands, so a failure is a row that quietly rolls back out of a list nobody is
-   * looking at — invisible unless it is said out loud. `run` restores the previous tasks, so
-   * "nothing was saved" is literally true.
+   * Every optimistic mutation reports through here, because a failure needs a toast of its own: the
+   * sheets close before the write lands, so a failure is a row quietly rolling back out of a list
+   * nobody is looking at. `run` restores the previous tasks, so "nothing was saved" is true.
    */
   const report = useCallback(
     async (work, message) => {
@@ -246,10 +210,9 @@ export default function App() {
   )
 
   /**
-   * Adding a subtask is the one mutation with NO success toast. A checklist is entered five
-   * items at a time, and five "Saved." toasts stacking up over the field somebody is still
-   * typing into is worse than silence — the row appearing in the list is the confirmation.
-   * A failure still speaks.
+   * The one mutation with no success toast: a checklist is entered five items at a time, and five
+   * "Saved." toasts over the field somebody is typing into are worse than silence — the row
+   * appearing is the confirmation. A failure still speaks.
    */
   const addSubtask = useCallback(
     async (parent, title) => {
@@ -258,7 +221,7 @@ export default function App() {
     [board, show, t],
   )
 
-  /** Same reasoning: ticking is the highest-frequency action there is, so only a failure talks. */
+  /** Same reasoning: ticking is the most frequent action there is, so only a failure talks. */
   const toggleDone = useCallback(
     async (task) => {
       // Before the write, not after: the optimistic update lands synchronously, so a row whose
@@ -275,22 +238,19 @@ export default function App() {
         weddingDay: weddingDay(board.config),
         locale,
       })
-      // A failure has to speak here too: the template card just flips its button back from
-      // "Building the checklist…" over a board that is still empty, which reads as nothing
-      // having happened rather than as a write that was refused.
+      // A failure has to speak here too: the card otherwise just flips its button back over a board
+      // that is still empty, which reads as nothing having happened rather than a refused write.
       show(count ? t('empty.seeded', { count }) : t('toast.failed'))
     },
     [board, locale, show, t],
   )
 
   /**
-   * Both of these clear the read-only preview, because otherwise it outlives the thing it was
-   * previewing: pasting a fresh edit link while the flag was still set would appear to do nothing
-   * at all, which is the one outcome that makes somebody think their link is broken.
-   *
-   * BOTH ALSO DROP THE MINTED TOKEN. It is derived from the key but outlives it by up to an hour,
-   * so a device that has just revoked its key would otherwise keep writing, and a device pasting a
-   * DIFFERENT key would keep using the old one's token — which is the same bug wearing a hat.
+   * Both clear the read-only preview, or it outlives what it was previewing: pasting a fresh edit
+   * link with the flag still set would appear to do nothing at all. Both also drop the minted
+   * token, derived from the key but outliving it by up to an hour — a device that has just revoked
+   * its key would otherwise keep writing, and one pasting a different key would keep using the old
+   * token.
    */
   const enableEditing = useCallback((key) => {
     forgetToken()
@@ -314,10 +274,8 @@ export default function App() {
   if (!isConfigured()) {
     return (
       <div className="app">
-        <div className="views">
-          <div className="view stack">
-            <Notice tone="warn" title={t('api.unconfigured')} body={t('api.unconfiguredHint')} />
-          </div>
+        <div className="view view--bare stack">
+          <Notice tone="warn" title={t('api.unconfigured')} body={t('api.unconfiguredHint')} />
         </div>
       </div>
     )
@@ -330,7 +288,7 @@ export default function App() {
       <div className="views">
         <Hero
           config={board.config}
-          nowMs={now}
+          today={today}
           canEdit={canEdit}
           overall={overall}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -341,23 +299,20 @@ export default function App() {
             <Notice tone="warn" title={t('access.rejected')} body={t('access.rejectedHint')} />
           ) : null}
 
-          {/* A failed read never blanks a board that is already on screen: the cached copy is
-              stale, not wrong, and saying so beats an error page. */}
+          {/* A failed read never blanks a board on screen: the copy is stale, not wrong. */}
           {board.stale && board.error ? (
             <Notice title={t('status.stale')} body={t('status.staleHint')}>
               <RetryButton onRetry={board.refresh} label={t('status.refresh')} />
             </Notice>
           ) : null}
 
-          {/* Only a TERMINAL failure earns a persistent notice. A transient one is a thing to
-              retry, and the stale banner above already covers the case where there is cached
-              data to fall back on. */}
+          {/* Only a terminal failure earns a persistent notice: a transient one is a thing to
+              retry, and the stale banner covers the case with cached data to fall back on. */}
           {board.error && !board.stale && isTerminal(board.error) && !SILENCED.has(board.error) ? (
             <Notice
               tone="warn"
               title={t(`api.${board.error}`)}
-              /* Only these two have a hint worth the extra line; the rest say it all in the
-                 title. `HINTED` keeps that list out of the markup. */
+              /* `HINTED` keeps the list of codes with a useful second line out of the markup. */
               body={HINTED.has(board.error) ? t(`api.${board.error}Hint`) : null}
             />
           ) : null}
@@ -365,10 +320,9 @@ export default function App() {
           {board.status === STATUS.LOADING ? (
             <p className="hint">{t('common.loading')}</p>
           ) : board.status === STATUS.ERROR && !board.tasks.length ? (
-            /* A first load that never landed. This must NOT fall through to the empty
-               board: "the couple has not added anything yet" is a statement about the
-               data, and there is no data — only a failed request. Saying the wrong one
-               sends a planner away thinking the board is empty. */
+            /* A first load that never landed must not fall through to the empty board: "the couple
+               has not added anything yet" is a statement about data, and there is none — only a
+               failed request. It would send a planner away thinking the board is empty. */
             <Notice tone="warn" title={t(`api.${board.error ?? API_ERROR.TRANSIENT}`)}>
               <RetryButton onRetry={board.refresh} label={t('status.refresh')} />
             </Notice>
@@ -384,7 +338,6 @@ export default function App() {
             <>
               <FilterChips
                 counts={overall}
-                total={overall.total}
                 filter={filter}
                 onFilter={chooseFilter}
               />
@@ -423,9 +376,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Hidden while a field has focus — see `typing`. The FAB is fixed, so it sat over the
-          trailing end of the add-a-subtask field, where a tap opened the new-task sheet and
-          discarded what was typed. */}
+      {/* Hidden while a field has focus — see `typing`. */}
       {canEdit && !typing ? (
         <button
           type="button"
@@ -457,9 +408,9 @@ export default function App() {
         <SettingsSheet
           config={board.config}
           canEdit={canEdit}
-          /* The capability, not the view. Settings asks "do you hold a key" to decide between
-             revoking one and pasting one, and a read-only PREVIEW must not turn that into a demand
-             for a credential this device already has. */
+          /* The capability, not the view: Settings asks "do you hold a key" to decide between
+             revoking one and pasting one, and a preview must not demand a credential this device
+             already has. */
           hasKey={hasKey}
           readOnly={readOnly}
           onToggleReadOnly={toggleReadOnly}
@@ -468,10 +419,9 @@ export default function App() {
           onRestore={restore}
           onSaveConfig={async (partial) => {
             const ok = await board.saveConfig(partial)
-            /* Settings is the one surface that WAITS for its write — it has no optimistic half —
-               so somebody is watching the button for the write plus the read after it. Without
-               the failure branch it returned to "Save" and said nothing at all, and the board's
-               own notice was behind the sheet. */
+            /* Settings is the one surface that waits for its write, having no optimistic half, so
+               somebody is watching the button for the write plus the read after it. Without the
+               failure branch it returns to "Save" saying nothing, its notice behind the sheet. */
             show(ok ? t('settings.saved') : t('toast.failed'))
             return ok
           }}

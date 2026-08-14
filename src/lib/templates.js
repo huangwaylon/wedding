@@ -1,38 +1,29 @@
 /**
  * Starter checklists, so a fresh board is not an empty screen.
  *
- * Two, because wedding planning is not one tradition. `classic12` is the
- * twelve-month Anglophone countdown; `japan8` follows the Japanese 結婚式準備
- * schedule, which starts later (about eight months, and 平均10か月前 for the whole
- * process), front-loads 会場 and 両家挨拶, and has items — 引き出物, 席次表, お車代,
- * 婚姻届 — with no counterpart in the other. Neither is a translation of the other
- * and they must not be merged.
+ * Two, because wedding planning is not one tradition. `classic12` is the twelve-month Anglophone
+ * countdown; `japan8` follows the Japanese 結婚式準備 schedule, which starts later (about eight months,
+ * 平均10か月前 overall), front-loads 会場 and 両家挨拶, and carries items — 引き出物, 席次表, お車代, 婚姻届 — with no
+ * counterpart in the other. Neither is a translation of the other; they must not be merged.
  *
- * Sources: The Knot's 12-month countdown; みんなのウェディング「結婚式準備の完全ガイド」;
- * ゼクシィ「結婚式準備のやることリスト」. Task labels here are short imperative
- * summaries, not reproductions of any source's wording.
+ * Sources: The Knot's 12-month countdown; みんなのウェディング「結婚式準備の完全ガイド」; ゼクシィ「結婚式準備のやることリスト」. Labels are
+ * short imperative summaries, not any source's wording.
  *
- * `d` IS THE DUE DATE AS CALENDAR DAYS FROM THE WEDDING DAY, negative for before.
- * Days rather than months so `time.addDays` can do plain calendar arithmetic and no
- * month-length or DST edge case exists, and exactly ONE offset per task because a
- * seeded task is a deadline: a second bound would be a date nobody had chosen sitting
- * on every row of a fresh board.
+ * `d` is the due date in calendar days from the wedding day, negative for before. Days rather than
+ * months, so `time.addDays` meets no month-length or DST case; one offset per task, a seeded task
+ * being a deadline.
  *
- * Seeding writes the titles in the SEEDING DEVICE'S LANGUAGE, and that is the one
- * place a per-device preference reaches the sheet. It is deliberate: a seeded
- * title is content from that moment on — editable, renameable, and nothing
- * re-renders it — so it is not a localized view of stored data, it *is* the
- * stored data. Everything else written to the sheet stays language-independent.
+ * Seeding writes titles in the seeding device's language — the one place a per-device preference
+ * reaches the sheet. A seeded title is content from then on, so it is the stored data rather than a
+ * view of it.
  */
 
 import { addDays, isValidDay } from './time.js'
 
 /**
- * The category vocabulary both templates draw from, and the default for a fresh
- * board. Stored in the sheet verbatim so a person editing the spreadsheet by hand
- * reads words rather than codes; the UI translates a KNOWN value through
- * `category.<lowercased>` in the catalogs and falls back to the raw string, so a
- * category somebody invents shows up exactly as they typed it.
+ * The category vocabulary both templates draw from, and the default for a fresh board. Stored in
+ * the sheet verbatim, so somebody editing the spreadsheet reads words rather than codes; the UI
+ * translates a known value through `category.<lowercased>` and otherwise prints the raw string.
  */
 export const CATEGORIES = [
   'Budget',
@@ -52,9 +43,7 @@ export const CATEGORIES = [
 ]
 
 /**
- * A template is an id and its tasks. There is no length or description field: the id names the
- * shape ("classic12", "japan8"), the count is `tasks.length`, and the UI offers each list by
- * name and size alone — anything longer would be copy nobody reads twice.
+ * A template is an id and its tasks. The id names the shape and the count is `tasks.length`.
  *
  * @type {{id: string, tasks: Array}[]}
  */
@@ -168,15 +157,12 @@ export function findTemplate(id) {
 }
 
 /**
- * A template plus a wedding date -> task drafts ready for `createMany`.
+ * A template plus a wedding date -> task drafts ready for `createTasks`.
  *
- * The date is CALENDAR-VALIDATED through `isValidDay`, not pattern-matched: a shape check
- * accepts '2027-02-31', and every offset counted from it would land a whole seeded board a
- * day into March.
+ * The date is calendar-validated, not pattern-matched: a shape check accepts '2027-02-31', and
+ * every offset counted from it would land the whole seeded board a day into March.
  *
- * @param {object} template
  * @param {string} weddingDay 'YYYY-MM-DD'
- * @param {object} opts
  * @param {string} opts.locale which title to write; anything with no titles falls back to en
  * @param {() => string} opts.newId injected so tests are deterministic
  */

@@ -1,45 +1,35 @@
 /**
- * Writes the PNG app icons. Run once, or after changing the mark:
+ * Writes the PNG app icons. Run after changing the mark or the default accent:
  *
  *   npm run icons
  *
- * A hand-rolled PNG encoder rather than a dependency. `sharp` and `canvas` both ship
- * native binaries, which is a lot of install surface for three files that change
- * approximately never — and Node's own `zlib` is all a PNG actually needs.
+ * A hand-rolled PNG encoder rather than a dependency: `sharp` and `canvas` both ship native
+ * binaries, and Node's `zlib` is all a PNG needs.
  *
- * The mark is a two-peak ridgeline, drawn with signed-distance fields and
- * supersampled 3x3 per pixel. Distance fields rather than a rasterised path because
- * antialiasing falls out of them for free, and a stroke at 192px with hard edges
- * looks like a mistake on a Retina Home Screen.
- *
- * IT HAS TO MATCH `PeaksIcon` in src/components/icons.jsx — that is the same mark in
- * the empty state, and the two drifting apart means the installed app and the screen
- * it opens carry different logos. That file records why the ginkgo leaf this replaced
+ * The mark is a two-peak ridgeline, drawn with signed-distance fields and supersampled 3x3 per
+ * pixel: distance fields give antialiasing for free, and hard edges at 192px look wrong on a
+ * Retina Home Screen. It has to match `PeaksIcon` in src/components/icons.jsx, or the installed app
+ * and the screen it opens carry different logos; that file records why the ginkgo leaf it replaced
  * could not be drawn at glyph size.
  *
- * Every icon is drawn FULL-BLEED and also declared `maskable`, so the mark sits
- * inside the safe zone: Android crops a maskable icon to a circle of 80% width, and
- * a design that fills the square loses its edges.
+ * Every icon is full-bleed and also declared `maskable`, so the mark stays inside the safe zone
+ * Android crops a maskable icon to: a circle of 80% width.
  */
 
 import { deflateSync } from 'node:zlib'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const SIZES = [180, 192, 512]
 const OUT = join('public', 'icons')
 
 /**
- * The default accent, READ OFF `tokens.css` rather than retyped as a byte triple.
- *
- * That triple was the one spelling of the accent nothing pinned: `test/ui.test.jsx` checks
- * `tokens.css` against `ACCENT_HEX` in `theme.js`, and this file sat outside both — so a retheme
- * would leave the app one colour and its Home Screen icon another. It parses the stylesheet
- * rather than importing `theme.js` because that module reaches `import.meta.env`, which plain
- * node does not have; `scripts/check-contrast.js` reads the palette the same way.
- *
- * The PNGs are committed, so re-run `npm run icons` after changing the default.
+ * The default accent, read off `tokens.css` rather than retyped, so a retheme cannot leave the app
+ * one colour and its Home Screen icon another — `test/ui.test.jsx` checks `tokens.css` against
+ * `ACCENT_HEX` in `theme.js`, and this file sits outside both. It parses the stylesheet rather than
+ * importing `theme.js`, which reaches `import.meta.env` and cannot run in plain node;
+ * `scripts/check-contrast.js` reads the palette the same way. The PNGs are committed, so re-run
+ * `npm run icons` after changing the default.
  */
 const ROOT = /:root\s*\{([\s\S]*?)\n\}/.exec(
   readFileSync('src/styles/tokens.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''),
@@ -52,12 +42,10 @@ const FG = [0xff, 0xff, 0xff]
 const SAMPLES = 3
 
 /**
- * Everything below is in a 0–1 unit square, so one description scales to every size.
- *
- * The ridge is `PeaksIcon`'s path mapped out of its 24-unit box and centred. That glyph
- * spans x 2.5–21.5 and y 8–18.5, which is wide and shallow, so it is scaled to about
- * half the square and sat a little below centre, where a wordless mark reads best. The
- * furthest point stays inside the 0.4 radius Android crops a maskable icon to.
+ * A 0–1 unit square, so one description scales to every size. The ridge is `PeaksIcon`'s path
+ * mapped out of its 24-unit box: that glyph spans x 2.5–21.5, y 8–18.5, wide and shallow, so it is
+ * scaled to about half the square and sat a little below centre, where a wordless mark reads best.
+ * The furthest point stays inside the 0.4 radius Android crops to.
  */
 const RIDGE = [
   [0.25, 0.655],
@@ -82,8 +70,8 @@ function distanceToSegment(x, y, [ax, ay], [bx, by]) {
 }
 
 /**
- * The ridge, plus the baseline that closes it: `PeaksIcon`'s path ends in `Z`, so the flat
- * bottom belongs to the mark rather than being an addition here.
+ * The ridge plus the baseline that closes it: `PeaksIcon`'s path ends in `Z`, so the flat bottom
+ * belongs to the mark.
  */
 function inside(x, y) {
   const points = [...RIDGE, RIDGE[0]]
@@ -95,8 +83,8 @@ function inside(x, y) {
 
 /** RGB, no alpha: the icon is opaque, and iOS composites a transparent one onto white. */
 export function pixels(size) {
-  // One filter byte per row, as PNG requires. Filter 0 = None; the deflate below is
-  // what does the compressing, and a solid-ish icon compresses fine without a filter.
+  // One filter byte per row, as PNG requires. Filter 0 = None; the deflate below does the
+  // compressing.
   const raw = Buffer.alloc(size * (size * 3 + 1))
   let cursor = 0
 

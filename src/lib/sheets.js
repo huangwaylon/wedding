@@ -1,32 +1,21 @@
 /**
- * Every read and write an EDITOR makes, straight to the Sheets API.
+ * Every read and write an editor makes, straight to the Sheets API. A planner never reaches here:
+ * the anonymous read carries no credential, and a minted token can always write.
  *
- * THE WRITES LIVE HERE RATHER THAN IN THE SCRIPT, and the reason is measured: a request to
- * `/exec` costs 1.0–1.6s of Google's own time before any of our code runs — the 302 hop plus a
- * container start — while `sheets.googleapis.com` answers in ~0.24s. No amount of script tuning
- * reaches that floor, so moving a write back behind `/exec` would cost 2s per save whatever it
- * did there.
+ * The writes are here, not in the script, because `/exec` costs 1.0–1.6s before our code runs and
+ * `sheets.googleapis.com` answers in ~0.24s.
  *
- * A PLANNER NEVER REACHES THIS FILE. Reading with no credential at all is the whole reason
- * `doGet` still exists, and a minted token can always write — see `connection.js`.
+ * Three rules:
  *
- * Three rules hold everything here together:
+ * Every write is `valueInputOption: RAW`, never `USER_ENTERED`. RAW stores what it is given, so a
+ * title of "=SUM(A:A)" stays text and a date is not reformatted to the sheet's locale.
  *
- * EVERY WRITE IS `valueInputOption: RAW`. Never `USER_ENTERED`. RAW stores what it is given,
- * so a title of "=SUM(A:A)" is text and a date is not reformatted to the sheet's locale.
- * This is also why nothing here escapes a leading `=`, `+`, `-` or `@` the way `Code.gs`
- * had to: `setValues` parsed those whatever the cell format said, and RAW does not.
+ * No cached row number is trusted: positions shift when anyone sorts or inserts in the Sheets UI,
+ * so every write resolves id -> row through `openGrid` first.
  *
- * NO CACHED ROW NUMBER IS EVER TRUSTED. Row positions shift whenever anyone sorts or inserts
- * in the Sheets UI, so every write resolves id -> row from a read taken immediately before
- * it. `openGrid` is the one door for that, and it is also where the header repair happens.
- *
- * THERE IS NO LOCK ANY MORE, AND THAT IS WHY EACH GESTURE IS ONE WRITE CALL. The script held
- * a script-wide lock, which let it rewrite untouched cells safely and serialised the two
- * editors — at the cost of a 25s wait under contention that the client could not even retry.
- * Without it the rule is narrower and stricter: touch only the cells the edit is about, and
- * send them as ONE `values:batchUpdate`, which Google applies as a unit. Two people editing
- * different rows now never contend at all.
+ * No lock exists, so a write touches only the cells its edit is about, as one `values:batchUpdate`,
+ * which Google applies as a unit. Rewriting untouched cells from a stale read is how one editor's
+ * save erases the other's.
  */
 
 import {
@@ -44,9 +33,8 @@ import {
 import { getAccessToken, refreshToken } from './connection.js'
 
 /**
- * Overridable ONLY so `scripts/stub-endpoint.mjs` can stand in for Google in dev — the
- * production CSP allows the real host and nothing else, and `vite build` never reads a
- * `server` config. Never point this at anything in a shipped build.
+ * Overridable only so `scripts/stub-endpoint.mjs` can stand in for Google in dev. The production
+ * CSP allows the real host and nothing else; never set this in a shipped build.
  */
 const BASE_URL =
   import.meta.env.VITE_SHEETS_BASE ?? 'https://sheets.googleapis.com/v4/spreadsheets'
@@ -54,13 +42,11 @@ const BASE_URL =
 const RAW = 'RAW'
 
 /**
- * A CEILING ON ONE CALL, NOT A LATENCY BUDGET. The API answers in ~0.24s; this exists only so a
- * connection that never closes cannot wedge the app, which is the one failure `fetch` has no
- * limit of its own for. The cost of going without is not abstract: `useBoard` holds `reading`
- * for the life of a read and `saving` for the life of a write, so a single hung request blocks
- * every later refresh or leaves a row dimmed with nothing able to settle it. An abort throws
- * with no `.status`, which `api.js` classifies as TRANSIENT and retries — sound because every op
- * here is idempotent. `/exec` has its own ceiling, in `api.js`, for the same reason.
+ * A hang-stop, not a latency budget: `fetch` has no limit of its own, and `useBoard` holds
+ * `reading` for a read and `saving` for a write, so a hung request blocks every later refresh or
+ * leaves a row dimmed with nothing able to settle it. An abort has no `.status`, so `api.js`
+ * classifies it TRANSIENT and retries — sound because every op here is idempotent. `/exec` has its
+ * own ceiling in `api.js`.
  */
 const TIMEOUT_MS = 20_000
 
@@ -80,15 +66,13 @@ function query(params) {
 /**
  * Single entry point for every Sheets call.
  *
- * A 401 means the token was rejected — revoked, or simply older than it looked — so
- * re-acquire once and retry exactly once. NEVER more: a revoked grant would loop forever.
- * `refreshToken` guarantees a token newer than any mint that was already in flight when the
- * 401 arrived, which is what makes `connection.js`'s refresh margin a performance choice
- * rather than a correctness one.
+ * A 401 means the token was rejected, so re-mint and retry exactly once — never more, or a revoked
+ * grant loops forever. `refreshToken` guarantees a token newer than any mint already in flight,
+ * which is what makes `connection.js`'s refresh margin a performance choice rather than a
+ * correctness one.
  *
  * Thrown errors carry `.status`, which is how `api.js` tells a retryable failure from a terminal
- * one. That is worth more than it looks: `/exec` answers every failure with a 200 and an HTML
- * page, so anything behind it can only guess from whether the body parsed.
+ * one.
  */
 async function request(path, { method = 'GET', params, body, allowRetry = true } = {}) {
   const token = await getAccessToken()
@@ -106,8 +90,7 @@ async function request(path, { method = 'GET', params, body, allowRetry = true }
       signal: AbortSignal.timeout(TIMEOUT_MS),
     })
   } catch (cause) {
-    // No status at all: DNS, offline, a dropped connection, or the ceiling above. Always
-    // worth retrying.
+    // No status at all: DNS, offline, a dropped connection, or the ceiling above. Worth retrying.
     const error = new Error('Could not reach the Sheets API.')
     error.cause = cause
     throw error
@@ -136,9 +119,14 @@ function coded(code, message) {
   return error
 }
 
-/** A missing tab or range surfaces as a 400 from the values endpoint, not a 404. */
+/**
+ * A tab or range that does not exist yet. 400 only: a 404 means no such spreadsheet, and read as
+ * "not built yet" a wrong id or a trashed file becomes an empty board, which overwrites the
+ * device's last-good snapshot and invites an editor to seed a template over a live one. `api.js`
+ * maps it, like every other 4xx, to `misconfigured`.
+ */
 function looksUninitialized(error) {
-  return error.status === 400 || error.status === 404
+  return error.status === 400
 }
 
 function batchGet(spreadsheetId, ranges) {
@@ -147,10 +135,7 @@ function batchGet(spreadsheetId, ranges) {
   })
 }
 
-/**
- * Several ranges in ONE request, which is what keeps a gesture to a single write whatever it
- * touches: a delete cascading to four subtasks is one call, not five.
- */
+/** Several ranges in one request: a delete cascading to four subtasks is one call, not five. */
 function batchUpdateValues(spreadsheetId, data) {
   if (!data.length) return Promise.resolve({})
   return request(`/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`, {
@@ -167,14 +152,12 @@ function batchUpdateSheet(spreadsheetId, requests) {
   })
 }
 
-// ---------------------------------------------------------------------------
-// The spreadsheet's shape
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------- The spreadsheet's
+// shape ---------------------------------------------------------------------------
 
 /**
  * Tab titles -> gids, plus the spreadsheet's own zone. Cached per session because none of it
- * changes: `compact` needs a gid and Settings needs the zone, and paying for either on every
- * read would put a second round trip on the hot path.
+ * changes; re-reading it per read would put a second round trip on the hot path.
  */
 let metaCache = { spreadsheetId: null, sheetIds: {}, timeZone: '' }
 
@@ -200,8 +183,7 @@ function meta(spreadsheetId) {
   return readMeta(spreadsheetId)
 }
 
-// ---------------------------------------------------------------------------
-// Reading
+// --------------------------------------------------------------------------- Reading
 // ---------------------------------------------------------------------------
 
 /** column name -> index, from the header row the sheet actually has. */
@@ -220,9 +202,8 @@ function headerMatches(header) {
 }
 
 /**
- * Every task in a grid, resolved by column NAME rather than by position — the same rule
- * `doGet` reads by, so a planner and an editor see the same board even when somebody has
- * moved a column in the Sheets UI and no editor has written since.
+ * Every task in a grid, resolved by column name rather than position — the same rule `doGet` reads
+ * by, so a planner and an editor see the same board after somebody moves a column in the Sheets UI.
  */
 function tasksFrom(block) {
   if (block.length < 2) return []
@@ -254,11 +235,9 @@ function configFrom(rows) {
 }
 
 /**
- * The whole board in ONE round trip, and the shape `api.js` hands to `useBoard`.
- *
- * The zone rides along from the session cache, so only the FIRST read of a session pays for
- * it — and it pays in parallel, so even that one costs one round trip of latency rather than
- * two.
+ * The whole board in one round trip, in the shape `api.js` hands to `useBoard`. The zone rides
+ * along from the session cache, in parallel, so only the first read of a session pays for it and
+ * even that costs one round trip.
  */
 export async function loadBoard(spreadsheetId) {
   const wanted = meta(spreadsheetId).catch(() => metaCache)
@@ -268,9 +247,7 @@ export async function loadBoard(spreadsheetId) {
     const [data] = await Promise.all([batchGet(spreadsheetId, [TASKS_RANGE, CONFIG_RANGE]), wanted])
     valueRanges = data.valueRanges ?? []
   } catch (error) {
-    // A spreadsheet whose tabs have not been built yet. Not an error: it reads as an empty
-    // board, and an editor's first write builds them. An anonymous reader gets the same
-    // answer from `doGet`.
+    // Tabs not built yet. It reads as an empty board, and an editor's first write builds them.
     if (!looksUninitialized(error)) throw error
     return { tasks: [], config: {}, needsSetup: true, sheetTimeZone: (await wanted).timeZone }
   }
@@ -283,27 +260,37 @@ export async function loadBoard(spreadsheetId) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// One write's view of the grid
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------- One write's view of
+// the grid ---------------------------------------------------------------------------
 
-/** id -> 1-based grid row, or 0. */
+/**
+ * id -> 1-based grid row, keyed on the block itself: a batch resolves one id per task, and a linear
+ * scan made that a full pass per task. `openGrid` returns a fresh block every call, so an entry
+ * cannot be stale.
+ */
+const rowIndexes = new WeakMap()
+
+/** First match, as a duplicated id has no better answer. 0 for a miss. */
 function rowOf(block, id) {
   const wanted = cellText(id)
   if (!wanted) return 0
-  const column = columnIndex('id')
-  for (let i = 1; i < block.length; i += 1) {
-    if (cellText(block[i][column]) === wanted) return i + 1
+  let index = rowIndexes.get(block)
+  if (!index) {
+    const column = columnIndex('id')
+    index = new Map()
+    for (let i = 1; i < block.length; i += 1) {
+      const key = cellText(block[i][column])
+      if (key && !index.has(key)) index.set(key, i + 1)
+    }
+    rowIndexes.set(block, index)
   }
-  return 0
+  return index.get(wanted) ?? 0
 }
 
 /**
- * Everything a write needs, read ONCE, with the structure and the header both repaired.
- *
- * ONE DOOR rather than one per op, so no op can forget the repair and none can pay for a
- * read another already made. It is also the only place that decides a row number, which is
- * what makes "never trust a cached one" enforceable rather than a habit.
+ * Everything a write needs, read once, with the structure and the header both repaired. One door,
+ * so no op can forget the repair or pay twice for a read, and the only place that decides a row
+ * number.
  *
  * @returns {Promise<{block: string[][]}>} the grid as it now stands, header included
  */
@@ -329,32 +316,24 @@ async function openGrid(spreadsheetId) {
 }
 
 /**
- * Put the header back to this bundle's layout, BY NAME, and return the grid as it now stands.
+ * Put the header back to this bundle's layout, by name, and return the grid as it now stands.
  *
- * A person can blank, rename or reorder a column in the Sheets UI, and every write addresses cells
- * by INDEX — so a tab whose header no longer says what this bundle expects would have its due
- * dates written into the category column. The repair is therefore NOT a rewrite of the header
- * text: each row's values are re-read by the name that row's own header cell gives them and
- * written back in canonical order, so a value follows its label instead of staying in its column.
- * A column the header names that `TASK_COLUMNS` does not is dropped.
+ * Anyone can blank, rename or reorder a column in the Sheets UI, and every write addresses cells by
+ * index, so a mismatched header would send due dates into the category column. The repair moves
+ * values, not labels: each row's cells are re-read by the name its own header cell gives them and
+ * written back in canonical order. A column `TASK_COLUMNS` does not name is dropped.
  *
- * IT DOES NOT CLEAR ANYTHING PAST COLUMN I, AND DOES NOT NEED TO. `Code.gs` did, because
- * `getDataRange()` handed it every column that existed and a shifting count could take a real
- * column with it. Every range here is derived from `TASK_COLUMNS` instead, so the read is
- * `tasks!A1:I` and a stray column J is invisible to this app and cannot shift an index. Widening
- * the read to find one would be spending a request to tidy something harmless — and it would also
- * wipe the column a NEWER deployment appends, which is the same mistake in the other direction.
+ * It does not clear anything past column I and must not start. Every range derives from
+ * `TASK_COLUMNS`, so a stray column J cannot shift an index, and wiping it would delete the column
+ * a newer deployment appends.
  *
- * IT MOVED FROM THE SCRIPT TO HERE, and it lost the lock on the way. It is one write of the whole
- * grid, so it is still atomic as far as Google is concerned; what it can no longer promise is that
- * nobody read the grid in between. The exposure is one editor repairing a header while the other
- * is mid-save, which needs somebody to have hand-edited the header seconds earlier — and the loser
- * re-resolves on their next write.
+ * One write of the whole grid, so Google applies it atomically; without a lock it cannot promise
+ * nobody read the grid in between, and the loser re-resolves on their next write.
  *
  * `doGet` never reaches this: an anonymous read must not cause a write, which is why `tasksFrom`
- * resolves by name on both sides of the wire instead.
+ * resolves by name on both sides of the wire.
  */
-export async function relayout(spreadsheetId, block) {
+async function relayout(spreadsheetId, block) {
   const at = columnMap(block[0] ?? [])
 
   const rows = [TASK_COLUMNS.slice()]
@@ -376,30 +355,23 @@ function nowIso() {
 }
 
 /**
- * created_at BELONGS TO THE ROW, not to whatever the client is holding — one home for that
- * rule, because a replayed create rewrites an existing row and has to honour it exactly as
- * an update does.
+ * `created_at` belongs to the row, not to what the client is holding: a replayed create rewrites an
+ * existing row and must honour it as an update does.
  */
 function createdAtOf(block, row) {
   return row ? cellText(block[row - 1]?.[columnIndex('created_at')]) : ''
 }
 
-// ---------------------------------------------------------------------------
-// Operations
+// --------------------------------------------------------------------------- Operations
 // ---------------------------------------------------------------------------
 
 /**
- * Append — or REWRITE THE ROW THE ID ALREADY NAMES, which is what makes a create REPLAYABLE.
+ * An upsert on the client's id: append, or rewrite the row that id already names. That is what
+ * makes a create replayable — a lost reply does not say whether the write landed, and an
+ * unconditional append would leave a duplicate nothing could distinguish from a real second task.
  *
- * THE ID COMES FROM THE CLIENT, so a create that arrives twice is the same row twice, not two
- * tasks. Appending unconditionally made this the one op that could not be retried: a reply
- * lost to a dropped connection left the caller unable to tell "nothing was written" from
- * "written, and the answer went missing", and re-sending appended a duplicate nothing could
- * distinguish from a real second task. Resolving the id first costs nothing — the grid is
- * already in hand — and it is what lets `api.js` retry a write at all.
- *
- * A batch splits the same way: rows a replay already landed are rewritten in place, and only
- * genuinely new ones are appended. The ordinary case is all-new and is one append.
+ * A batch splits the same way: rows a replay already landed are rewritten in place, and only new
+ * ones are appended. The ordinary case is all-new and is one append.
  */
 export async function createTasks(spreadsheetId, tasks) {
   if (!tasks?.length) throw coded('bad_payload', 'createTasks: nothing to create')
@@ -415,9 +387,8 @@ export async function createTasks(spreadsheetId, tasks) {
     else fresh.push(cells)
   }
 
-  // Both halves can happen at once on a replay of a mixed batch. Sequential rather than
-  // parallel: an append shifts nothing the in-place ranges name, but doing them in one order
-  // every time is what makes the result the same as re-sending each edit would have been.
+  // A replayed mixed batch can need both halves. Sequential, in one fixed order, so the result
+  // matches re-sending each edit; an append shifts nothing the in-place ranges name.
   if (data.length) await batchUpdateValues(spreadsheetId, data)
   if (fresh.length) {
     await request(
@@ -432,13 +403,10 @@ export async function createTasks(spreadsheetId, tasks) {
 }
 
 /**
- * One update or a batch of them, through the same path — `update` is a batch of one, so there
- * is no second write path to keep in step with this one.
+ * One update or a batch of them; `update` is a batch of one, so there is no second write path.
  *
- * IT IS ATOMIC ON RESOLUTION. Every id is resolved before ANY cell is written, so a row a
- * partner deleted mid-batch fails the whole batch with `not_found` and nothing half-applies.
- * That is why the client may roll a whole batch back: a partial success would leave it with
- * no way to know which half landed.
+ * Atomic on resolution: every id is resolved before any cell is written, so a row a partner deleted
+ * mid-batch fails the whole batch with `not_found`, and the client may roll the whole batch back.
  */
 export async function updateTasks(spreadsheetId, tasks) {
   if (!tasks?.length) throw coded('bad_payload', 'updateTasks: nothing to update')
@@ -458,19 +426,14 @@ export async function updateTasks(spreadsheetId, tasks) {
 }
 
 /**
- * Soft delete, and its inverse. Rows never change position, so nobody else's cached indices
- * move — which is also why a restore is free.
+ * Soft delete, and its inverse. Rows never move, so no cached index moves and a restore is free.
  *
- * IT CASCADES TO SUBTASKS, and it does so in ONE request. Sending a call per child would be
- * N round trips that can half-fail, leaving some children tombstoned and some not; one
- * `values:batchUpdate` is all-or-nothing as far as Google is concerned. Restore is the exact
- * inverse for the same reason: a parent that came back without its children would look
- * repaired and be missing work.
+ * It cascades to subtasks in one request: N calls can half-fail, leaving some children tombstoned
+ * and some not, while one `values:batchUpdate` is all-or-nothing. Restore is the exact inverse, or
+ * a parent comes back without its children and looks repaired while missing work.
  *
- * `updated_at` and `deleted_at` are ADJACENT in `TASK_COLUMNS`, so each affected row is ONE
- * range rather than two. Unlike the script's version this touches only the rows the delete is
- * about — without a lock, rewriting a whole column with values read a moment ago is exactly
- * how one editor's save erases another's.
+ * `updated_at` and `deleted_at` are adjacent in `TASK_COLUMNS`, so each affected row is one range,
+ * and only the rows the delete is about are touched.
  */
 export async function setDeleted(spreadsheetId, id, deletedAt) {
   if (!id) throw coded('bad_payload', 'setDeleted: no id')
@@ -494,8 +457,8 @@ export async function setDeleted(spreadsheetId, id, deletedAt) {
 }
 
 /**
- * The config tab's key/value pairs. Rows the tab already has are rewritten in place and
- * anything new is appended, both in one call each — Settings saves five or six at a time.
+ * The config tab's key/value pairs. Rows the tab already has are rewritten in place and anything
+ * new is appended, one call each — Settings saves five or six at a time.
  */
 export async function setConfig(spreadsheetId, config) {
   if (!config || typeof config !== 'object') throw coded('bad_payload', 'setConfig: no config')
@@ -538,7 +501,7 @@ export async function setConfig(spreadsheetId, config) {
 /**
  * The only hard delete.
  *
- * Requests must go in DESCENDING row order: deleting row 5 shifts row 9 up to row 8, so an
+ * Requests must go in descending row order: deleting row 5 shifts row 9 up to row 8, so an
  * ascending pass deletes the wrong rows after the first one.
  *
  * @returns {Promise<{removed: number}>}
@@ -556,9 +519,9 @@ export async function compact(spreadsheetId) {
   const parent = columnIndex('parent_id')
   const idColumn = columnIndex('id')
 
-  // The ids about to disappear. A live child pointing at one of them would be left naming a
-  // row that no longer exists; the read promotes it to top level either way, but the sheet is
-  // what a person looks at and this is the only moment the information still exists.
+  // The ids about to disappear. A live child pointing at one would name a row that no longer
+  // exists; the read promotes it either way, but this is the last moment the link exists in the
+  // sheet.
   const dying = new Set()
   for (let i = 1; i < block.length; i += 1) {
     const id = cellText(block[i][idColumn])
@@ -583,7 +546,7 @@ export async function compact(spreadsheetId) {
 
   await batchUpdateSheet(
     spreadsheetId,
-    // DESCENDING. 0-based and half-open: sheet row N is index N-1.
+    // Descending. 0-based and half-open: sheet row N is index N-1.
     doomed
       .slice()
       .sort((left, right) => right - left)
@@ -596,8 +559,7 @@ export async function compact(spreadsheetId) {
   return { removed: doomed.length }
 }
 
-// ---------------------------------------------------------------------------
-// Structure
+// --------------------------------------------------------------------------- Structure
 // ---------------------------------------------------------------------------
 
 function writeHeader(spreadsheetId) {
@@ -607,15 +569,11 @@ function writeHeader(spreadsheetId) {
 }
 
 /**
- * Build the two tabs, once, and REFUSE A SPREADSHEET THAT ALREADY LOOKS LIKE SOMEBODY'S WORK.
- *
- * The id arrives from the token endpoint rather than from a person choosing a file, so a
- * wrong one is a configuration mistake — and adding two tabs to an unrelated spreadsheet is
- * not something undo can reach. A fresh spreadsheet has exactly one default tab, so several
- * tabs with none of ours among them is refused.
- *
- * This is the only path that may build structure, and it moved here from the script for the
- * same reason everything else did.
+ * Build the two tabs, once, and refuse a spreadsheet that already looks like somebody's work. The
+ * id arrives from the token endpoint rather than from a person choosing a file, so a wrong one is a
+ * configuration mistake and adding tabs to an unrelated spreadsheet is not something undo can
+ * reach. A fresh spreadsheet has one default tab, so several tabs with none of ours among them is
+ * refused. The only path that may build structure.
  */
 export async function ensureStructure(spreadsheetId) {
   const { sheetIds } = await readMeta(spreadsheetId)
@@ -636,16 +594,16 @@ export async function ensureStructure(spreadsheetId) {
       addSheet: {
         properties: {
           title,
-          // Frozen here rather than in a second request: the header is a sign, and a board
-          // scrolled past its own column names is unreadable in the Sheets UI.
+          // Frozen here rather than in a second request: a board scrolled past its own column names
+          // is unreadable in the Sheets UI.
           gridProperties: { frozenRowCount: 1 },
         },
       },
     })),
   )
 
-  // The whole column, not just the used range: a row typed by hand below the data would
-  // otherwise be parsed by the sheet's locale on the way in.
+  // The whole column, not the used range: a row typed by hand below the data would otherwise be
+  // parsed by the sheet's locale on the way in.
   const format = []
   ;(created.replies ?? []).forEach((reply, index) => {
     const gid = reply?.addSheet?.properties?.sheetId

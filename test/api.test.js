@@ -294,6 +294,20 @@ describe('retrying', () => {
     expect(updateTasks).toHaveBeenCalledTimes(1)
   })
 
+  it('spends no retry on a payload this bundle built wrongly', async () => {
+    // `sheets.js` throws `bad_payload` from four guards — an empty task list, a missing id — and a
+    // guard is as false a second later. Left out of the switch it fell through to TRANSIENT, so a
+    // deterministic refusal cost three attempts and two seconds of backoff before it was reported.
+    readEditKey.mockReturnValue('a'.repeat(64))
+    updateTasks.mockRejectedValue(
+      Object.assign(new Error('updateTasks: nothing to update'), { code: 'bad_payload' }),
+    )
+    await expect(api.updateTasks([])).rejects.toMatchObject({ code: API_ERROR.MISCONFIGURED })
+    expect(updateTasks).toHaveBeenCalledTimes(1)
+    // And it arrives above the boundary in this module's vocabulary, so the UI has a notice for it.
+    expect(isTerminal(API_ERROR.MISCONFIGURED)).toBe(true)
+  })
+
   it('gives up after a bounded number of attempts rather than never resolving', async () => {
     // A save that never resolves is worse than one that admits it failed.
     readEditKey.mockReturnValue('a'.repeat(64))

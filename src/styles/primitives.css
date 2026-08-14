@@ -1,11 +1,8 @@
-/* primitives.css — generic, reusable pieces: card, button, input, chip, badge,
-   meter, sheet, toast. Nothing app-specific; layout lives in app.css.
-
-   Single-class selectors throughout, no IDs, no !important. */
+/* primitives.css — generic, reusable pieces: card, button, input, chip, badge, meter, sheet, toast.
+   Nothing app-specific; layout lives in app.css. Single-class selectors, no IDs, no !important. */
 
 /* ---- Card --------------------------------------------------------------
-   A white plane plus one hairline. NO shadow: the temperature step from --bg to
-   --surface is the elevation. */
+   A white plane plus one hairline. No shadow: the --bg to --surface step is the elevation. */
 .card {
   background-color: var(--surface);
   border: 1px solid var(--line);
@@ -90,14 +87,16 @@
   width: 100%;
 }
 
+/* Smaller type and padding, never a smaller target: every user is a thumb target — retry, restore,
+   seed the template, use this link, and the row's Edit toggle beside a 44px delete. */
 .btn--sm {
-  min-height: var(--tap-target-sm);
+  min-height: var(--tap-target);
   padding: 0 var(--space-3);
   font-size: var(--fs-caption);
 }
 
-/* Never combined with --ghost: the two disagree about the border, and the glyph
-   at --ink-2 is itself the 3:1 graphic that identifies the control. */
+/* Never combined with --ghost: the two disagree about the border, and the glyph at --ink-2 is
+   itself the 3:1 graphic that identifies the control. */
 .btn--icon {
   min-width: var(--tap-target);
   min-height: var(--tap-target);
@@ -116,9 +115,8 @@
 }
 
 /* ---- FAB ---------------------------------------------------------------
-   The one coloured element that floats, the one coloured shadow, and the only fixed
-   chrome in the app. `.views` reserves --fab-size of clearance below its content, so it
-   never covers the last row; both halves are required. */
+   The one coloured element that floats and the one coloured shadow. Fixed chrome, like the header;
+   `.views` reserves --fab-size of clearance below its content, and both halves are required. */
 .fab {
   position: fixed;
   right: max(var(--space-4), var(--safe-right));
@@ -150,8 +148,7 @@
   border: 1px solid var(--line-input);
   border-radius: var(--radius-sm);
   color: var(--ink);
-  /* 16px floor. Mobile Safari zooms the viewport on focus below that and will not
-     zoom back out. Do not lower this. */
+  /* The 16px floor; see base.css. */
   font-size: max(1rem, var(--fs-body));
   line-height: var(--lh-tight);
 }
@@ -163,10 +160,9 @@
 }
 
 .select {
-  /* Room for the platform's own disclosure arrow, which is deliberately left in place: an
-     `appearance: none` select needs a chevron drawn as a background image, and one drawn in a
-     token colour cannot follow the platform's own control metrics or a right-to-left flip.
-     Without the reserve, a long category name runs under the arrow. */
+  /* Room for the platform's own arrow, which stays: an `appearance: none` select needs a chevron as
+     a background image, and one in a token colour cannot follow the platform's control metrics or a
+     right-to-left flip. Without the reserve a long category name runs under the arrow. */
   padding-right: var(--space-6);
 }
 
@@ -175,24 +171,14 @@
 }
 
 /* ---- The date control -------------------------------------------------
-   THE ONE RULE THAT KEEPS A DATE FIELD INSIDE ITS CARD.
-
-   With the platform appearance on, Safari sizes `input[type=date]` from its own shadow tree —
-   the rendered value plus the picker indicator — and that intrinsic width is a FLOOR: the
-   `width: 100%` above is a ceiling it simply ignores, so the control overflows the right edge
-   of a card 252px wide on a 320pt phone. Nothing in this app clips it (`.tcard` is
-   `overflow: visible`, and it has to be, or the focus ring would be cut off), so that overflow
-   is visible as the control hanging off the card.
-
-   `appearance: none` is the only lever, and both spellings are required — Safari still ships
-   the prefixed form for this control. It does NOT disable the native picker: a tap still opens
-   the iOS wheel, which is the fastest date entry on a phone and the reason this is a native
-   control at all.
-
-   The two shadow selectors put back what turning the appearance off takes away: the value
-   loses its box and centres itself, and the indicator loses its own metrics. Do not narrow the
-   type to make it fit — 16px is the mobile-Safari no-zoom floor, and it is why the intrinsic
-   width is ~164px in the first place. */
+   This is what keeps a date field inside its card. With the platform appearance on, Safari sizes
+   `input[type=date]` from its own shadow tree and that intrinsic width is a floor: the `width: 100%`
+   above is a ceiling it ignores, so the control overflows the right edge of a 252px card on a 320pt
+   phone, and nothing clips it — `.tcard` is `overflow: visible`, or the focus ring is cut off.
+   `appearance: none` is the only lever, both spellings required, prefixed first: Safari still ships
+   the prefixed form here. It does not disable the native picker; a tap still opens the iOS wheel.
+   The two shadow selectors below put back the metrics turning the appearance off removes. Narrowing
+   the type is not an option: 16px is the no-zoom floor, and it is why the width is ~164px. */
 .input[type="date"] {
   -webkit-appearance: none;
   appearance: none;
@@ -207,7 +193,7 @@
   margin: 0;
 }
 
-/* The affordance. Never below WCAG 2.5.8's 24px graphic floor. */
+/* The affordance. Never below WCAG 2.5.8's graphic floor. */
 .input[type="date"]::-webkit-calendar-picker-indicator {
   margin: 0;
   min-width: 1.25rem;
@@ -240,13 +226,13 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  /* The full target. These are the app's primary filter controls on a phone, and the 36px
-     secondary tier is 8px under the platform minimum. */
+  /* The full target: these are the primary filter controls on a phone, and 36px is 8px under the
+     platform minimum. */
   min-height: var(--tap-target);
   padding: 0 var(--space-4);
-  /* --line-input, not --line: this is an `aria-pressed` control, and 1.4.11 wants 3:1 for the
-     boundary that identifies one. A --line border measures ~1.2:1, which reads as borderless
-     beside the compliant secondary buttons next to it. */
+  /* --line-input, not --line: this is an `aria-pressed` control and 1.4.11 wants 3:1 for the
+     boundary identifying one. --line measures ~1.2:1 and reads borderless beside the compliant
+     secondary buttons next to it. */
   border: 1px solid var(--line-input);
   border-radius: var(--radius-full);
   background-color: var(--surface);
@@ -270,8 +256,7 @@
 }
 
 .chip--static {
-  /* Not a control — a category tag on a card. It opts out of the target and the boundary that
-     identifies one. */
+  /* A category tag on a card, not a control, so it opts out of the target and the boundary. */
   min-height: 0;
   padding: var(--space-hair) var(--space-2);
   background-color: var(--sunken);
@@ -279,10 +264,9 @@
   color: var(--ink-2);
 }
 
-/* The category glyph in front of the word. em-relative, so it tracks the chip's 13px type rather
-   than carrying a size of its own — and a GRAPHIC, so the 13px type floor does not apply to it
-   (the same reasoning as the subtask toggle's glyph). --ink-3 rather than the chip's own --ink-2:
-   the word is the label and the shape is the aid, so the shape is the quieter of the two. */
+/* The category glyph before the word. em-relative, so it tracks the chip's 13px type, and a graphic,
+   so the 13px type floor does not apply. --ink-3 rather than the chip's --ink-2: the word is the
+   label, the shape is the aid. */
 .chip__icon {
   width: 1em;
   height: 1em;
@@ -292,47 +276,41 @@
 .chip__count {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
-  /* --ink-3, not `opacity: 0.75`. The count is the whole reason the chip is worth its space,
-     and 0.75 of --ink-2 composites to 4.15:1 at 13px — under the 4.5:1 floor every ink in
-     tokens.css is measured against. --ink-3 is documented as the lightest that passes. */
+  /* --ink-3, not `opacity: 0.75`: 0.75 of --ink-2 composites to 4.15:1 at 13px, under the 4.5:1
+     floor every ink is measured against. --ink-3 is the lightest that passes. */
   color: var(--ink-3);
 }
 
 .chip[aria-pressed="true"] .chip__count {
-  /* On the accent fill the ink tokens are unreadable; the selected chip's own text colour is
-     already compliant, so the count just joins it. */
+  /* The ink tokens are unreadable on the accent fill, and the chip's own text colour is compliant. */
   color: inherit;
 }
 
-/* OVERDUE IS THE ONE COUNT THAT IS A CALL TO ACTION, so it is the one that is not --ink-3.
-   Everything else in this row is a statistic; this is the number somebody has to do something
-   about, and at --ink-3 it was the quietest text on the row — beside "Later 34", which read louder
-   purely because 34 is a bigger number than 8.
-
-   WITHIN THE ONE-COLOURED-MARK BUDGET, because the word "Overdue" is immediately beside it: the
-   hue is never the only channel. Withheld at zero, which is what `--empty` marks — a clean board
-   must not carry a red 0 — and withheld when the chip is pressed, because the accent fill wins. */
+/* Overdue is a call to action rather than a statistic, so it is the one count that is not --ink-3; at
+   --ink-3 it was the quietest text in the row, beside a louder-reading "Later 34". Within the
+   one-coloured-mark budget, the word "Overdue" being beside it. Withheld at zero, which `--empty`
+   marks, so a clean board carries no red 0, and when pressed, where the accent fill wins. */
 .chip__count--alert:not(.chip__count--empty) {
   color: var(--critical);
   font-weight: 500;
 }
 
 /* `FilterChips` disables every zero-count filter, and this is what makes one look disabled:
-   `.btn[disabled]`'s own opacity does not reach a chip. */
+   `.btn[disabled]`'s opacity does not reach a chip. */
 .chip[disabled] {
   opacity: var(--dim);
   cursor: default;
 }
 
 /* ---- Badge -------------------------------------------------------------
-   A tinted pill with an INK label, never coloured text. One caller, the "View only" marker
-   over the photograph, so it takes no state modifier. */
+   A tinted pill with an ink label, never coloured text. One caller, the "View only" marker over the
+   photograph, so it takes no state modifier. */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-hair) var(--space-2);
-  /* Pill, matching `.chip--static` — the same fill, not a second grey a hair off it. */
+  /* The same pill and fill as `.chip--static`, not a second grey a hair off it. */
   border-radius: var(--radius-full);
   background-color: var(--sunken);
   font-size: var(--fs-caption);
@@ -342,37 +320,27 @@
 }
 
 /* ---- The state table -------------------------------------------------
-   ONE TABLE, AND EVERY MARK THAT CARRIES STATE READS IT. A state sets one custom property
-   here and nothing else anywhere maps a state to a colour, so `.dot--overdue` is the same red
-   as everything else red without naming --critical a second time. `.dot` is the only consumer;
-   the indirection stays anyway, because a second mark type then costs one line here instead of
-   an edit in six families.
-
-   A STATE EARNS AN ENTRY ONLY WHERE ITS FILL DIFFERS FROM `.dot`'s OWN FALLBACK. `later` and
-   `nodate` are the neutral states and the fallback is already --ink-4, so a rule for either
-   would restate the base rather than say anything — which is why they are absent rather than
-   missing, and why the fallback below is load-bearing.
-
-   NEVER `color:`. A state hue paints a graphic — a dot, a fill — and the meaning always sits
-   in ink beside it, so a viewer who cannot separate the red from the green loses nothing. This
-   is also why the day column on a task row is not tinted: a column a third of which is red
-   stops being a column. */
-.dot--done {
-  --state-fill: var(--good);
-}
-
+   One table, read by every mark that carries state: nothing else anywhere maps a state to a colour,
+   so `.dot--overdue` is the same red as everything else red without naming --critical twice. `.dot`
+   is the only consumer; the indirection stays so a second mark type costs one line. A state earns an
+   entry only where it reaches a mark — `DueLabel` composes `dot--${state}` for `overdue` and `soon`
+   alone, a done row, a row past the fortnight and an undated one stating themselves in a tick or an
+   empty day column, so anything else falls through to `.dot`'s own --ink-4. Never `color:`: a state
+   hue paints a graphic and the meaning sits in ink beside it, so a viewer who cannot separate red
+   from green loses nothing — which is also why a row's day column is not tinted, a column a third
+   of which is red having stopped being a column. */
 .dot--overdue {
   --state-fill: var(--critical);
 }
 
-/* The accent, deliberately: "due within the fortnight" is the app's own emphasis rather than a
-   warning, and there is no --warning token — yellow cannot clear 3:1 on white. */
+/* The accent: "due within the fortnight" is emphasis rather than a warning, and there is no
+   --warning token — see tokens.css. */
 .dot--soon {
   --state-fill: var(--accent);
 }
 
-/* The icon half of every icon+label pairing: it puts the state's colour on screen without
-   ever colouring type. The fallback is what the two neutral states paint with. */
+/* The icon half of every icon+label pairing: the state's colour on screen without colouring type.
+   The fallback is what a state with no entry of its own paints with. */
 .dot {
   width: 0.5rem;
   height: 0.5rem;
@@ -382,16 +350,11 @@
 }
 
 /* ---- Meter -------------------------------------------------------------
-   ONE of these in the whole app: the board's tracker. A track, a fill, and one tick marking
-   where the fill would sit if everything had been finished on its date.
-
-   The hairline is load-bearing, not decoration: --track is 1.34:1 against the card
-   and cannot reach 3:1 while staying a warm neutral, so the BOUNDARY is what
-   identifies the bar. Without it an empty meter is invisible and 0% reads as
-   "there is no meter here".
-
-   The fill is not transitioned. It advances on its own once a minute, and an
-   animation would make it look like a control responding to a tap. */
+   One in the whole app, the board's tracker: a track, a fill, and one tick marking where the fill
+   would sit if everything had been finished on its date. The hairline is load-bearing — see --track
+   in tokens.css — and without it an empty meter is invisible and 0% reads as "no meter here". The
+   fill is not transitioned: it advances once a minute, and an animation would read as a tap being
+   answered. */
 .meter {
   position: relative;
   height: var(--meter-height);
@@ -404,21 +367,20 @@
 .meter__fill {
   height: 100%;
   border-radius: var(--radius-full);
-  /* The accent, flat. No meter carries a state class: there is one meter and it measures the
-     whole board, which has no single state. */
+  /* Flat accent, no state class: there is one meter, it measures the whole board, and a board has no
+     single state. */
   background-color: var(--accent);
 }
 
-/* The tick is taller than the bar on purpose, so a meter carrying one cannot clip. Applied by
-   `Meter` whenever a mark is passed. */
+/* The tick is taller than the bar, so a meter carrying one must not clip. Applied by `Meter`
+   whenever a mark is passed. */
 .meter--marked {
   overflow: visible;
 }
 
-/* The on-schedule mark. A dark tick with a 2px ring in the surface colour, which
-   is the dataviz surface-ring rule: that ring is why it stays visible whether it
-   crosses the fill or the bare track, and why it needs no colour of its own.
-   Taller than the bar so its ends sit against the card. */
+/* The on-schedule mark: a dark tick with a 2px ring in the surface colour. That ring is the dataviz
+   surface-ring rule, and it is why the tick stays legible whether it crosses the fill or the bare
+   track and needs no colour of its own. Taller than the bar, so its ends sit against the card. */
 .meter__mark {
   position: absolute;
   top: -4px;
@@ -431,8 +393,8 @@
 }
 
 /* ---- Sheet -------------------------------------------------------------
-   A bottom sheet on a phone, a centred dialog from 48rem. One of the three places
-   a shadow appears. */
+   A bottom sheet on a phone, a centred dialog from 48rem. One of the three places a shadow
+   appears. */
 .sheet {
   position: fixed;
   inset: 0;
@@ -448,9 +410,9 @@
   flex-direction: column;
   width: 100%;
   max-width: var(--sheet-max);
-  /* 88, not 92. At 92 a full form leaves a 68px scrim strip that sits almost entirely inside
-     the Dynamic Island inset — so the only tap-to-dismiss region overlaps the status bar, and a
-     stray reach for the top of the screen discards text that exists nowhere else. */
+  /* 88, not 92: at 92 a full form leaves a 68px scrim strip sitting almost entirely inside the
+     Dynamic Island inset, so the only tap-to-dismiss region overlaps the status bar and a stray
+     reach for the top of the screen discards text that exists nowhere else. */
   max-height: var(--sheet-height);
   background-color: var(--surface);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
@@ -487,17 +449,17 @@
 .sheet__body {
   flex: 1;
   overflow-y: auto;
-  /* `document.body.style.overflow = 'hidden'` does not reliably stop iOS chaining once the
-     panel's own content hits its end; this is what does. */
+  /* `document.body.style.overflow = 'hidden'` does not reliably stop iOS chaining once the panel's
+     content hits its end; this does. */
   overscroll-behavior: contain;
   padding: var(--space-4);
 }
 
 .sheet__foot {
-  /* Sticky, and inside the scrolling body's flow rather than after it, because iOS's
-     `resizes-visual` keyboard changes neither the layout viewport nor `dvh`: the panel keeps
-     full height and Save sits under ~340px of keyboard, unreachable. `index.html` also asks for
-     `interactive-widget=resizes-content`; this holds even where that is unsupported. */
+  /* Sticky, and inside the scrolling body's flow rather than after it: iOS's `resizes-visual`
+     keyboard changes neither the layout viewport nor `dvh`, so the panel keeps full height and Save
+     sits under ~340px of keyboard. `index.html` also asks for `interactive-widget=resizes-content`;
+     this holds where that is unsupported. */
   position: sticky;
   bottom: 0;
   display: flex;
@@ -546,16 +508,15 @@
   margin-bottom: var(--space-3);
 }
 
-/* A hint belongs to the control BELOW it, so where a section stacks two control+hint pairs the
-   second hint needs air above it or it sits flush against the first control and reads as its
-   caption instead. */
+/* A hint belongs to the control below it, so the second of two control+hint pairs needs air above it
+   or it reads as a caption on the first control. */
 .btn + .section__hint {
   margin-top: var(--space-5);
 }
 
 /* ---- Notice -----------------------------------------------------------
-   An inline, dismissible-by-fixing statement. Never a toast: a problem worth
-   naming is worth leaving on screen until it stops being true. */
+   An inline statement, dismissed by fixing it. Never a toast: a problem worth naming is worth
+   leaving on screen until it stops being true. */
 .notice {
   display: flex;
   flex-direction: column;
@@ -599,9 +560,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  /* Kept clear of the FAB, which is --fab-size in the bottom-right corner. --z-toast is above
-     --z-fab, so a full-width toast would hide the button behind every "Saved" — hence both the
-     width cap and the bottom offset that lifts the stack over it. */
+  /* --z-toast is above --z-fab, so a full-width toast would hide the button behind every "Saved":
+     hence the width cap and the bottom offset lifting the stack over it. */
   width: min(24rem, calc(100vw - var(--fab-size) - 3 * var(--space-4)));
   transform: translateX(-50%);
   pointer-events: none;

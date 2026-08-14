@@ -1,441 +1,282 @@
 # Wedding
 
 A static React app for planning a wedding, with a single Google Sheet as the database. A task is a
-title, a day it is due, and a tick; a task with a checklist is measured by how much of it is ticked,
-and one figure rolls that up across the whole plan.
+title, a day it is due, and a tick; a task can hold a one-level checklist, and one figure rolls the
+whole plan up.
 
-**The site is public and looks it**: a planner opens the URL and gets a read-only board — no sign-in, no
-password, no prompt, no dismissable gate. The two people planning the wedding open the same site with a
-secret in the URL fragment, captured once and never needed again, so nobody ever types a credential.
-[Setup](#setup) takes about fifteen minutes; [CLAUDE.md](CLAUDE.md) holds the invariants that fail silently
-when broken.
+Anyone with the URL gets a read-only board — no sign-in, no prompt. The two people planning open the
+same URL with a secret in the fragment (`#k=…`), captured once into `localStorage`, and get editing.
+[Setup](#setup) takes about fifteen minutes; [CLAUDE.md](CLAUDE.md) holds the code-level invariants.
 
-## How progress works
+## Architecture
 
-One place decides it, [`src/lib/progress.js`](src/lib/progress.js): done is 100%; otherwise a checklist
-is how many of its items are ticked ("3 of 5 = 60%" is checkable by counting); otherwise **0%, whatever
-the date says.**
-
-| The header strip's three figures | |
+| | |
 | --- | --- |
-| The header percentage | the mean over **top-level** tasks, each counting equally — not by how many subtasks it was split into |
-| `9 of 52 done` | the same fact as arithmetic anybody can redo |
-| The mark on the meter | the share of due dates that have passed: where the fill would sit if everything had been finished on its day, so ahead of the mark is ahead of schedule |
+| Hosting | GitHub Pages, static bundle, no server of our own |
+| Stack | Vite + React 19, plain ESM JavaScript, vitest; no runtime dependency but `react`/`react-dom` |
+| Database | one Google Spreadsheet, tabs `tasks` and `config` |
+| Backend | a container-bound Apps Script web app over that spreadsheet, plus the Sheets REST API |
 
-**There is no "on schedule" sentence, and that is deliberate.** Work done and dates passed share a
-denominator, so subtracting them looks like a pace — but two tasks a month late plus two future ones
-finished early sum to zero, which would read "On schedule" with two things late. The graphic declines to
-claim it; the overdue count states the fact alone, as a button that jumps to those rows.
+Two backends, chosen by whether the device holds an edit key:
 
-## Subtasks
+- **Read (anonymous)** — `doGet` on the Apps Script `/exec` URL, no credential.
+- **Editor** — `doPost` mints a Google access token for a request carrying `APP_KEY`; the browser then
+  reads and writes `sheets.googleapis.com` directly, re-minting about once an hour.
 
-A task can hold a checklist, one level deep. A subtask is a title and a tick with **no date** — a date
-wheel per item would make entering five on a phone unusable — so the editor renders no date field for
-one, and none of them enters the overall percentage: a parent with ten would otherwise carry eleven
-twentieths of a ten-task board.
+The split is latency: `/exec` costs 1.0–1.6s before the script runs a line (a 302 hop plus a container
+start), the Sheets API ~0.24s. The read stays in the script because a minted token cannot be made
+read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization, which can write.
+`src/lib/api.js` dispatches, `connection.js` caches the token, `sheets.js` is the REST client.
 
-**One level is enforced by the read.** A row is a subtask if its `parent_id` names a live row that is not
-itself a subtask; anything that rule cannot place — a grandchild, a cycle, an orphan, an id naming
-nothing, all reachable by hand-editing the sheet — is **promoted to a top-level task, never hidden**,
-because a task vanishing from a wedding checklist is the worst thing this app could do.
+## Behaviour
 
-**All-subtasks-done does not mark the parent done**, and nothing prompts for it: a derived "done" would
-sit in the done count with an empty `done_at` cell and no answer to when it was finished. A 5/5 parent
-reads 100% and stays open until a person closes it.
-
-## One screen
-
-**No tabs, and one document scroller.** The header is pinned and everything else scrolls under it: the
-plan, and nothing between. The FAB is the only other fixed chrome, and the list reserves room for it so it
-can never cover the last row.
-
-- **The header is a tenth of the screen and it stays there.** A photograph (`public/hero.jpg`) with the
-  couple's names and the days left over it — in calendar days in the board's zone — and a progress strip
-  beneath it carrying the percentage, the bar and `9 of 14 done`. Pinning it is what makes the three
-  questions worth answering answerable without scrolling back up: whose wedding, how long, how far along.
-  A full-height photograph is the nicer first impression and it costs the whole viewport on the one screen
-  this app has.
-- **The strip sits below the photograph rather than on it.** Every contrast figure for a meter is measured
-  against opaque colours, and a photograph is the one backdrop that cannot be measured — over a bright sky
-  an empty bar simply disappears.
-- **The plan** groups tasks by the month they are due in, because a plan is read forwards and a state
-  grouping reshuffles the board whenever something is ticked. State slicing lives in the filter chips,
-  the only place the per-state counts appear — there they are the control that acts on them.
-- **The month heading is sticky and opaque**, which lets a row print a bare `18` rather than restating
-  `APR` forty times. It also carries that month's own **`3/9` tally**, `aria-hidden`, because "am I done
-  with April" is the unit wedding planning is done in and nothing else answers it; the wedding's own
-  month says **`the day`**, once.
-- **A `Today` line sits between two rows**, one per board and only when there are rows on both sides of
-  it. It and both month figures are withheld while a filter is on: a slice of April is not April, and a
-  list with holes in it cannot claim that everything below a line is still ahead.
-- **A collapsed row** is a check, that day, the title, and — only when there is something to say — one
-  quiet line: how near the date is, the `3/5` tally, the category. No bar: without a checklist a task is
-  0% or 100%, which the tick already says.
-- **Colour follows state, is never the only channel, and there is one coloured mark per row.** Nearness
-  reads as words — `3 days ago`, `Today`, `in 5 days` — with a dot beside them taking its hue from one
-  table, nothing at all past the fortnight, and never a tint on the day column.
-- **Category is a glyph, never a colour** — a wallet for Budget, a pavilion roof for Venue, a steaming
-  bowl for Food, monochrome, in front of the word. Category hues would make one mark carry two claims;
-  a category the glyph table does not know prints as the bare word, with no fallback glyph.
-
-**Opening a row reveals it. It does not arm it.** An open row starts read-only behind an **Edit** toggle,
-which also gates every *destructive* control; ticking and adding an item stay on the read path. Tapping a
-row is the hundred-times-a-week gesture and the editor has no Save button, so a live field under it would
-be one stray tap from a renamed task.
-
-**Editing is three fields and ONE write** — title, due date, category, buffered while Edit is on and sent
-once on Done, or on the row closing mid-edit, which flushes rather than discards. Nothing is sent when the
-row would be unchanged, and every write carries the *whole* row: a write rewrites a row from its
-payload, so a partial one blanks `parent_id` and silently promotes a subtask.
-
-**A task needs a day, and it is refused rather than defaulted.** The create sheet opens with the date
-**blank** and Save refuses until somebody picks one: during entry the date is exactly what is not yet
-known, and an invented one lands straight in the overdue count and the on-schedule mark. A subtask needs
-none. A row already in the sheet with an empty `due` still renders, in a **No date** group at the foot of
-the list — refusing to save a row is no reason to hide it.
-
-**The look is unbleached canvas and lichen** — the colour of a cotton tent and of granite in the
-open, kept low-chroma because the board is read for hours at a stretch. The accent is one of three
-presets, per-device rather than in the sheet: **tarn** (a cold mountain lake, and the default),
-**pine**, and **rosehip** for whoever wants a wedding to look like a wedding. Tarn is the default for
-a measured reason rather than a taste — it is the only one an 8px state dot stays separable from both
-the green "done" and the red "overdue" in; see [CLAUDE.md](CLAUDE.md).
-
-The app's mark is a two-peak ridgeline: `PeaksIcon`, the same shape rasterised into the Home Screen
-PNGs by `scripts/make-icons.js` and drawn inline as `index.html`'s favicon. The generator reads the
-default accent out of `tokens.css`, so changing it means re-running `npm run icons` — the PNGs are
-committed.
+- **Progress** ([`src/lib/progress.js`](src/lib/progress.js)): done is 100%, otherwise a task with a
+  checklist is the share of its items ticked, otherwise 0%. The header percentage is the mean over
+  top-level tasks, each counting equally; the mark on the meter is the share of due dates that have
+  passed. There is no pace figure — the overdue count stands alone, as a button that jumps to those rows.
+- **Subtasks** are one level deep, carry no date, and do not enter the overall percentage; their
+  parent's `3/5` tally does. A row whose `parent_id` cannot be placed one level under a live task is
+  shown as a top-level task, never hidden. All-subtasks-done does not mark a parent done.
+- **A task needs a day.** Create opens with the date blank and Save refuses without one. A row already
+  in the sheet with an empty `due` still renders, in a **No date** group.
+- **An open row is read-only** behind an **Edit** toggle, which also gates the destructive controls;
+  ticking and adding a checklist item do not. One edit session sends one write, on Done or on close.
+- **Tasks are grouped by month**; whole-month tallies and the `Today` line are withheld while a filter
+  is on.
+- **Per-device, in `localStorage`, never in the sheet:** language (English/Japanese), accent (`tarn`
+  default, `pine`, `rosehip`), the state filter, the read-only view toggle.
+- **A cold launch does no network work:** `scripts/build-sw.js` emits a service worker precaching
+  `dist/` and `src/lib/snapshot.js` keeps the last successful read, so the board appears offline behind
+  a "showing saved data" notice.
+- **Writes are optimistic** and retry 429/5xx before failing with a toast that rolls the row back;
+  Settings waits instead. Refresh on focus is throttled to one per 30s.
 
 ## Data model
 
-One spreadsheet, two tabs — `tasks` and `config` — laid out in exactly one place,
-[`src/schema.js`](src/schema.js). Row 1 is the header; data starts at row 2.
+Defined in one place, [`src/schema.js`](src/schema.js). Row 1 is the header, data starts at row 2, and
+an editor's first write builds both tabs.
+
+### `tasks`
 
 | Col | Field | Example | Notes |
 | --- | --- | --- | --- |
 | A | `id` | `9f1c…` | UUID generated in the browser |
 | B | `title` | `Book the venue` | Required |
-| C | `category` | `Venue` | Free text. A known value is translated for display; anything else renders exactly as typed |
-| D | `due` | `2027-02-01` | The day it is due. Required on a task, empty on a subtask. No time — see below |
-| E | `done_at` | `2026-06-01T18:02:11.004Z` | A timestamp here means done, and is 100% |
-| F | `created_at` | `2026-08-07T…Z` | Stamped by the script, never by the browser |
-| G | `updated_at` | `2026-08-07T…Z` | Same |
+| C | `category` | `Venue` | Free text; a known value is translated for display, anything else renders as typed |
+| D | `due` | `2027-02-01` | Calendar day. Required on a task, empty on a subtask. No time |
+| E | `done_at` | `2026-06-01T18:02:11.004Z` | A timestamp here means done, and 100% |
+| F | `created_at` | `2026-08-07T…Z` | Stamped by the browser on create, then read back off the row so a retried write cannot restamp it |
+| G | `updated_at` | `2026-08-07T…Z` | Stamped by the browser on every write |
 | H | `deleted_at` | *(empty)* | A timestamp here soft-deletes the row |
-| I | `parent_id` | *(empty)* | This row's parent. Empty for a task, set for a subtask; see the promotion rule above |
+| I | `parent_id` | *(empty)* | Empty for a task, the parent's `id` for a subtask |
 
-**Row 1 is authoritative on the read, and the next write repairs it.** Reads resolve every column by its
-*name* in row 1 — on both sides of the wire, because `tasksFrom` exists once in `Code.gs` and once in
-`sheets.js` — so an anonymous request can read a board whose header somebody reordered in the Sheets UI,
-and an anonymous request never causes a write. An editor's next write puts the header back into the order
-above, carrying each value across by the name its own header cell gave it. It does **not** touch anything
-past the last column: every range is derived from the column list, so a stray column J is invisible to
-this app and cannot shift an index, and clearing it would wipe whatever a newer deployment appends. Cells
-go in with `valueInputOption: RAW` and the two tabs are built with the plain-text format, so a note of
-`=SUM(A:A)` stays literal and a date is never reformatted to the sheet's locale.
+- **Reads resolve columns by name** in row 1, on both sides of the wire, so a header reordered in the
+  Sheets UI still reads correctly; the read never writes. An editor's next write restores the order
+  above, carrying each value across by name, and touches nothing past the last column.
+- **Appending a column is a Pages deploy, not an Apps Script one:** the browser holds the column list
+  and does every write, so a stale script serves only a slightly older read, resolved by name.
+  `appsscript.json`'s scope is the exception — see [Operations](#operations).
+- **Writes use `valueInputOption: RAW`** and both tabs are built with the plain-text number format, so
+  `=SUM(A:A)` stays literal and a date is never reformatted to the sheet's locale.
+- **`due` is a calendar day**, no zone and no time; whether it has passed is decided against the
+  board's configured `timezone`, never the device's. [`src/lib/time.js`](src/lib/time.js).
+- **Deletes are soft**, so no row ever moves. Deleting confirms first, cascades to the checklist in one
+  `values:batchUpdate`, and is reversible from **Deleted** in Settings › Maintenance. **Purge deleted
+  tasks** is the only hard delete.
 
-**A deployment older than the bundle can no longer drop a field, because the script no longer writes.**
-A deployment is pinned to a version, so the browser can be newer than the script — but the browser holds
-the column list and does every write itself, and a stale script serves only a slightly older *read*,
-which resolves columns by name and is correct anyway. So appending a column is a Pages deploy, not an
-Apps Script one. **The scope in `appsscript.json` is the exception and does need a new script version**,
-or every write comes back 403 — see [Operations](#operations).
+### `config`
 
-**`due` is a calendar day, with no zone and no time.** It means that date on a calendar *at the wedding*:
-whether it has passed is decided against the board's configured `timezone`, never the device's, because
-"due on the 18th" must stop being due on the 19th at the venue. Everything downstream compares two day
-strings, so the zone is used for exactly one thing — deciding today's date.
-[`src/lib/time.js`](src/lib/time.js).
-
-**Deletes are soft** — `deleted_at` is stamped and the row filtered out client-side — because a hard delete
-shifts every row below it. Deleting confirms first and is reversible from the **Deleted** list in Settings
-› Maintenance, beside the purge that empties it, which is the only hard delete. It **cascades to the
-checklist in one request**, a single `values:batchUpdate` naming the parent's row and each child's, which
-Google applies as a unit: a call per child would be N round trips that can half-fail, leaving some
-children tombstoned and some not. Restore is the exact inverse.
-
-### `config` tab
-
-Key/value pairs in columns A and B; a missing, blank or unparseable value falls back to the default in
-[`src/config.js`](src/config.js).
+Key/value pairs in columns A and B, shared by every device. A missing, blank or unparseable value
+falls back to the default in [`src/config.js`](src/config.js).
 
 | Key | Example | Notes |
 | --- | --- | --- |
 | `partner1_name` / `partner2_name` | `Aoi` / `Ren` | Shown over the hero photograph |
-| `wedding_date` | `2027-04-18` | The countdown, the marked month in the plan, and what every template offset counts back from |
+| `wedding_date` | `2027-04-18` | The countdown, the marked month, and what template offsets count back from |
 | `venue` | `Meguro Gajoen` | Free text |
-| `timezone` | `Asia/Tokyo` | IANA name. The zone today's date is resolved in, which is what decides whether a due date has passed |
-| `categories` | `Venue, Attire, Guests` | Comma-separated; an empty list never shadows the default |
+| `timezone` | `Asia/Tokyo` | IANA name; the zone today's date is resolved in |
+| `categories` | `Venue, Attire, Guests` | Comma-separated; an empty list falls back to the 14 defaults |
 
-Everything in this tab is shared. The interface **language**, the **accent**, the state **filter** and the
-read-only view are per-device, in `localStorage`, and may never be written to the sheet: the couple and
-their planners read one board, and none of them restyles anybody else's screen.
+### Starter checklists
 
-## Starter checklists
+Two, in [`src/lib/templates.js`](src/lib/templates.js), stored as day offsets from the wedding date, so
+neither can be seeded until that date is set: `classic12`, a twelve-month Anglophone countdown of 52
+tasks, and `japan8`, an eight-month 結婚式準備 schedule of 38. They are not translations of each other.
+Seeding writes flat tasks titled in the seeding device's language — the one place a per-device
+preference reaches the sheet.
 
-A fresh board offers two, and they are not translations of each other: a **twelve-month plan**, the
-Anglophone countdown from The Knot's timeline — venue and guest list first, then vendors, stationery, the
-run-up, 52 tasks — and a **Japanese eight-month plan**, the 結婚式準備 schedule from みんなのウェディング
-and ゼクシィ: 両家挨拶 and 会場 first, then 打ち合わせ, 招待状, 引き出物, 席次表, 婚姻届, 38 tasks. Both
-live in [`src/lib/templates.js`](src/lib/templates.js) as day offsets from the wedding date, so nothing
-can be seeded until that date is set.
+## Security model
 
-Seeding writes ordinary editable tasks, flat and with no checklists, and their titles are written in the
-seeding device's language — the one place a per-device preference reaches the sheet, because a seeded
-title is content from that moment on rather than a rendering of stored data.
-
-## Access model
-
-- **The security boundary is Google, not the interface.** A write needs a bearer token, and a token
-  needs the edit key: `doPost` mints one only for a request carrying `APP_KEY`. So a planner who reaches
-  into the DOM and un-hides the controls has nothing to write with. `canEdit` decides what renders; it is
-  not enforcement, and neither half may be dropped for the other.
-- **A read costs nothing and a write costs a token, which is the whole shape of this app.** `doGet` is
-  anonymous — that is the feature — and an editor mints a token once an hour and then talks to
-  `sheets.googleapis.com` directly. Going through the script for writes cost 1.0–1.6s per request before
-  any of our code ran; going direct costs ~0.24s.
-- **The edit key is a bearer capability in a URL, and that is the cost of nobody typing a password.**
-  `https://…/wedding/#k=<64 hex>` is captured into `localStorage` on first load, so anyone who gets the
-  link can edit. [Rotation](#operations) is the only response, and it is one script property away.
-- **It is a fragment, never a query string.** A fragment is not sent to the server, does not appear in
-  GitHub's access logs and is not forwarded in a `Referer` header; `?k=` would leak into all three. The
-  script never reads the key from `e.parameter` either — that lands in Google's own request logs.
-- **A rejected key is flagged, not silently discarded**: the device says so and names the recovery, rather
-  than dropping to view-only and leaving somebody wondering why saving stopped.
-- **An editor can look at the guest's board.** *Switch to the read-only view* in Settings hides every
-  editing control on that device and is remembered there; the edit key is untouched, so the way back is
-  the same toggle. *Stop editing on this device*, the blunter control beside it, removes the key.
-- **The fragment stays in the URL bar until the app is installed**, because an installed iOS web app gets
-  its own storage bucket and *Add to Home Screen* has to record a URL still carrying the key.
-  `manifest.webmanifest` omits `start_url` for the same reason.
-- **THE MINTED TOKEN REACHES EVERY SPREADSHEET THE OWNING ACCOUNT CAN SEE, and that is the price of the
-  speed.** The script's scope is `spreadsheets`, because `spreadsheets.currentonly` is an
-  Apps-Script-runtime scope that the REST API rejects — so anyone holding the edit key can, with effort,
-  read and write any sheet that account owns. Container binding still confines the *script* to this one
-  file; it does not confine the *token*. **The account owning this spreadsheet should therefore own
-  nothing else**, and that is a standing condition nothing in the code can enforce.
-- **The token lives in `localStorage` and outlives the key by up to an hour**, so revoking or replacing an
-  edit key drops the token too. Without that a device just demoted to view-only would keep writing.
-- **`localStorage` is scoped to the origin, not the path**, so every other site published from the same
-  GitHub Pages account can read the edit key. Knowingly accepted, and the reason nothing untrusted may be
-  published from that account.
-- **No third-party JavaScript runs at all, and nobody signs in.** `script-src 'self'`, `frame-src 'none'`,
-  and `connect-src` naming three hosts: the two Apps Script ones and `sheets.googleapis.com`. There is no
-  Google sign-in, no consent screen for either editor and no `accounts.google.com` — the token is the
-  *script's* own grant, not a person's. `script.googleusercontent.com` is not redundant beside
-  `script.google.com`; `/exec` 302s to it.
-- **The board is world-readable.** The read endpoint is anonymous by design and the URL ships in a public
-  bundle, so treat the guest list and the venue as public information.
-- **Quota exhaustion is the one real attack, and it is unfixable.** Anonymous traffic bills the owner's
-  Apps Script quota before any of our code runs, and Apps Script exposes no client IP. Impact is
-  availability only: reads fail, the app falls back to its cached copy with a notice, and it self-heals
-  when the quota resets — written down because every request failing forever as transient is otherwise
-  indistinguishable from a bug.
+- **The boundary is Google, not the interface.** Every write needs a bearer token and a token needs
+  `APP_KEY`, so un-hiding the editing controls in the DOM yields nothing to write with. `canEdit`
+  decides what renders and is not enforcement; neither half may be dropped for the other.
+- **The edit key is a bearer capability in a URL:** anyone who gets the link can edit, and
+  [rotation](#operations) is the only response.
+- **It is a fragment, never a query string** — not sent to the server, absent from GitHub's access
+  logs, not forwarded in a `Referer`. The script never reads the key from `e.parameter` either, which
+  would land it in Google's request logs.
+- **The minted token reaches every spreadsheet the owning account can see.** The scope must be
+  `spreadsheets`; the REST API rejects a token carrying only `spreadsheets.currentonly`. Container
+  binding confines the script, not the token. **So the account owning this spreadsheet should own
+  nothing else** — a standing condition no code can enforce.
+- **The token lives in `localStorage` and outlives the key by up to an hour**, so revoking or replacing
+  an edit key discards the token too. `localStorage` is scoped to the origin, not the path, so any
+  other site published from the same Pages account can read the key: publish nothing untrusted there.
+- **The board is world-readable.** The read endpoint is anonymous by design and the `/exec` URL ships
+  in a public bundle. Treat the guest list and the venue as public.
+- **No third-party JavaScript and no sign-in.** `script-src 'self'`, `frame-src 'none'`, and
+  `connect-src` naming three hosts: `script.google.com`, `script.googleusercontent.com` (the 302 target
+  of `/exec`) and `sheets.googleapis.com`. `accounts.google.com` must never appear there.
+- **Quota exhaustion is the one real attack and is unfixable.** Anonymous reads spend the owner's Apps
+  Script quota before any of our code runs, and Apps Script exposes no client IP. Impact is
+  availability only: reads fail, the cached snapshot shows with a notice, and it recovers when the
+  quota resets.
 
 ## Cost
 
-$0/month on permanent free tiers — nothing to cancel and no card on file. Pages and Actions are free for
-public repos, Apps Script is not billed, the Sheets API's free quota is far beyond two people editing a
-checklist, and the sheet is a rounding error on a Drive quota. There *is* a Google Cloud project now (the
-Sheets API has to be enabled somewhere), and it costs nothing.
+$0/month on permanent free tiers, no card on file. Pages and Actions are free for public repos, Apps
+Script is not billed, and the Sheets API's free quota is far beyond two editors. A Google Cloud project
+is required — the Sheets API has to be enabled against one — and costs nothing.
 
 ## Setup
 
-Once, and about fifteen minutes. **No OAuth client and no API key, and nobody ever signs in** — but there
-IS a Cloud project, because the browser calls the Sheets REST API and that API has to be enabled against
-one.
+No OAuth client, no API key, and nobody signs in.
 
-**1. Create the spreadsheet, in an account that owns nothing else.** A **new, empty** one — not a file you
-already keep something in, and do not add tabs: the app builds `tasks` and `config` on its first write,
-and `ensureStructure` refuses a file that already has several of its own. Leave general access
-**Restricted**.
+**1. Create the spreadsheet.** New and empty, in **a Google account that owns nothing else** (see the
+scope note above). Do not add tabs: the app builds `tasks` and `config` on its first write and refuses
+a file that already has several of its own. Leave general access **Restricted**.
 
-**Use a dedicated Google account.** The token this script mints carries the `spreadsheets` scope, which
-reaches every spreadsheet that account can see — so anyone holding the edit key can reach them too. This
-is the one standing condition the code cannot enforce, and it is why the account should own this file and
-nothing else.
+**2. Generate the edit key:** `openssl rand -hex 32`. Store it in a shared password manager; it is
+never a build-time value and never goes in the repo.
 
-**2. Generate the edit key.** `openssl rand -hex 32`. Keep it where both of you can reach it, like a
-shared password manager: it is the only credential the app has and the only thing in front of a public
-endpoint. It is never a build-time value and never goes in the repository.
-
-**3. Create the script — from the sheet, not from `script.new`.** `SpreadsheetApp.getActive()` is what
-names the spreadsheet, so there is no id to configure and no way to point it at the wrong file. From
-`script.new` it returns null and every call answers `misconfigured`.
+**3. Create the script, from the sheet.** It must be container-bound — `SpreadsheetApp.getActive()` is
+what names the spreadsheet, so there is no id to configure, and from `script.new` it returns null and
+every call answers `misconfigured`.
 
 1. In the spreadsheet: **Extensions › Apps Script**. Rename the project **Wedding board**.
-2. Replace the contents of `Code.gs` with [`apps-script/Code.gs`](apps-script/Code.gs).
+2. Replace `Code.gs` with [`apps-script/Code.gs`](apps-script/Code.gs).
 3. **Project Settings** (gear) → tick **Show `appsscript.json` manifest file in editor**.
-4. Back in **Editor**, replace `appsscript.json` with
-   [`apps-script/appsscript.json`](apps-script/appsscript.json), which pins the scope to
-   `spreadsheets` and runs the web app as the owner with anonymous access. **It has to be the wide
-   scope**: `spreadsheets.currentonly` works inside the Apps Script runtime but the REST API rejects a
-   bearer token carrying only it, so the browser's writes would all fail with a 403.
-5. **Project Settings → Script Properties → Add script property**: `APP_KEY`, with the key from step 2 as
-   its value — a property rather than a literal, so the copy of the script in this repository holds no
-   secret and stays diffable. There is no `SHEET_ID`: the script's container *is* the sheet.
+4. In **Editor**, replace `appsscript.json` with
+   [`apps-script/appsscript.json`](apps-script/appsscript.json): scope
+   `https://www.googleapis.com/auth/spreadsheets`, web app executed as the deploying user with
+   anonymous access. The wide scope is required; `spreadsheets.currentonly` makes every browser write
+   fail with 403.
+5. **Project Settings → Script Properties → Add script property**: `APP_KEY`, value the key from step
+   2. There is no `SHEET_ID` — the script's container is the sheet.
 
 **4. Attach a Cloud project and enable the Sheets API.** Apps Script's own hidden project cannot have
 APIs enabled, so a token it mints could not call the REST API.
 
 1. <https://console.cloud.google.com/> → **New Project**, named **Wedding board**. Check the account
-   picker: the console silently acts as the wrong account when several are signed in.
+   picker; the console silently acts as the wrong account when several are signed in.
 2. **APIs & Services › Library** → **Google Sheets API** → **Enable**.
 3. **IAM & Admin › Settings** → copy the **Project number**.
 4. In Apps Script: **Project Settings → Google Cloud Platform (GCP) Project → Change project** → paste
    the number.
 
-**5. Publish the consent screen. Do not leave this in Testing.** A script attached to a project whose
-consent screen is in Testing has its authorization **expire after 7 days**, so the endpoint dies about a
-week later and the symptom is indistinguishable from a quota problem.
+**5. Publish the consent screen.** In **Testing**, authorization expires after 7 days and the symptom
+is indistinguishable from a quota problem.
 
-1. **APIs & Services › OAuth consent screen** — newer consoles file the same pages under **Google Auth
-   Platform › Branding** and **› Audience**. Fill in an app name and your own address as the support
-   and developer contact. **Add no scopes here** — `ScriptApp.getOAuthToken()` does not route through
-   this screen.
+1. **APIs & Services › OAuth consent screen** — newer consoles file these under **Google Auth Platform
+   › Branding** and **› Audience**. Fill in an app name and your own address as support and developer
+   contact. **Add no scopes here**; `ScriptApp.getOAuthToken()` does not route through this screen.
 2. **Publish app**. With one user and a sensitive scope on an unverified app, Google shows a warning
-   screen on first authorization and otherwise leaves it alone; publishing is what lifts the 7-day
-   expiry.
+   screen on first authorization; publishing lifts the 7-day expiry.
 
-**6. Deploy.** **Deploy → New deployment** → gear → **Web app**. Set **Execute as: Me** and **Who has
-access: Anyone** — not "Anyone with a Google Account", because a planner opens this with no Google login
-at all; that setting is what makes the board readable without a credential. **Deploy**, then authorize:
-your account, **Advanced** → **Go to… (unsafe)** → **Allow**. It asks to see and edit **all** your
-spreadsheets, which is the scope from step 3 and the reason step 1 wants a dedicated account. Copy the
-**Web app URL**, ending in `/exec`, and confirm it — which also proves what is most likely to be wrong:
+**6. Deploy the web app.** **Deploy → New deployment** → gear → **Web app**, with **Execute as: Me**
+and **Who has access: Anyone** — not "Anyone with a Google Account", which would require a login the
+board must not need. **Deploy**, then authorize: your account, **Advanced** → **Go to… (unsafe)** →
+**Allow**. It asks to see and edit all your spreadsheets, which is the scope from step 3. Copy the
+**Web app URL**, ending in `/exec`, and verify it:
 
 ```sh
 URL='https://script.google.com/macros/s/…/exec'
 KEY='…'
 
-# The public read. No credential — this is what a planner's browser does.
+# The public read: no credential, as a visitor's browser does it.
 curl -sSL "$URL"
 
-# The mint. This is the ONLY thing a write needs from the script.
-curl -sSL "$URL" -H 'Content-Type: text/plain;charset=utf-8' \
-  --data "{\"key\":\"$KEY\"}"
+# The mint: the only thing a write needs from the script.
+MINT=$(curl -sSL "$URL" -H 'Content-Type: text/plain;charset=utf-8' --data "{\"key\":\"$KEY\"}")
+echo "$MINT"
 
-# And the part most likely to be wrong: does that token reach the REST API?
-TOKEN=$(curl -sSL "$URL" -H 'Content-Type: text/plain;charset=utf-8' \
-  --data "{\"key\":\"$KEY\"}" | sed 's/.*"token":"\([^"]*\)".*/\1/')
-SHEET=$(curl -sSL "$URL" -H 'Content-Type: text/plain;charset=utf-8' \
-  --data "{\"key\":\"$KEY\"}" | sed 's/.*"spreadsheetId":"\([^"]*\)".*/\1/')
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://sheets.googleapis.com/v4/spreadsheets/$SHEET"
+# Does that token reach the REST API?
+TOKEN=$(echo "$MINT" | sed 's/.*"token":"\([^"]*\)".*/\1/')
+SHEET=$(echo "$MINT" | sed 's/.*"spreadsheetId":"\([^"]*\)".*/\1/')
+curl -s -H "Authorization: Bearer $TOKEN" "https://sheets.googleapis.com/v4/spreadsheets/$SHEET"
 ```
 
-The first answers `{"ok":true,"needsSetup":true,"tasks":[],"config":{}}` before the tabs exist and drops
-`needsSetup` afterwards. The second answers `{"ok":true,"token":"ya29.…","spreadsheetId":"…"}`. Both are
-HTTP 200 whatever happened, because `ContentService` cannot set a status, so the body is the only signal —
-`{"ok":false,"error":"misconfigured"}` means step 3 was done from `script.new`, and
-`{"ok":false,"error":"unauthorized"}` means `APP_KEY` does not match. Note `--data` with no `-X POST`:
-`/exec` answers with a 302, the redirect has to be followed as a GET, and forcing the method breaks
-exactly that.
+Expected: `{"ok":true,"needsSetup":true,"tasks":[],"config":{}}` before the tabs exist and without
+`needsSetup` after; then `{"ok":true,"token":"ya29.…","spreadsheetId":"…"}`; then JSON containing the
+spreadsheet's title. Every `/exec` reply is HTTP 200 whatever happened, because `ContentService` cannot
+set a status, so the body is the only signal.
 
-**The third command is the one that catches the scope mistake.** A JSON body with the spreadsheet's
-title means the token works. `403 … insufficient authentication scopes` means `appsscript.json` still
-says `spreadsheets.currentonly`, or the deployment predates the change — fix it and deploy a new
-**version**, not just a new save.
+| Symptom | Cause |
+| --- | --- |
+| `{"ok":false,"error":"misconfigured"}` | the script is not container-bound — step 3 was done from `script.new` |
+| `{"ok":false,"error":"unauthorized"}` | `APP_KEY` does not match |
+| `403 … insufficient authentication scopes` | `appsscript.json` still says `spreadsheets.currentonly`, or the deployment predates the change; fix it and deploy a new **version** |
 
-**7. Point the app at it.** Locally, `cp .env.example .env.local` (gitignored), paste the `/exec` URL, and
-`npm run dev` serves <http://localhost:5173/wedding/>. For GitHub Pages, **Settings › Secrets and
-variables › Actions › Variables** must hold `VITE_SCRIPT_URL`. It is a *variable*, not a secret: Vite
-inlines it into the bundle, so it is public either way, and marking it secret would imply a
-confidentiality the deployed site cannot provide. **Settings › Pages › Source** must be **GitHub
-Actions** — under "Deploy from a branch" Pages publishes the repository tree verbatim and ignores the
-artifact, and the tell is a 404 for `/src/main.jsx`.
+`--data` with no `-X POST` is deliberate: `/exec` answers 302, the redirect must be followed as a GET,
+and forcing the method breaks that. `text/plain` keeps the mint a CORS simple request; a preflight
+would be answered with the redirect.
 
-**8. The two links.** Send the first to your planners: read-only, prompts for nothing, and looks like an
-ordinary public page because it is one. Keep the second to yourselves and **treat it like a password** —
-opening it once stores the key in that browser, and the edit controls appear from then on.
+**7. Point the app at the endpoint.**
+
+- Locally: `cp .env.example .env.local` (gitignored) and paste the `/exec` URL into `VITE_SCRIPT_URL`.
+- Pages: **Settings › Secrets and variables › Actions › Variables** must hold `VITE_SCRIPT_URL`. A
+  *variable*, not a secret — Vite inlines it into the bundle, so it is public either way.
+- **Settings › Pages › Source** must be **GitHub Actions**. Under "Deploy from a branch" Pages
+  publishes the repo tree verbatim and ignores the artifact; the tell is a 404 for `/src/main.jsx`.
+
+**8. Share the two links.** Opening the second once stores the key in that browser; treat it like a
+password.
 
 | Who | Link |
 | --- | --- |
 | Planners, family, anyone | `https://huangwaylon.github.io/wedding/` |
 | You and your partner | `https://huangwaylon.github.io/wedding/#k=<the key from step 2>` |
 
-**9. First run.** As an editor, set in **Settings**: both names, the **wedding date** (every starter
-checklist counts its offsets back from it, so nothing can be seeded without it), and the **time zone** if
-the wedding is not in `Asia/Tokyo`. Then pick a checklist, or start adding tasks. Tapping a task opens it
-read-only; press **Edit** to change anything. **Add a subtask** needs no Edit, nor does ticking an item.
+**9. First run.** As an editor, open **Settings** and set both names, the **wedding date** (nothing can
+be seeded without it) and the **time zone** if the wedding is not in `Asia/Tokyo`. Then seed a
+checklist or start adding tasks.
 
 ## Installing on a phone
 
-Open the **edit link** (with `#k=…`) in Safari, **Share › Add to Home Screen**, then launch from the icon:
-the key is captured, and the app clears the fragment from its own URL bar at that point. The trap is that
-an installed web app has **its own storage, separate from Safari's**, so a key entered in the browser does
-not carry across — which is why the fragment is deliberately left in the URL bar while you are still in
-Safari, and why the manifest has no `start_url`: with one, iOS installs the manifest's URL and the
-fragment is lost. A planner installs the plain link the same way and gets a read-only app.
+Open the **edit link** in Safari, **Share › Add to Home Screen**, then launch from the icon. The
+fragment is cleared from the URL bar only once the app is running standalone, because an installed iOS
+web app has its own storage bucket separate from Safari's and must capture the key on its own first
+launch. `manifest.webmanifest` omits `start_url` for the same reason: with one, iOS installs the
+manifest's URL and the fragment is lost. The plain link installs the same way, read-only.
 
 ## Operations
 
-**Redeploying after a `Code.gs` change.** A deployment is pinned to a version, so pasting a new `Code.gs`
-into the editor and saving changes **nothing** on the live board. Every time `apps-script/Code.gs` changes
-here: replace `Code.gs` in **Extensions › Apps Script** and save, then **Deploy → Manage deployments** →
-pencil → **Version: New version** → **Deploy**. The URL does not change, so nobody's link breaks.
+**Redeploying after a `Code.gs` change.** A deployment is pinned to a version, so saving in the editor
+changes nothing on the live board. Replace `Code.gs` in **Extensions › Apps Script**, save, then
+**Deploy → Manage deployments** → pencil → **Version: New version** → **Deploy**. The URL does not
+change. This matters little for `Code.gs`, which only reads and mints; **a change to
+`appsscript.json`'s scope does need a new version**, or every write returns 403.
 
-This matters far less than it used to, because the script no longer writes anything: it serves the
-anonymous read and mints tokens, and the browser holds the column list that decides what a row looks like.
-A stale deployment can therefore no longer drop a field — it can only serve a slightly older *read* to
-planners, which resolves columns by name and is correct anyway. **Changing `appsscript.json`'s scope is the
-exception and does need a new version**, or every write comes back 403.
+**Rotating the edit key.** The only incident response this design has; do it if a phone is lost or the
+link is forwarded. Generate a key with `openssl rand -hex 32`, edit `APP_KEY` under **Project Settings
+→ Script Properties**, and have both editors open the new `#k=…` link once — a key in the URL always
+beats the stored one. No redeployment: `APP_KEY` is read inside `doPost`. Rotation is immediate and
+total; there is no per-device revocation, and a device on the old key drops to view-only and says so.
 
-**Rotating the edit key.** The only incident response this design has — do it if a phone is lost, if the
-link is forwarded by accident, or on any suspicion at all. Generate one with `openssl rand -hex 32`, edit
-`APP_KEY` under Apps Script's **Project Settings → Script Properties**, and both of you open the new
-`#k=…` link once: a key in the URL always beats the stored one, which is how a rotation reaches a device
-still holding the dead one. No redeployment, because `APP_KEY` is read inside `doPost`. Rotation is
-immediate and **total** — no per-device revocation, and a device on the old key drops to view-only and
-says so.
-
-**Recovering editing on a device.** If the edit controls are missing where they should not be — after
-installing to the Home Screen, or after iOS evicts the storage of an app left unused — open **Settings**
-and paste the edit link into **Paste your edit link**. Check first that the device is not simply in the
-read-only view, which the same section toggles.
+**Recovering editing on a device.** If the editing controls are missing — after installing to the Home
+Screen, or after iOS evicts an unused app's storage — open **Settings** and paste the edit link into
+**Paste your edit link**. Check first that the device is not simply in the read-only view, which the
+same section toggles. **Stop editing on this device** removes the key.
 
 ## Deploy
 
 Pushing to `main` runs [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml): `npm ci`, `npm
-test`, build, upload a Pages artifact, deploy. It needs the two repository settings in step 7, each with
-the tell for when it is wrong. `vite.config.js` sets `base` to `/wedding/`, because a project Pages site
-serves from `/<repo>/`; rename the repo without updating it and the page is blank with console 404s for
-`/assets/index-*.js`. Build with `VITE_BASE=/` for a user site or a custom domain — `scripts/build-sw.js`
-reads the same variable, so the worker's scope follows.
+test`, build, upload a Pages artifact, deploy. It needs both repository settings from step 7.
 
-**A write is ~0.5s, and it used to be ~2.5s.** Measured against a live `/exec`: the 302 hop plus a
-container start costs **1.0–1.6s before the script runs a line**, and no amount of script tuning reaches
-it — that script was already down to four Sheets calls and under a millisecond of CPU per write. The same
-machine reaches `sheets.googleapis.com` in **~0.24s**, one hop, no redirect. So an editor mints a token
-once an hour and writes directly; a write is two calls, a resolve and a batched write. What is left of the
-lever is **how many round trips a burst of edits costs**, and that is what the write queue is for.
-
-A planner still reads through `doGet` and still pays the ~2s. They read once and the snapshot paints
-first, so it is the one place that floor does not matter.
-
-Nothing waits for a save: writes are optimistic and the sheet closes at once, a failure rolling the row
-back out and saying so in a toast. Settings is the exception, having no optimistic half. **A failure worth
-retrying is retried before it becomes that toast**, and every op is written to be replay-safe so that is
-sound: `create` resolves the id the browser generated and rewrites that row instead of appending a
-duplicate. The Sheets API states its failures with real status codes, so the retry rule is a list of them
-(429 and 5xx) rather than the "is this reply even JSON" guesswork Apps Script forced.
-
-Writes serialise on a queue, and **an undispatched write is folded into the one behind it** — so three
-ticks in a burst cost two requests rather than three, and five subtasks typed in a row cost two rather
-than five. Folding never crosses an op boundary and never touches a request already in flight. A refresh
-is skipped while a write is pending or overlaps one, and throttled to one per 30s on focus.
-
-**No lock, and a write touches only the cells its edit is about.** The script held a script-wide one,
-which serialised the two editors and cost a 25s wait under contention that the client could not even
-retry. Each gesture is now one `values:batchUpdate` naming only the affected rows, which Google applies as
-a unit — a cascading delete included — so two people editing different rows never contend at all. What
-that costs is that rewriting untouched cells is no longer safe, which is why nothing does it.
-
-**A cold launch does no network work at all.** `scripts/build-sw.js` walks `dist/` and emits a service
-worker precaching every file in it, and [`src/lib/snapshot.js`](src/lib/snapshot.js) keeps the last
-successful read in `localStorage`, so with no network the real board still appears, behind a "showing saved
-data" notice. Updates activate by reloading, which [`src/lib/serviceWorker.js`](src/lib/serviceWorker.js)
-only does when no form is open and no write is in flight, and it calls `registration.update()` on
-returning to the foreground because an installed iOS web app never navigates.
+`vite.config.js` sets `base` to `/wedding/`, because a project Pages site serves from `/<repo>/`;
+rename the repo without updating it and the page is blank with console 404s for `/assets/index-*.js`.
+Build with `VITE_BASE=/` for a user site or a custom domain — `scripts/build-sw.js` reads the same
+variable, so the service worker's scope follows.
 
 ## Development
 
@@ -445,43 +286,89 @@ Do the Google setup first; without it the app cannot do anything.
 git clone https://github.com/huangwaylon/wedding.git
 cd wedding
 npm install --registry=https://registry.npmjs.org   # the explicit registry is load-bearing
-cp .env.example .env.local   # paste the /exec URL of your web app
-npm run dev
+cp .env.example .env.local   # paste the /exec URL
+npm run dev                  # http://localhost:5173/wedding/
 ```
 
-Scripts: `dev`, `build` (bundle into `dist/`, then generate `dist/sw.js`), `preview` (serve the built
-`dist/`), `test` (vitest, single run), `test:watch`, `icons`, `contrast`. The service worker only exists in
-a build, so testing it means `npm run build && npm run preview`.
+Without `--registry`, npm bakes an internal mirror host into every `resolved` URL in the lockfile,
+which then fails everywhere else; `test/lockfile.test.js` verifies. No new npm dependencies without a
+clear reason — one is also a CSP decision.
 
-**A green suite says nothing about whether the page looks right**, so `npx vite-node scripts/preview.jsx`
-writes `scripts/preview-*.html` (gitignored) and `npm run contrast` measures every colour pair. Load the
-previews through `scripts/harness.html`, which takes files, widths and a scroll-to selector on the query
-string; use its iframes rather than a resized window, because headless Chrome reports a width you did not
-ask for and every breakpoint reads wrong. Anything behind a click is invisible to a static render, so
-`scripts/drive.mjs` drives the running app over the Chrome DevTools Protocol — the accordion, the
-read/edit toggle, how many writes an edit session costs, whether the date control stays inside its row —
-against `scripts/stub-endpoint.mjs`, which serves **both** backends over one in-memory grid: it executes
-the real `Code.gs` for the read and the mint, and stands in for the Sheets API — checking the bearer token
-— for every write. So "did the edit survive a round trip" has an answer without a deployment: a write goes
-through the REST path and `doGet` serves it back from the same rows. Point the app at it with the two
-variables in `.env.example`.
+| Script | |
+| --- | --- |
+| `npm run dev` | Vite dev server |
+| `npm run build` | bundle into `dist/`, then generate `dist/sw.js` |
+| `npm run preview` | serve the built `dist/`; the only way to exercise the service worker |
+| `npm test` / `npm run test:watch` | vitest, single run / watch |
+| `npm run icons` | regenerate the committed Home Screen PNGs; required after changing the default accent |
+| `npm run contrast` | measure every colour pair; required after any colour change |
 
-The hero is a derived crop and the camera original is gitignored. To replace it, drop a new photo in and
-re-run the two `sips` passes recorded in [CLAUDE.md](CLAUDE.md).
+A green suite says nothing about how the page looks.
+
+- `npx vite-node scripts/preview.jsx` writes `scripts/preview-*.html` (gitignored). Load them through
+  `scripts/harness.html`, which takes files, widths and a scroll-to selector on the query string. Use
+  its iframes, not a resized window: headless Chrome reports a width you did not ask for.
+- `scripts/drive.mjs` drives the running app over the Chrome DevTools Protocol for what a static render
+  cannot reach — the accordion, the read/edit toggle, how many writes an edit session costs, whether
+  the date control stays inside its row.
+- `scripts/stub-endpoint.mjs` serves **both** backends over one in-memory grid on `127.0.0.1:5200`: the
+  real `Code.gs` for the read and the mint, and a Sheets API stand-in, checking the bearer token, for
+  writes. `vite.config.js` proxies `/wedding/__endpoint` and `/wedding/__sheets` to it in dev only.
+  Point the app at it with the two commented variables in `.env.example`; `VITE_SHEETS_BASE` must never
+  be set in a shipped build.
+
+### Replacing the hero photograph
+
+`public/hero.jpg` is a derived crop, 1280x1600 and ~290KB; the camera original is gitignored. The
+header is `position: fixed` at the top of the viewport (the month headings are the sticky elements
+below it), and its photograph band is `--hero-photo: clamp(4.5rem, 20vh, 14rem)` — about a fifth of
+the viewport, tall enough to hold faces, so compose for them. `object-position: 50% 42%` picks the
+vertical crop; check a replacement at 393px wide and at the 48rem layout.
+
+Two constraints on the crop, both from the band being pinned:
+
+- The top ~60px sits under the iOS status bar, which draws **dark** glyphs
+  (`apple-mobile-web-app-status-bar-style: default`) and which the scrim does not reach — it is
+  fully transparent until 28% down. Compose so that strip reads light. A dark canopy across the top
+  makes the clock and battery unreadable, and the app has no channel for that pixel.
+- The band is on screen at every scroll position, so it is read for as long as the app is open.
+
+Regenerate with two `sips` passes, never one — combining `-c` with `--resampleHeightWidth` silently
+produces the wrong dimensions. Both flags take **height then width**, and the crop must be 4:5 to match
+the output.
+
+```sh
+sips -c 4190 3352 --cropOffset 427 111 <photo>.JPG --out /tmp/hero-crop.jpg
+sips --resampleHeightWidth 1600 1280 --setProperty formatOptions 20 /tmp/hero-crop.jpg \
+  --out public/hero.jpg
+```
+
+`--cropOffset` is measured from the top-left when non-zero but means "centred" at `0 0`, and an offset
+whose rect ends exactly on the image edge produces no crop at all.
+
+## Known limitations
+
+- No per-device revocation of the edit key; rotation is all-or-nothing.
+- Anonymous reads spend the owner's Apps Script quota and cannot be rate-limited by IP.
+- Any other site on the same GitHub Pages origin can read the stored edit key.
+- Changing the `due` column's number format away from plain text in the Sheets UI can leave a date
+  unreadable to editors, who then see the row in the **No date** group while readers still see the
+  date. Leave the `tasks` tab formatted as plain text.
+- Nothing in the sheet is private, and nothing private should go in it.
 
 ## File map
 
 | Path | |
 | --- | --- |
 | `index.html` | entry HTML, the CSP, the manifest and Home Screen tags |
-| `apps-script/` | the read half of the backend and the token minter: `Code.gs` and its manifest, deployed by hand |
-| `src/schema.js` | the sheet contract: columns, row ↔ task mapping, validation |
-| `src/config.js` | build-time values, storage keys, the `config` tab's field list, defaults |
-| `src/App.jsx` | the shell: access, the ticking clock, the filter, and every mutation's toast |
-| `src/lib/` | `api` (which backend a request goes to, and the failure taxonomy), `connection` (the token cache), `sheets` (every Sheets API call), `access` (the capability URL), `time` and `progress` (both pure), `templates`, `snapshot`, `serviceWorker`, `theme` |
-| `src/state/` | `useBoard` — one `run()` primitive behind optimistic CRUD, one `fail()` behind every classification, the folding write queue, throttled refresh — plus `useNow` and `useToasts` |
+| `apps-script/` | `Code.gs` (anonymous read, token mint) and its manifest; deployed by hand |
+| `src/schema.js` | the sheet contract: columns, row ↔ task mapping, every A1 range, validation |
+| `src/config.js` | build-time values, storage keys, the `config` tab's field list and defaults |
+| `src/App.jsx` | the shell: access, the clock, the filter, every mutation's toast |
+| `src/lib/` | `api` (dispatch, failure taxonomy), `connection` (token cache), `sheets` (every Sheets API call), `access` (the capability URL), `time`, `progress`, `templates`, `snapshot`, `serviceWorker`, `theme` |
+| `src/state/` | `useBoard` (optimistic CRUD, the folding write queue, throttled refresh), `useNow`, `useToasts` |
 | `src/components/` | one file per view, with inline-SVG icons in `icons.jsx` |
-| `src/i18n/` | the engine, the `en`/`ja` catalogs and the registry |
+| `src/i18n/` | the engine, the `en`/`ja` catalogs, the registry |
 | `src/styles/` | `tokens`, `base`, `primitives`, `app`, loaded in that order |
-| `test/` | vitest specs. Three carry the weight of the write path: `schema.test.js` pins the two column lists against each other, `script.test.js` *executes* `Code.gs`, and `sheets.test.js` drives the REST client against a fake that parses A1 ranges for real. `connection.test.js` covers the mint, where every failure arrives as an HTTP 200 |
-| `scripts/` | `preview.jsx` + `harness.html` (the static visual harness), `drive.mjs` + `stub-endpoint.mjs` (drive the running app against the real `Code.gs` **and** a Sheets API stand-in over one in-memory grid), `check-contrast.js`, `build-sw.js`, `make-icons.js` (a hand-rolled PNG encoder, so there is no native image dependency) |
+| `test/` | vitest specs. `schema.test.js` pins the two column lists against each other, `script.test.js` executes `Code.gs`, `sheets.test.js` drives the REST client against a fake that parses A1 ranges, `connection.test.js` covers the mint |
+| `scripts/` | `preview.jsx` + `harness.html` (static visual harness), `drive.mjs` + `stub-endpoint.mjs` (drive the app against both backends), `check-contrast.js`, `build-sw.js`, `make-icons.js` |

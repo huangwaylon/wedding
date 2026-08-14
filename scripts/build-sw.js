@@ -1,19 +1,14 @@
 /**
  * Emits `dist/sw.js` after a Vite build.
  *
- * Two things here look like implementation detail and are not:
+ * The precache list comes from walking `dist/`, not `.vite/manifest.json`, whose only entry maps
+ * `"index.html"` to the JS chunk: `index.html` itself and everything copied from `public/` are
+ * absent, so a manifest-derived list would precache 2 of 7 files.
  *
- * The precache list comes from walking `dist/`, NOT from `.vite/manifest.json`. That
- * manifest is not even emitted without `build.manifest`, and when it is, its only
- * entry maps `"index.html"` to the JS chunk — `index.html` itself is absent, and
- * everything copied from `public/` (the webmanifest, the icons) is absent by
- * construction. A manifest-derived list would precache 2 of 7 files and quietly miss
- * the one file the whole "precache as a unit" guarantee is named after.
- *
- * The build id hashes file CONTENTS, not names. `index.html` is not in the JS module
- * graph, so editing it changes no hashed filename; a name-derived id would leave
- * `sw.js` byte-identical, the browser would see no update, and the new `index.html`
- * would never reach the device. The CSP lives in `index.html`.
+ * The build id hashes file contents, not names. `index.html` is not in the JS module graph, so
+ * editing it changes no hashed filename, and a name-derived id would leave `sw.js` byte-identical:
+ * the browser would see no update and the new `index.html`, which carries the CSP, would never
+ * reach the device.
  */
 
 import { createHash } from 'node:crypto'
@@ -33,14 +28,10 @@ function walk(dir, found = []) {
 }
 
 /**
- * Files that must never be precached, whatever a local `public/` happens to hold.
- *
- * `sw.js` is the worker itself. `__dev-board.json` is the board fixture `scripts/drive.mjs` reads
- * (see its header): it is gitignored, so CI never sees it and the DEPLOYED worker was never at
- * risk — but anyone who has driven the app locally has one sitting in `public/`, and `vite build`
- * copies it straight into `dist/`, where this walk would list it and the worker would precache
- * somebody's fixture board for offline use. The `__` prefix is the convention; anything wearing it
- * is a local artefact.
+ * Never precached, whatever a local `public/` holds. `sw.js` is the worker itself;
+ * `__dev-board.json` is `scripts/drive.mjs`'s fixture, gitignored but present in `public/` for
+ * anyone who has driven the app locally, and `vite build` copies it into `dist/`, where the worker
+ * would precache somebody's fixture board for offline use. `__` marks a local artefact.
  */
 const NEVER_PRECACHED = (path) => path === 'sw.js' || path.startsWith('__')
 
@@ -66,19 +57,17 @@ const INDEX = BASE + 'index.html'
 const ASSETS = ${assets}
 
 self.addEventListener('install', (event) => {
-  // cache:'reload' bypasses the HTTP cache. GitHub Pages serves max-age=600 on every
-  // object through a CDN, so without this, install can pair a fresh sw.js with an
-  // edge-cached stale index.html and precache a mismatched set.
+  // cache:'reload' bypasses the HTTP cache: Pages serves max-age=600 through a CDN, so
+  // without it install can pair a fresh sw.js with an edge-cached stale index.html.
   //
-  // addAll rejecting is the safety mechanism, not a nuisance: a missing hashed asset
-  // 404s, install fails, this worker never activates, and the previous one keeps
-  // serving a version that is at least complete.
+  // addAll rejecting is the safety mechanism: a missing hashed asset 404s, install fails,
+  // this worker never activates, and the previous one keeps serving a complete version.
   event.waitUntil(
     caches
       .open(CACHE)
       .then((cache) => cache.addAll(ASSETS.map((url) => new Request(url, { cache: 'reload' })))),
   )
-  // Deliberately no skipWaiting: a running page keeps the version it started with.
+  // No skipWaiting: a running page keeps the version it started with, and
   // src/lib/serviceWorker.js decides when a swap is safe.
 })
 
@@ -93,24 +82,20 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('fetch', (event) => {
-  // First, and not inside an async function: scope decides which CLIENTS this worker
-  // controls, not which requests it sees, so the Apps Script endpoint arrives here
-  // too. It must be left entirely alone — a worker responding to it would be an
-  // un-CSP'd proxy in front of the edit key (a <meta> CSP does not cover a worker,
-  // and Pages sends no header), and even a pass-through fetch can change how the
-  // Apps Script 302 is followed.
+  // First, and not inside an async function: scope decides which clients this worker
+  // controls, not which requests it sees, so the Apps Script endpoint and the Sheets API both
+  // arrive here. Responding to either would make this an un-CSP'd proxy in front of a bearer
+  // credential (a <meta> CSP does not cover a worker and Pages sends no header), and even a
+  // pass-through fetch can change how the Apps Script 302 is followed.
   if (new URL(event.request.url).origin !== self.location.origin) return
   if (event.request.method !== 'GET') return
 
-  // A start_url launch requests BASE itself, but the precached key is
-  // BASE + 'index.html', so matching the request would miss.
+  // A start_url launch requests BASE itself, but the precached key is BASE + 'index.html'.
   //
-  // ignoreVary because caches.match honours Vary by default and the servers involved
-  // set it: GitHub Pages sends 'Vary: Accept-Encoding', vite preview sends
-  // 'Vary: Origin'. A header difference between the precache fetch and the page's own
-  // request would then miss and fall through to the network, which offline means
-  // failing — a cache that silently only works online. These are content-hashed
-  // immutable files, so the URL is the only key that matters.
+  // ignoreVary because caches.match honours Vary and the servers set it: Pages sends
+  // 'Vary: Accept-Encoding', vite preview 'Vary: Origin'. A header difference between the
+  // precache fetch and the page's request would fall through to the network, which offline
+  // means failing. These files are content-hashed, so the URL is the only key.
   if (event.request.mode === 'navigate') {
     event.respondWith(
       caches.match(INDEX, { ignoreVary: true }).then((hit) => hit || fetch(event.request)),

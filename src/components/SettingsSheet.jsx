@@ -1,23 +1,17 @@
 /**
- * Settings. Two kinds of value, kept visibly apart because the distinction matters:
+ * Settings. Two kinds of value, kept visibly apart:
  *
- *   SHARED — written to the sheet, so everyone on the board sees the change: names, the
- *   wedding date, the venue, the timezone, the category list.
+ *   SHARED, written to the sheet so everyone sees the change: names, the wedding date, the venue,
+ *   the timezone, the category list.
  *
- *   THIS DEVICE — `localStorage` only: the interface language, the accent, and the read-only
- *   view. None of them may ever reach the sheet. The couple and their planners all read the
- *   same board and none of them gets to restyle anybody else's screen or decide what language
- *   a planner reads. Only that half is labelled, because it is the half nobody would guess: an
- *   editor's own name and venue are obviously shared.
+ *   this device, `localStorage` only: the interface language, the accent, the read-only view. None
+ *   may reach the sheet — nobody restyles anybody else's screen or decides what language a planner
+ *   reads. Only this half is labelled, being the half nobody would guess.
  *
- * A viewer sees only the device half plus the edit-link field, because everything else is a
- * write they cannot make. `hasKey`, not `canEdit`, decides which of those two the Editing
- * section shows — an editor previewing the guest view still holds a key, and offering them a
- * paste field for it would read as the link having broken.
- *
- * Every sentence of prose here is attached to a control that is ambiguous without it: what the
- * timezone reinterprets, what Purge destroys, that the read-only view keeps the key, and that
- * revoking editing is undone by the link somebody already has.
+ * A viewer sees only the device half plus the edit-link field, everything else being a write they
+ * cannot make. `hasKey`, not `canEdit`, decides which of the two the Editing section shows: an
+ * editor previewing the guest view still holds a key, and a paste field would read as the link
+ * having broken.
  */
 
 import { useState } from 'react'
@@ -27,6 +21,7 @@ import { ACCENTS, setAccent, useAccent } from '../lib/theme.js'
 import { isValidTimeZone } from '../lib/time.js'
 import { parsePastedLink } from '../lib/access.js'
 import BottomSheet from './BottomSheet.jsx'
+import Notice from './Notice.jsx'
 import { DeletedList } from './Deleted.jsx'
 
 export default function SettingsSheet({
@@ -185,13 +180,13 @@ export default function SettingsSheet({
                 autoComplete="off"
                 spellCheck={false}
               />
-              {/* `.hint` is inline, so two of them ran together into one paragraph. Stacked
-                  explicitly, and the error replaces the hint rather than shifting it. */}
+              {/* `.hint` is inline, so two run together into one paragraph. Stacked explicitly,
+                  and the error replaces the hint rather than shifting it. */}
               {zoneOk ? (
                 <p className="hint">
                   {t('settings.timezoneHint')}
-                  {/* Only worth saying when the two actually differ: a time typed straight
-                      into the spreadsheet is interpreted by the SHEET's zone, not this one. */}
+                  {/* Only when the two differ: a time typed into the sheet is read in the SHEET's
+                      zone. */}
                   {sheetTimeZone && sheetTimeZone !== draft.timezone ? (
                     <>
                       {' '}
@@ -221,9 +216,7 @@ export default function SettingsSheet({
         </>
       ) : (
         <section className="section">
-          <div className="notice">
-            <span className="notice__title">{t('access.viewOnly')}</span>
-          </div>
+          <Notice title={t('access.viewOnly')} />
         </section>
       )}
 
@@ -270,10 +263,8 @@ export default function SettingsSheet({
         <h3 className="section__title">{t('settings.access')}</h3>
         {hasKey ? (
           <>
-            {/* THE READ-ONLY VIEW, above the revoke, because it is the one somebody actually wants:
-                "show me what the guests see" and "hand my phone over" are both this, and revoking
-                is neither. The label names the direction the tap goes, the same rule the row's own
-                Edit/Done toggle follows — a toggle that only names its state is a guess. */}
+            {/* Above the revoke, being the one somebody wants. The label names the direction the
+                tap goes, the same rule the row's Edit/Done toggle follows. */}
             <p className="section__hint">{t('settings.readOnlyHint')}</p>
             <button
               type="button"
@@ -302,10 +293,8 @@ export default function SettingsSheet({
               autoComplete="off"
               spellCheck={false}
             />
-            {/* The hint stays: an installed app gets its own storage bucket, which is the only
-                explanation for why somebody who HAS the edit link is being shown a paste
-                field. Without it the field reads as a demand for a credential they thought
-                they already had. */}
+            {/* The hint stays: an installed app gets its own storage bucket, the only explanation
+                for why somebody who HAS the edit link is shown a paste field. */}
             {pasteError ? (
               <span className="field__error">{t('access.pasteBad')}</span>
             ) : (
@@ -320,10 +309,8 @@ export default function SettingsSheet({
         )}
       </section>
 
-      {/* RECOVERY LIVES HERE, not on the board. A "Deleted (3)" card under the wedding
-          photograph is the wrong tone for the first thing on screen, and the restore list and
-          the purge button are two halves of one job — putting them together is also what makes
-          it obvious that Purge is what empties the list above it. */}
+      {/* Recovery lives here, not on the board: the restore list and the purge are two halves of
+          one job, and together it is obvious that Purge empties the list above. */}
       {canEdit && deletedTasks.length > 0 ? (
         <section className="section">
           <h3 className="section__title">{t('settings.maintenance')}</h3>

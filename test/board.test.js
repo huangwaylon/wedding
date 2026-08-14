@@ -20,7 +20,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { API_ERROR } from '../src/lib/api.js'
-import { createWriteQueue, foldWrite } from '../src/state/useBoard.js'
+import { createWriteQueue, foldWrite, revert } from '../src/state/useBoard.js'
 
 const source = readFileSync('src/state/useBoard.js', 'utf8')
 
@@ -89,8 +89,23 @@ describe('the mutation primitive', () => {
     }
   })
 
-  it('restores the previous tasks on failure', () => {
-    expect(body).toMatch(/if \(rollback\) setTasks\(rollback\)/)
+  it('reverts only the rows the failed edit touched, never the whole array', () => {
+    // The queue is serial, so a job that fails settles before the next is dispatched — but the
+    // next one's optimistic edit has already landed. Tick A, tick B, A fails: restoring the array
+    // from before A draws B un-ticked while the sheet has it done, and B's own success only clears
+    // its pending flag.
+    expect(body).toMatch(/setTasks\(\(current\) => revert\(current, before, after\)\)/)
+    expect(body).not.toMatch(/setTasks\(rollback\)/)
+  })
+
+  it('refuses an update that would clear a tombstone', () => {
+    // `update` rewrites the whole row from its payload, so an empty `deleted_at` in one resurrects
+    // a deleted task. `TaskDetail` disarms its unmount flush on its own delete and its own save,
+    // but a row also unmounts when a refresh brings back a board in which the OTHER editor deleted
+    // it, and neither of those guards can see that.
+    const declaration = declarationOf('editTask')
+    expect(declaration).toMatch(/tasksRef\.current\.find/)
+    expect(declaration).toMatch(/!isLive\(current\) && isLive\(task\)/)
   })
 
   it('leaves the seed and the config writes non-optimistic', () => {
@@ -110,24 +125,38 @@ describe('the mutation primitive', () => {
     expect(body.match(/queue\.current\.push\(/g)).toHaveLength(1)
   })
 
-  it('settles pending rows on an EMPTY queue rather than per op', () => {
+  it('settles pending rows on an EMPTY queue rather than per op, on both paths', () => {
     // A Sheets write answers with the ranges it touched and nothing about the board, so there is
     // no reply to accept — the optimistic state is the state, and all that is left is clearing the
     // dimming. Keyed on the queue being empty rather than on a per-op list of ids: the queue
     // dispatches one request at a time, so an empty queue means nothing is outstanding. A per-op
     // ledger is how a row ends up dimmed forever.
-    expect(declarationOf('run')).toMatch(/queue\.current\.pending === 0/)
-    expect(declarationOf('run')).toMatch(/task\.pending \? \{ \.\.\.task, pending: false \}/)
+    //
+    // IN `finally`, so it runs on the failure path too. A row dimmed by a write that then failed
+    // behind a write that succeeded had nothing else able to clear it, and reads only happen on
+    // focus — so on a board left in the foreground it stayed dimmed for good.
+    expect(declarationOf('settle')).toMatch(/queue\.current\.pending > 0/)
+    expect(declarationOf('settle')).toMatch(/task\.pending \? \{ \.\.\.task, pending: false \}/)
+    expect(declarationOf('run')).toMatch(/} finally \{[\s\S]*settle\(\)[\s\S]*}/)
   })
 
   it('re-checks for a write AFTER the read comes back, not only before it', () => {
     // A read takes seconds. A tick that lands inside that window is a write this board predates,
     // and accepting it un-ticks the row until the write's own reply puts it back.
-    const refresh = declarationOf('refresh')
-    expect(refresh).toMatch(/queue\.current\.issued/)
-    expect(refresh).toMatch(
-      /if \(queue\.current\.pending > 0 \|\| queue\.current\.issued !== before\) return/,
+    const read = declarationOf('readOnce')
+    expect(read).toMatch(/queue\.current\.issued/)
+    expect(read).toMatch(
+      /if \(queue\.current\.pending > 0 \|\| queue\.current\.issued !== before\) return false/,
     )
+  })
+
+  it('makes a FORCED refresh wait out a read in flight rather than give up', () => {
+    // `saveConfig`, `compact` and the template seed have no optimistic half, so each reports
+    // success on the strength of the re-read landing. Returning early because a focus read
+    // happened to be open is how "Settings saved" appeared over the old wedding date.
+    const refresh = declarationOf('refresh')
+    expect(refresh).toMatch(/if \(!force\) return false/)
+    expect(refresh).toMatch(/await inFlight\.current/)
   })
 
   it('knows the unauthorized code it branches on', () => {
@@ -140,6 +169,92 @@ describe('the mutation primitive', () => {
     // `editKey` in the effect's deps, a freshly pasted link would keep reading the anonymous path
     // until the next focus.
     expect(body).toMatch(/\[refresh, editKey\]/)
+  })
+})
+
+/**
+ * ROLLING BACK ONE FAILED EDIT, driven rather than read.
+ *
+ * The source check above pins that `run` calls this; only calling it can show that it undoes the
+ * failed edit and nothing else. Every case here is a board somebody would be looking at: a tick
+ * that failed behind one that landed, a create that never reached the sheet, a row restored to
+ * exactly what it held.
+ */
+describe('revert', () => {
+  const TICK = '2026-08-13T00:00:00.000Z'
+  const task = (id, extra = {}) => ({ id, title: id, doneAt: '', deletedAt: '', ...extra })
+
+  it('leaves a LATER edit to a different row alone', () => {
+    // Tick A, tick B, A fails. The queue is serial, so A settles before B is dispatched — but B's
+    // optimistic tick already landed. Putting back the array from before A draws B un-ticked while
+    // the sheet has it done, and B's own success only clears its pending flag.
+    const a = task('a')
+    const b = task('b')
+    const before = [a, b]
+    const after = [{ ...a, doneAt: TICK, pending: true }, b]
+    const current = [after[0], { ...b, doneAt: TICK, pending: true }]
+
+    const reverted = revert(current, before, after)
+    expect(reverted[0]).toBe(a)
+    expect(reverted[1].doneAt).toBe(TICK)
+  })
+
+  it('DROPS a failed create rather than reverting it', () => {
+    // The row is absent from `before`, so there is nothing to put back: it exists only because
+    // somebody typed it and the write did not land. Reverting it to an earlier version would
+    // leave a task on screen that no sheet holds.
+    const a = task('a')
+    const fresh = task('n1', { pending: true })
+    const reverted = revert([a, fresh], [a], [a, fresh])
+    expect(reverted.map((row) => row.id)).toEqual(['a'])
+  })
+
+  it('drops a failed create without touching an edit made behind it', () => {
+    const a = task('a')
+    const fresh = task('n1', { pending: true })
+    const edited = { ...a, title: 'Edited' }
+    const reverted = revert([edited, fresh], [a], [a, fresh])
+    expect(reverted).toEqual([edited])
+  })
+
+  it('restores the EXACT pre-edit object for the row it touched', () => {
+    // Not a hand-computed inverse: the object the board held, so a failed rename cannot leave a
+    // half-restored row wearing one field from before the edit and one from after it.
+    const a = task('a', { title: 'Book the venue', category: 'Venue' })
+    const before = [a]
+    const after = [{ ...a, title: 'Book the hall', pending: true }]
+    const reverted = revert(after, before, after)
+    expect(reverted[0]).toBe(a)
+  })
+
+  it('returns the current array unchanged when the edit touched nothing', () => {
+    // A non-optimistic write — the template seed, a config write — has no rows to put back, and an
+    // update naming a row the board no longer holds changed none. Allocating a new array anyway
+    // would re-render the whole list for nothing.
+    const rows = [task('a'), task('b')]
+    expect(revert(rows, rows, rows)).toBe(rows)
+  })
+
+  it('reads which rows were touched off the updater, by identity', () => {
+    // An updater that rebuilt a row it did not change would report that row as touched, so B's
+    // later tick would be undone by A's failure — the whole-array rollback again, arriving through
+    // the updater instead. Every `optimistic` in the hook passes untouched rows through by
+    // reference; the check below is what keeps that true.
+    const before = [task('a'), task('b')]
+    const rebuilt = before.map((row) => ({ ...row }))
+    const withBTicked = [rebuilt[0], { ...rebuilt[1], doneAt: TICK }]
+    expect(revert(withBTicked, before, rebuilt)).toEqual(before)
+  })
+
+  it('is only exact because no updater rebuilds a row it did not change', () => {
+    // Each `previous.map` here has to hand the untouched arm the row itself. A `{ ...row }` there
+    // reads identically on screen and silently widens every rollback.
+    const maps = body.split('previous.map((row) =>').slice(1)
+    expect(maps).toHaveLength(2)
+    for (const map of maps) {
+      const arrow = map.slice(0, 160)
+      expect(arrow, arrow).toMatch(/\?[\s\S]*?: row[,)\s]/)
+    }
   })
 })
 
@@ -377,6 +492,20 @@ describe('createWriteQueue', () => {
     await flush()
     expect(sent).toHaveLength(3)
     gates[2].resolve()
+  })
+
+  it('reports `pending` 0 to a caller whose write FAILED, not just to one that landed', async () => {
+    // `run` settles the rows in `finally`, and `settle` returns early unless the queue is empty —
+    // so a failed write that still counted itself as pending would leave every row it dimmed dimmed
+    // for good: nothing else clears them and reads only happen on focus.
+    const { queue, gates } = harness()
+    let pendingWhenTold = -1
+    const write = queue.push({ op: 'update', tasks: [task('a')] }).catch(() => {
+      pendingWhenTold = queue.pending
+    })
+    gates[0].reject(new Error('nope'))
+    await write
+    expect(pendingWhenTold).toBe(0)
   })
 
   it('counts every write it was ever handed, so a read can tell it overlapped one', async () => {

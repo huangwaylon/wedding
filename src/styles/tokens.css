@@ -1,67 +1,44 @@
-/* tokens.css — the single source of truth for design values: colour, type, space, motion, z-order.
-
-   Every ratio in this file was measured by scripts/check-contrast.js. Run it after
-   changing any colour; it fails loudly rather than leaving something illegible. */
+/* tokens.css — colour, type, space, motion, stacking order. Every ratio here is measured by
+   scripts/check-contrast.js; run it after any colour change. */
 
 :root {
   color-scheme: light;
 
   /* ---- Colour: canvas and lichen ---------------------------------------
-     Unbleached canvas with a green cast — the colour of a cotton tent and the
-     grey-green of lichen on granite, not the pink-warm paper every design system
-     ships. A wedding board is read on a phone at a venue and on a planner's large
-     monitor for hours at a stretch, so it stays light and low-chroma; the theme
-     lives in the HUE of the neutrals, not in saturation.
-
-     The temperature step from --bg to --surface IS the elevation, which is why almost
-     nothing in this app needs a shadow.
-
-     Every ratio below is measured by scripts/check-contrast.js against bg / surface /
-     sunken. Every ink improves on the pink-warm set it replaces. */
+     Light, low-chroma neutrals; the theme is in their hue, not their saturation. The --bg to
+     --surface step is the elevation, so almost nothing needs a shadow. Ratios below are against
+     bg / surface / sunken. */
   --bg: #faf8f3;
   --surface: #ffffff;
   --sunken: #eeece1;
 
   --line: #e2ded0;
-  /* Deliberately darker than --line, and only for form controls and secondary button
-     borders. WCAG 1.4.11 wants 3:1 for the boundary that identifies a control.
-
-     IT IS MEASURED AGAINST ALL THREE SURFACES, not just white, and that is the whole
-     reason it is this dark. `.chip` and `.btn--secondary` swap their fill to --sunken
-     on hover while keeping this border, so the boundary on the app's primary filter
-     controls is only as good as its worst backdrop: 3.38 on sunken, 3.55 on bg, 3.78
-     on surface. Do not tidy this to --line, and do not lighten it to taste — the
-     harness measures all three. */
+  /* Control and secondary-button borders only: 1.4.11 wants 3:1 for the boundary that identifies a
+     control, measured on all three surfaces because `.chip` and `.btn--secondary` swap their fill to
+     --sunken on hover while keeping this border, so the boundary is only as good as its worst
+     backdrop. 4.00 surface / 3.77 bg / 3.38 sunken. Never --line, never lighter. */
   --line-input: #7c8174;
 
-  /* ink 16.18 / 17.17 / 14.49 against bg / surface / sunken
+  /* ink 16.18 / 17.17 / 14.49
      ink-2 7.45 / 7.90 / 6.67
-     ink-3 5.18 / 5.49 / 4.64  <- the lightest that still passes AA at 13px.
+     ink-3 5.18 / 5.49 / 4.64  <- the lightest that passes AA at 13px.
      Kanji at low contrast is unreadable in a way Latin is not: do not lighten. */
   --ink: #1a1c18;
   --ink-2: #4e5349;
   --ink-3: #666b5c;
-  /* Placeholder and disabled text only. Never carries information, so it is held
-     to the 3:1 graphic floor rather than 4.5:1. */
+  /* Placeholder and disabled text. Carries no information, so the floor is 3:1, not 4.5:1. */
   --ink-4: #7f8475;
 
   --scrim: rgba(26, 28, 24, 0.34);
 
   /* ---- Over the photograph ---------------------------------------------
-     The hero is the one surface whose background is unknown, so the ink there
-     cannot be measured against a token — it is measured against the WORST CASE
-     the scrim allows. --photo-scrim ends at 0.78 alpha over a #181410 base, and
-     white on that composite is 9.08:1 even over a blown-out white sky;
-     --photo-ink-2 is 7.99:1 (scripts/check-contrast.js computes both). Lightening
-     the end stop is what would break it: at 0.55 the same worst case measures
-     4.07:1 and fails.
-
-     The shadow is belt and braces for the sliver of type that sits above the
-     gradient's dense end, not the mechanism. */
+     The backdrop is unknown, so ink here is measured against the worst case the scrim allows:
+     --photo-scrim's 0.78 end stop over #181410, composited over a blown-out white sky. White is
+     8.98:1 there, --photo-ink-2 7.93:1; at a 0.55 end stop the same case is 4.07:1 and fails.
+     --photo-shadow covers the sliver of type above the dense end. It is not the mechanism. */
   --photo-ink: #ffffff;
   --photo-ink-2: rgba(255, 255, 255, 0.92);
-  /* The base is the neutrals' own near-black rather than a brown one — hue only. The
-     ALPHA RAMP IS UNCHANGED, because it is what the measurements above depend on. */
+  /* Hue only. The alpha ramp is what the ratios above depend on. */
   --photo-scrim: linear-gradient(
     to bottom,
     rgba(20, 23, 15, 0) 28%,
@@ -69,37 +46,22 @@
     rgba(20, 23, 15, 0.78) 100%
   );
   --photo-shadow: 0 1px 12px rgba(20, 23, 15, 0.55);
-  /* A control ON the photograph: a dark disc, so the glyph inside it stays white
-     whatever it happens to sit over. 0.55, not 0.42 — at 0.42 a white glyph over a
-     blown-out sky measures 2.73:1 and misses the 3:1 graphic floor. */
+  /* A dark disc, so a control's glyph on the photograph stays white over any pixel: 4.03:1 over a
+     blown-out sky at 0.55, 2.73:1 at 0.42, which misses the 3:1 graphic floor. */
   --photo-control: rgba(20, 23, 15, 0.55);
   --photo-control-hover: rgba(20, 23, 15, 0.68);
 
   /* ---- Accent ----------------------------------------------------------
-     One hue, and THREE presets rather than five. `[data-accent]` at the foot of this
-     file redefines the three properties below and NOTHING else, so a preset cannot
-     reach the neutrals or the state colours. Every preset keeps white text at or above
-     7.5:1 and sits at or above 6.8:1 against --bg.
-
-     TARN (湖) IS THE DEFAULT, and the reason is measurable rather than a preference.
-     The accent paints `.dot--soon`, an 8px disc that is a row's only coloured mark, so
-     the default has to be separable at that size from BOTH --good and --critical.
-     Measured in OKLab (0.15 is comfortable at 8px, and the harness prints these):
-
-       tarn     0.198 from good   0.202 from critical   <- the only preset clear of both
+     One hue, three presets. `[data-accent]` below redefines these three properties and nothing else,
+     so a preset cannot reach the neutrals or the state colours. tarn is the only permissible default:
+     the accent paints `.dot--soon`, an 8px disc carrying a row's whole state, so it must separate at
+     that size from both --good and --critical. In OKLab, 0.15 being comfortable at 8px:
+       tarn     0.198 from good   0.202 from critical   <- the only one clear of both
        pine     0.134 from good   0.176 from critical
        rosehip  0.260 from good   0.128 from critical
-
-     So a green default is out — pine against a green "done" is two forest greens — and
-     so is a magenta one, against a red "overdue". A cold water blue is the one family
-     far from both, and it is the truer colour for this board anyway: the sky over the
-     ginkgo avenue the hero was shot in, and the colour of Japanese work cloth.
-
-     WHAT PINE AND ROSEHIP COST, stated rather than hidden: whoever picks one gets a
-     `soon` dot they may not separate from `done` or `overdue` at 8px. That is survivable
-     ONLY because the dot is never the only channel — it sits beside the words that carry
-     the meaning, which is the rule the state block below states. Do not make either of
-     them the default, and do not add a fourth preset without measuring it. */
+     Pine collides with the green "done", rosehip with the red "overdue"; either accepts a `soon` dot
+     that may not separate, survivable only because the dot is never the only channel. Never make one
+     of them the default, and never add a preset without measuring it. */
   --accent: #1c4b74;
   --accent-hover: #163c5e;
   --accent-text: #ffffff;
@@ -108,82 +70,58 @@
   --accent-shadow: color-mix(in srgb, var(--accent) 38%, transparent);
 
   /* ---- State ------------------------------------------------------------
-     Exactly two coloured states, and they are NEVER the only signal: a state's dot
-     always sits beside the words that carry the meaning, and a meter fill beside a
-     written percentage. A viewer who cannot separate the green from the red loses
-     nothing.
-
-     There is no --warning. "In progress" is the accent and "upcoming" is the bare
-     track, so no state needs a hue that cannot clear 3:1 on white — which yellow
-     cannot.
-
-     BOTH ARE SIGNALS, NOT THEME, and that is why neither is muted to match the
-     neutrals. A muted green reads as "wilderness" and collapses the 8px separation the
-     accent depends on: at #35762f, tarn falls to 0.155 from good — closer than the sage
-     preset that is documented as too close to ship as a default. These two are stepped
-     off their poster values as far as that budget allows and no further.
-
-     good     5.05 on surface, 3.83 on --track  (lichen; a yellower green than a
-              traffic-light one, and 0.198 from tarn in OKLab)
-     critical 5.58 on surface, 4.23 on --track  (rowan berry; also the fill under white
-              text on the destructive button, at 5.58) */
+     Two coloured states, neither ever the only signal: a dot sits beside the words that carry the
+     meaning, a fill beside a written percentage. No --warning — "in progress" is the accent,
+     "upcoming" is the bare track, and yellow cannot clear 3:1 on white. Signals, not theme, so
+     neither is muted to match the neutrals: at a muted #35762f tarn falls to 0.155 from good, closer
+     than the sage preset rejected for that.
+     good     5.05 on surface, 3.83 on --track  (0.198 from tarn in OKLab)
+     critical 5.58 on surface, 4.23 on --track  (also `.btn--danger`'s fill under white text) */
   --good: #3f7d18;
   --critical: #bb3b23;
   --critical-hover: #a03219;
   --critical-wash: #f7eae5;
 
   /* ---- Meters ----------------------------------------------------------
-     --track is the unfilled half of every progress bar, and it is deliberately
-     darker than --sunken: 1.34:1 on white. It cannot reach 3:1 and stay a warm
-     neutral, which is why every meter also carries a hairline — the BOUNDARY
-     identifies the control, not the fill difference. Deleting that hairline is
-     what would make an empty bar disappear.
-
-     --track-line is that hairline, and it is deliberately NOT --line: --line on --track is
-     near-invisible, so the outline it is meant to draw would do nothing and an empty bar would
-     have nothing holding it up but the fill step. Measured: 1.58:1 against --track, 2.09:1
-     against --surface — visible against both the bar it outlines and the card that bar sits on. */
+     --track is darker than --sunken and 1.32:1 on white. It cannot reach 3:1 and stay a warm
+     neutral, so the hairline boundary is what identifies the bar; delete it and an empty meter
+     disappears. --track-line is that hairline and not --line, which measures ~1.02:1 on --track
+     and would draw nothing: 1.58:1 on --track, 2.09:1 on --surface. */
   --track: #e5e0d2;
   --track-line: #bab498;
   --meter-height: 8px;
 
   /* ---- The pinned header -----------------------------------------------
-     The photograph is a TENTH of the viewport and it does not scroll away, so these
-     three numbers are the app's permanent vertical cost and everything below has to
-     compose from them rather than guess.
-
-     A clamp rather than a bare 10vh: at 10vh alone a short landscape window gives 60px,
-     which cannot hold a name and a countdown, and a tall monitor gives 130px of band for
-     a photograph nobody is looking at. The floor is the real constraint — two lines of
-     type plus the safe area.
-
-     --hero-strip is the progress row's exact height, declared rather than derived,
-     because --hero-height is what the sticky month heading offsets itself by. If the
-     strip's content ever outgrows it the heading overlaps it, so the row sets this as a
-     fixed height and centres inside it. */
-  --hero-photo: clamp(4.5rem, 10vh, 7rem);
+     --hero-height is the header's whole occupied height, and four things offset by it: `.views` (the
+     header is `fixed` and reserves no flow space), `.plan__month`'s sticky `top`, `html`'s
+     `scroll-padding-top`, and the FAB's keyboard clearance. Anything added to the header goes in this
+     token, or the month heading lands under the strip. The clamp's terms are not interchangeable:
+     20vh is the band, and it holds the couple in frame where a tenth of the viewport did not; the
+     floor is two lines of type plus the inset, because it applies where the viewport is shortest and
+     a floor taken from the portrait height would spend 44% of a 393px landscape window on the
+     header; the ceiling stops a tall monitor spending 300px on the band. --hero-strip is declared
+     rather than derived: content setting the height would desynchronise --hero-height from the
+     header's real height. */
+  --hero-photo: clamp(4.5rem, 20vh, 14rem);
   --hero-strip: 1.875rem;
   --hero-height: calc(var(--safe-top) + var(--hero-photo) + var(--hero-strip));
 
   /* ---- Radii -----------------------------------------------------------
-     Inner radius <= outer radius minus container padding. Never nest equal radii.
-     --radius-xl is the ceiling on rectangles; fully pill-shaped rectangular
-     buttons read consumer-app rather than considered. */
+     Inner radius <= outer minus container padding; never nest equal radii. --radius-xl is the ceiling
+     on rectangles. */
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
   --radius-xl: 1.375rem;
   --radius-full: 999px;
 
-  /* ONE ring, and ONE dim. Each was two values a couple of units apart doing the same job in two
-     files — a focus/pressed ring at 3px and 2px, and an unsettled-row fade at 0.5 and 0.55.
-     Neither pair is distinguishable on screen, and both were things a reader had to hold twice. */
+  /* One ring width (focus and pressed) and one dim (unsettled rows), each shared by both
+     stylesheets: two values a couple of units apart are not distinguishable on screen. */
   --ring-width: 2px;
   --dim: 0.55;
 
   /* ---- Space: 4px base, with a 20px step --------------------------------- */
-  /* A pill's 1px of optical padding — below the 4px scale on purpose, and the only value here
-     that is. A chip tag and a badge both need it and both used to spell it as a literal. */
+  /* A pill's 1px of optical padding, for a chip tag and a badge: the one value off the scale. */
   --space-hair: 0.0625rem;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -194,48 +132,35 @@
   --space-7: 2rem;
 
   /* ---- Fonts -----------------------------------------------------------
-     No web fonts: zero network cost, and font-src is 'self' in the CSP.
-
-     Latin faces first so digits resolve from SF Pro / Segoe UI / Roboto, which all
-     ship tabular figures; Japanese then falls through to Hiragino on Apple, Yu
-     Gothic on Windows, Noto Sans JP where installed. "Yu Gothic Medium" precedes
-     "Yu Gothic" deliberately — Yu Gothic Regular renders anaemically thin on
-     Windows and Medium is the usable weight.
-
-     No display or serif face anywhere, including the hero percentage. A script
-     face on a wedding app is the obvious temptation and it would make the one
-     number people actually read harder to read. */
+     No web fonts: zero network cost, and font-src is 'self' in the CSP. Latin faces first, so digits
+     resolve from SF Pro / Segoe UI / Roboto and their tabular figures; Japanese falls through to
+     Hiragino, Yu Gothic, Noto Sans JP, with "Yu Gothic Medium" before "Yu Gothic" because Regular
+     renders anaemically thin on Windows. No display or serif face anywhere, the hero percentage
+     included: it would make the one number people read harder to read. */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
     "Noto Sans JP", "Yu Gothic Medium", "Yu Gothic", YuGothic, "Yu Gothic UI",
     Meiryo, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
 
   /* ---- Type ------------------------------------------------------------
-     Nothing below 13px anywhere: 12px kanji is mush, which is why --fs-caption is
-     also the floor for anything nested inside it. Weights are 400/500/600 only;
-     550 and 650 are unreliable outside SF Pro, and Hiragino ships W3/W6 with
-     nothing between. */
-  /* FOUR STEPS, and there is deliberately no 14. 13 and 14 are not distinguishable in a
-     UI, and everywhere the two used to meet — a label beside its value, a small button
-     beside a chip — weight and ink were already carrying the difference and the 1px was
-     noise. Anything reaching for 14 is either a caption or body text; decide which. */
+     Nothing below 13px anywhere, nested type included: 12px kanji is mush. Weights 400/500/600 only —
+     550 and 650 are unreliable outside SF Pro, and Hiragino ships W3/W6 with nothing between. Four
+     steps and no 14: 13 and 14 are not distinguishable in a UI, so anything reaching for 14 is either
+     a caption or body text. */
   --fs-caption: 0.8125rem; /* 13 */
   --fs-body: 1rem; /* 16 — also the iOS no-zoom floor for inputs */
   --fs-lg: 1.125rem; /* 18 */
   --fs-xl: 1.5rem; /* 24 */
 
-  /* Nothing below 1.5, anywhere, and there is no carve-out. CJK glyphs fill the em box, so a
-     tighter line turns a wrapped sentence into a solid block — and the app's one percentage is
-     caption-sized, on the same line as its Japanese tally. Do not add a sub-1.5 token without an
-     element that renders digits EXCLUSIVELY and never shares a line. */
+  /* Nothing below 1.5 anywhere, with no carve-out: CJK glyphs fill the em box, so a tighter line
+     turns a wrapped sentence into a solid block, and the app's one percentage shares a line with its
+     Japanese tally. Do not add a sub-1.5 token without an element that renders digits exclusively. */
   --lh-tight: 1.5;
   --lh-body: 1.65;
 
   /* ---- Elevation -------------------------------------------------------
-     Shadows appear in exactly three places: the sheet panel, the toast, and the
-     FAB. Nowhere else — not on cards, not on inputs, not on buttons — and never
-     added on hover. The focus ring is also drawn with box-shadow, which is a ring
-     rather than an elevation, and so is the text shadow over the photograph. */
+     Three users: the sheet panel, the toast, the FAB. Never a card, an input or a button, and never
+     on hover. The focus ring and the photograph's text shadow are box-shadows too, but rings. */
   --shadow-overlay: 0 2px 8px rgba(28, 26, 23, 0.06),
     0 16px 48px -12px rgba(28, 26, 23, 0.22);
   /* The one coloured element casts the one coloured shadow. */
@@ -243,49 +168,39 @@
     0 8px 24px -6px var(--accent-shadow);
 
   /* ---- Metrics ---------------------------------------------------------
-     ONE column, capped, centred — the same shape on a phone and on a monitor. A
-     planner's 27" screen gets a wider hero and more air, not a second column: the
-     board is a list of tasks with dates, and at 60rem a row's title and its dates
-     drift apart into a thin strip with a canyon between them. */
+     One column, capped and centred at every width — a large screen gets a wider hero and more air,
+     never a second column, because at 60rem a row's title and its dates drift apart into a thin
+     strip. One target size, and no second one: everything a thumb aims at is this, `.btn--sm` and
+     the settings swatches included, those being smaller in type and padding only. */
   --tap-target: 44px;
-  /* Secondary controls: `.btn--sm` and the settings swatches. Still clears WCAG 2.5.8's
-     24px floor with room to spare. Never for anything a thumb aims at. */
-  --tap-target-sm: 36px;
   --column-max: 40rem;
   --sheet-max: 32rem;
-  /* How tall a bottom sheet may get. `dvh`, so the keyboard's own shrink is already in it; the
-     remainder is the strip of scrim that keeps the panel from reading as a full-screen page. */
+  /* Both sheet maxima. `dvh`, so the keyboard's shrink is already in it; the remainder is the
+     strip of scrim that keeps the panel from reading as a full-screen page. */
   --sheet-height: 88dvh;
-  /* The FAB — the only fixed chrome — and therefore the clearance the view keeps beneath
-     its content so the button never covers the last row. The toasts stack above it from
-     the same number. */
+  /* The FAB, and therefore the clearance `.views` keeps below its content so the button never
+     covers the last row. The toasts stack above it from the same number. */
   --fab-size: 3.5rem;
 
   /* ---- Motion ----------------------------------------------------------
-     Duration and easing live together so components can write
-     `transition: background-color var(--transition-fast)`. The reduced-motion
-     block below zeroes both, which neutralises every transition in the app
-     without needing !important anywhere.
-
-     Only background-color, border-color, color, opacity and transform are ever
-     transitioned. Never box-shadow, width, height or `all`. A meter's fill is not
-     transitioned either: it advances on its own once a minute, and a transition
-     would make it look like a control responding to a tap. */
+     Duration and easing together, so a rule writes `transition: color var(--transition-fast)`; the
+     reduced-motion block below zeroes both, which neutralises every transition without !important.
+     Only background-color, border-color, color, opacity and transform are transitioned — never
+     box-shadow, width, height or `all`, and never a meter's fill, which advances once a minute and
+     would read as a control responding to a tap. */
   --transition-fast: 120ms ease;
   --transition-base: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* ---- Stacking order ---------------------------------------------------
-     The header is pinned and the month headings scroll under it, so it has to outrank
-     them — `.plan__month` carries a bare `z-index: 1` inside its own group. Everything
-     that overlays the whole app still outranks the header. */
+     The header outranks the month headings, which scroll under it on a bare `z-index: 1` inside
+     their own group. Everything overlaying the whole app outranks the header. */
   --z-header: 100;
   --z-fab: 200;
   --z-sheet: 300;
   --z-toast: 400;
 
   /* ---- iOS safe areas --------------------------------------------------
-     Exposed as tokens so layout code can compose them, e.g.
-     `padding-bottom: calc(var(--space-4) + var(--safe-bottom))`.
+     Tokens so layout can compose them, e.g. `calc(var(--space-4) + var(--safe-bottom))`.
      Requires <meta name="viewport" content="… viewport-fit=cover"> (set). */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
@@ -294,23 +209,13 @@
 }
 
 /* ---- Accent presets ----------------------------------------------------
-   Set by `data-accent` on <html> from a per-device localStorage preference.
-   Attribute-scoped rather than :root-scoped so a settings swatch can paint itself
-   with its own preset.
-
-   Three, not five. An accent picker with a row of arbitrary hues is the stock settings
-   control; these are the three that mean something here — the water, the trees, and the
-   one warm choice for whoever wants a wedding to look like a wedding. Each one is a
-   distinct role rather than a distinct hue.
-
-   Contrast, white text / against --bg / as a meter fill on --track:
-
+   Set by `data-accent` on <html> from a per-device localStorage preference. Attribute-scoped, not
+   :root-scoped, so a settings swatch can paint itself with its own preset. White text / against --bg
+   / as a meter fill on --track:
      tarn    湖    9.10 / 8.57 / 6.90      pine    松   9.21 / 8.68 / 6.98
      rosehip 野薔薇 8.69 / 8.19 / 6.59
-
-   Every one clears AA for white text with a 1.6x margin and clears the 3:1 non-text
-   floor as a meter fill. See the accent block above for the 8px dot separation, which is
-   the constraint that decides which of them may be the DEFAULT. */
+   Each clears AA for white text with a 1.6x margin and the 3:1 non-text floor as a fill. Which may
+   be the default is decided by the 8px dot separation in the accent block above. */
 /* Tarn is spelled out even though :root already carries it, so a swatch can scope it
    locally like any other preset. */
 [data-accent="tarn"] {
@@ -331,8 +236,8 @@
   --accent-wash: #f6eaf1;
 }
 
-/* Zeroing the motion tokens is the primary reduced-motion mechanism; the global
-   fallback block in base.css is only a safety net for a hardcoded duration. */
+/* The primary reduced-motion mechanism; base.css's global block is a safety net for a hardcoded
+   duration. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --transition-fast: 0.01ms linear;

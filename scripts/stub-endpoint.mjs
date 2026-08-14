@@ -1,17 +1,14 @@
 /**
- * A local stand-in for BOTH halves of this app's backend, over one in-memory spreadsheet.
+ * A local stand-in for both halves of this app's backend, over one in-memory spreadsheet.
  *
- *   /                        the real `apps-script/Code.gs`, executed. `doGet` serves the
- *                            anonymous board; `doPost` mints a token.
+ *   /                        the real `apps-script/Code.gs`, executed: `doGet` serves the
+ *                            anonymous board, `doPost` mints a token.
  *   /v4/spreadsheets/...     enough of the Sheets API for `src/lib/sheets.js` to write through.
  *
- * BOTH ARE NEEDED NOW, and that is the point. Writes moved off Apps Script, so a stub that only
- * ran `Code.gs` would leave the entire write path — every range, every row resolution, the header
- * repair — unexercised by `scripts/drive.mjs`. And a static JSON file can answer even less: a
- * write against one round-trips as a valid reply holding the value from before the edit, which
- * proves the request left and nothing else.
- *
- * The REST half CHECKS THE BEARER TOKEN against the one the mint issued, so the driver exercises
+ * Both are needed. Writes go to the Sheets API, so a stub running only `Code.gs` leaves the whole
+ * write path — every range, every row resolution, the header repair — unexercised by
+ * `scripts/drive.mjs`, and a static JSON file answers a write with the value from before the edit.
+ * The REST half checks the bearer token against the one the mint issued, so the driver exercises
  * the real credential flow rather than a bypass.
  *
  *   node scripts/stub-endpoint.mjs [--port 5200]
@@ -111,8 +108,8 @@ function lastRowOf(sheet) {
 }
 
 /**
- * A board seven months out: some done, some overdue, some due this fortnight, and three with no
- * date at all — `nodate` is a state of its own, and a row in it must draw and count as one.
+ * A board seven months out: some done, some overdue, some due this fortnight, and three undated —
+ * `nodate` is a state of its own, and a row in it must draw and count as one.
  */
 function seed() {
   const day = (offset) => {
@@ -240,8 +237,7 @@ function writeRange(range, values) {
 
 /** @returns {{status: number, body: object}} */
 function sheetsApi(method, path, search, body, auth) {
-  // The driver has to carry a real token, or the harness would be proving something the app does
-  // not do.
+  // The driver has to carry a real token, or this proves something the app does not do.
   if (auth !== `Bearer ${TOKEN}`) {
     return { status: 401, body: { error: { message: 'stub: bad or missing bearer token' } } }
   }

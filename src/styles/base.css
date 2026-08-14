@@ -12,15 +12,19 @@ html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
-  /* Kinsoku shori: keeps 、。」 from being orphaned at the start of a line.
-     Harmless for Latin, load-bearing for Japanese. */
+  /* Kinsoku shori: keeps 、。」 from being orphaned at the start of a line. Harmless for Latin,
+     load-bearing for Japanese. */
   line-break: strict;
-  /* THE HEADER IS PINNED, SO THE TOP OF THE SCROLLPORT IS NOT THE TOP OF WHAT CAN BE SEEN.
-     `scrollIntoView({ block: 'nearest' })` measures against the scrollport and calls anything in
-     that top band already visible — so a date field or an add-a-subtask field there is left sitting
-     behind the photograph. This corrects both callers at once AND the UA's own focus scrolling,
-     which no JS change can reach. It has to be `--hero-height` for the same reason `.plan__month`
-     uses it: that token is the header's whole occupied height. */
+  /* No pull-to-refresh. Installed on iOS the gesture is a reload, and a reload lands between a
+     keystroke and a save: the text in an open edit session exists nowhere else until it is written.
+     `setSafeToReload` covers the version swap, not the gesture. On `html`, the scroller that chains
+     to the browser; on `body` it stops nothing. */
+  overscroll-behavior-y: contain;
+  /* The header is pinned, so the top of the scrollport is not the top of what can be seen:
+     `scrollIntoView({ block: 'nearest' })` treats anything in that band as visible, leaving a
+     focused date or add-a-subtask field behind the photograph. This corrects both callers and the
+     UA's own focus scrolling, which no JS change can reach. --hero-height is the header's whole
+     occupied height. */
   scroll-padding-top: var(--hero-height);
 }
 
@@ -37,10 +41,9 @@ body {
   /* break-word, never break-all: break-all splits Latin words mid-glyph. */
   overflow-wrap: break-word;
   word-break: normal;
-  /* Horizontal safe area lives here so nothing hides under a landscape notch.
-     Top/bottom insets are intentionally NOT applied globally: the sticky month
-     heading and the bottom sheet each need to paint *into* their inset and
-     pad their own content. Use var(--safe-top) / var(--safe-bottom) there. */
+  /* Horizontal safe area only, so nothing hides under a landscape notch. The top and bottom insets
+     are not global: the sticky month heading and the bottom sheet each paint *into* their inset and
+     pad their own content with var(--safe-top) / var(--safe-bottom). */
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
 }
@@ -106,13 +109,12 @@ optgroup {
   margin: 0;
   font: inherit;
   color: inherit;
-  /* letter-spacing is deliberately NOT inherited here. Any non-zero tracking
-     inserts a gap between every kana — 「このつき」 becomes 「こ の つ き」. */
+  /* letter-spacing is not inherited here: any non-zero tracking inserts a gap between every
+     kana — 「このつき」 becomes 「こ の つ き」. */
 }
 
-/* 16px MINIMUM on form controls. Mobile Safari auto-zooms the viewport when a
-   focused input's font-size is under 16px, and there is no way to zoom back
-   out — a very common and very annoying bug. Do not lower this. */
+/* 16px minimum on form controls. Mobile Safari auto-zooms the viewport when a focused input's
+   font-size is under 16px and will not zoom back out. Do not lower this. */
 input,
 select {
   font-size: max(1rem, var(--fs-body));
@@ -155,22 +157,16 @@ hr {
 }
 
 /* ---- Numerals ----------------------------------------------------------
-   Carried by every figure that sits in a column and must not jitter: a row's day number
-   and its checklist tally, a month's tally, the countdown, the board's own count. Tabular
-   figures line up while keeping the proportional letterforms of the UI sans.
-
-   Deliberately NOT on the hero percentage. `tabular-nums` gives every digit the
-   width of a `0`, and at display size a number like 11% then looks loose — the
-   dataviz rule is proportional figures for a standalone value, tabular only in
-   columns. */
+   For every figure that sits in a column and must not jitter: a row's day, its checklist tally, a
+   month's tally, the countdown, the board's count. Not on the hero percentage: `tabular-nums` gives
+   every digit the width of a `0`, so a standalone value takes proportional figures. */
 .tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
 
 /* ---- Focus -------------------------------------------------------------
-   One visible ring for everything. The default outline is only removed for
-   mouse/touch focus (:focus without :focus-visible), never for keyboard. */
+   One ring for everything, removed only for mouse/touch focus, never for keyboard. */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -191,8 +187,7 @@ hr {
 }
 
 /* ---- Scrollbars -------------------------------------------------------
-   Desktop pointers only. Touch platforms keep their native overlay
-   scrollbars, which must not be restyled or they stop auto-hiding. */
+   Desktop pointers only: restyled, a touch platform's overlay scrollbars stop auto-hiding. */
 @media (pointer: fine) {
   html {
     scrollbar-color: var(--line-input) transparent;
@@ -221,11 +216,9 @@ hr {
 }
 
 /* ---- Reduced motion ---------------------------------------------------
-   Safety net for any rule that hardcodes a duration. The authoritative
-   mechanism is the zeroed --transition-* tokens in tokens.css plus the
-   `(prefers-reduced-motion: no-preference)` guards around every @keyframes
-   animation in primitives.css — that combination avoids !important, which
-   a universal-selector override would otherwise need to win the cascade. */
+   Safety net for any rule that hardcodes a duration. The authoritative mechanism is the zeroed
+   --transition-* tokens plus the `(prefers-reduced-motion: no-preference)` guards around every
+   @keyframes block in primitives.css, which together avoid !important. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

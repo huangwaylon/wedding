@@ -1,21 +1,17 @@
 /**
- * The visual harness. A passing test suite says nothing about whether the board looks
- * right — the sibling app shipped an invisible white-on-white chart with everything
- * green — so this renders the real surfaces to static HTML with the real stylesheets:
+ * The visual harness. A passing suite says nothing about whether the board looks right, so this
+ * renders the real surfaces to static HTML with the real stylesheets:
  *
  *   npx vite-node scripts/preview.jsx     # writes scripts/preview-*.html (gitignored)
  *
  * Then load those in <iframe>s at 320 / 393 / 430 / 768 / 1440 and screenshot: open
- * `scripts/harness.html`, which documents its own query string.
+ * `scripts/harness.html`, which documents its own query string. Iframes, not a resized window —
+ * an iframe gets its own viewport, so container and media queries resolve correctly, while
+ * headless Chrome reports a different width than asked for.
  *
- * USE IFRAMES, NOT A RESIZED WINDOW. An iframe gets its own viewport, so container and
- * media queries resolve honestly; headless Chrome quietly reports a different width than
- * you asked for and every breakpoint reads wrong.
- *
- * A STATIC RENDER RUNS NO EFFECT, so what these files show is every default as it is on
- * first paint — which is the point, and also the limit: an accordion opening, a commit on
- * blur, the native date wheel and the keyboard's effect on a sheet were each verified by
- * driving the built app in a real browser instead.
+ * A static render runs no effect, so these files show every default on first paint. The
+ * accordion, commit-on-blur, the native date wheel and the keyboard's effect on a sheet are
+ * covered by `scripts/drive.mjs` instead.
  */
 
 import { copyFileSync, writeFileSync } from 'node:fs'
@@ -34,29 +30,22 @@ import { ICON_SIZE, PlusIcon } from '../src/components/icons.jsx'
 const TOKYO = 'Asia/Tokyo'
 const WEDDING_DAY = '2027-04-18'
 
-/**
- * A fixed "today", so a screenshot is comparable to yesterday's. Roughly seven months out:
- * far enough in that some tasks are done, some overdue, some due this fortnight and some
- * months away — which is the only state worth looking at.
- */
+/** A fixed "today", so a screenshot is comparable to yesterday's. Seven months out. */
 const TODAY = '2026-10-02'
-const NOW = Date.UTC(2026, 9, 2, 2, 20)
 
 const CONFIG = mergeConfig({
   partner1Name: 'Aoi',
   partner2Name: 'Ren',
   weddingDate: WEDDING_DAY,
-  // A long venue name on purpose: this is the string that broke the countdown onto a second
-  // line at 393px, and a short fixture never showed it.
+  // A long venue name: a short one never shows the countdown breaking onto two lines at 393px.
   venue: 'The 迎賓館 偕楽園 別邸',
   timezone: TOKYO,
 })
 
 /**
- * The photograph, beside the pages that reference it. These files live in `scripts/`, so
- * the app's own absolute `/wedding/hero.jpg` resolves to nothing here and the hero would
- * screenshot as a bare gradient — which is exactly the failure this harness exists to catch,
- * so it must not be the harness's own fault.
+ * The photograph, beside the pages that reference it: these files live in `scripts/`, so the app's
+ * absolute `/wedding/hero.jpg` resolves to nothing and the hero would screenshot as a bare
+ * gradient — a failure this harness exists to catch, so it must not be its own.
  */
 const PHOTO = 'preview-hero.jpg'
 copyFileSync('public/hero.jpg', `scripts/${PHOTO}`)
@@ -64,14 +53,12 @@ copyFileSync('public/hero.jpg', `scripts/${PHOTO}`)
 let counter = 0
 
 /**
- * The real twelve-month template, with a plausible spread of progress applied: the early
- * items done, several left to run out, one deliberately dateless. Hand-written fixtures
- * would not exercise the month grouping.
+ * The real twelve-month template with a spread of progress applied: early items done, several left
+ * to run out, one dateless. Hand-written fixtures would not exercise the month grouping.
  *
- * Seeded in the preview's own locale, because that is what seeding actually does — a
- * template's titles become content at the moment they are written (see templates.js), so
- * the Japanese screenshot has to show Japanese task names, not translated chrome around
- * English rows.
+ * Seeded in the preview's own locale, because that is what seeding does: a template's titles become
+ * content when written (see templates.js), so the Japanese screenshot shows Japanese task names
+ * rather than translated chrome around English rows.
  */
 function board(locale) {
   counter = 0
@@ -81,8 +68,8 @@ function board(locale) {
   })
 
   return seeded.map((task, index) => {
-    // The first nine are finished; #10 onwards are left to go overdue, which is what puts an
-    // honest gap between the headline figure and the on-schedule mark.
+    // The first nine are finished; #10 onwards go overdue, which puts a gap between the headline
+    // figure and the on-schedule mark.
     if (index < 9) return { ...task, doneAt: '2026-06-01T00:00:00.000Z' }
     // One dateless task, so the trailing "No date" group is on screen.
     if (index === 14) {
@@ -97,9 +84,8 @@ function board(locale) {
 }
 
 /**
- * Subtasks for one parent, so the tally and the checklist inside an open row are both on
- * screen. One parent only: that is the realistic case, and it is what shows that a board
- * without subtasks costs no height.
+ * Subtasks for one parent, so the tally and the checklist inside an open row are both on screen.
+ * One parent only, which also shows a board without subtasks costing no height.
  */
 function withSubtasks(tasks, locale) {
   const parent = tasks[11]
@@ -137,7 +123,7 @@ function surfaces(locale) {
 
 const noop = () => {}
 
-/** One scroll: the photograph is the header and there is no fixed bar but the FAB. */
+/** One scrolling document; the header and the FAB are the only pinned chrome. */
 function Shell({ children, fab = false }) {
   return (
     <div className="app">
@@ -152,15 +138,12 @@ function Shell({ children, fab = false }) {
 }
 
 /**
- * The whole board, top to bottom, with the one row that has a checklist opened — so the
- * editor's three fields, the checklist and the add row are all in the screenshot. `open`
- * comes from `App`'s `expanded` set, which no effect populates, so passing it here is the
- * only way to see it.
+ * The whole board, with the checklist row opened so the editor's three fields, the checklist and
+ * the add row are all in the screenshot. `open` comes from `App`'s `expanded` set, which no effect
+ * populates, so passing it here is the only way to see it.
  *
- * `canEdit` reaches the HERO, not just the body. It was hardcoded true here once, so no
- * fixture could render the View only badge — and that badge sharing the hero's last line
- * with a long venue name is exactly what broke the countdown onto two lines on the live
- * site. A harness that cannot show a case cannot protect the fix for it either.
+ * `canEdit` reaches the hero, not just the body: the View only badge shares the hero's last line
+ * with the venue name, and a fixture that cannot show a case cannot protect it.
  */
 function BoardView({ locale, canEdit = true, open = true, editing = false }) {
   const { tasks, overall } = surfaces(locale)
@@ -169,19 +152,14 @@ function BoardView({ locale, canEdit = true, open = true, editing = false }) {
     <Shell fab={canEdit}>
       <Hero
         config={CONFIG}
-        nowMs={NOW}
+        today={TODAY}
         canEdit={canEdit}
         overall={overall}
         onOpenSettings={noop}
         photo={PHOTO}
       />
       <div className="view stack">
-        <FilterChips
-          counts={overall}
-          total={overall.total}
-          filter={FILTER_ALL}
-          onFilter={noop}
-        />
+        <FilterChips counts={overall} filter={FILTER_ALL} onFilter={noop} />
         <Plan
           tasks={tasks}
           canEdit={canEdit}
@@ -203,12 +181,9 @@ function BoardView({ locale, canEdit = true, open = true, editing = false }) {
 }
 
 /**
- * The rows, on their own, with nothing above them.
- *
- * The board fixtures put the photograph and the tracker first, which is right for judging the
- * whole screen and useless for judging a row — everything worth looking at is a scroll away,
- * and `harness.html`'s `to=` selector does not survive a headless screenshot. This page is one
- * of each state, in order, with the checklist row already open.
+ * The rows on their own: one of each state, in order, with the checklist row open. In the board
+ * fixtures the photograph and the tracker put every row a scroll away, and `harness.html`'s `to=`
+ * does not survive a headless screenshot.
  */
 function RowsView({ locale, canEdit = true, editing = false }) {
   const fixtures = [
@@ -273,13 +248,10 @@ function RowsView({ locale, canEdit = true, editing = false }) {
 }
 
 /**
- * The plan around TODAY, and the month the wedding falls in.
- *
- * The board fixtures start in May 2026 and the wedding is in April 2027, so the two things the
- * heading now does — carry a month's tally, and name the one month that is the wedding's — are
- * both eleven screens down, and the `Today` line between the past and the future is with them.
- * `to=` does not survive a headless capture, so a page that cannot be screenshotted is a case
- * nothing protects. This puts all three in the first 400px.
+ * The plan around TODAY, and the month the wedding falls in. The board fixtures start in May 2026
+ * against an April 2027 wedding, so the month tally, the wedding plaque and the `Today` line are
+ * eleven screens down; `to=` does not survive a headless capture, so a surface only reachable
+ * mid-scroll needs a page of its own. This puts all three in the first 400px.
  */
 function SignView({ locale, unfiltered = true }) {
   const rows = [
@@ -329,7 +301,7 @@ function SignView({ locale, unfiltered = true }) {
 function EmptyView() {
   return (
     <Shell fab>
-      <Hero config={CONFIG} nowMs={NOW} canEdit onOpenSettings={noop} photo={PHOTO} />
+      <Hero config={CONFIG} today={TODAY} canEdit onOpenSettings={noop} photo={PHOTO} />
       <div className="view stack">
         <EmptyBoard
           canEdit
@@ -371,25 +343,22 @@ function emit(name, element, { locale = 'en', accent = 'indigo' } = {}) {
 emit('en', <BoardView locale="en" />)
 emit('en-closed', <BoardView locale="en" open={false} />)
 emit('en-viewer', <BoardView locale="en" canEdit={false} />)
-// Both modes of an open row: reading it, and editing it. A static render fires no click, so
-// `editing` is the only way either one reaches a screenshot.
+// A static render fires no click, so `editing` is the only way edit mode reaches a screenshot.
 emit('en-rows', <RowsView locale="en" />)
 emit('en-rows-editing', <RowsView locale="en" editing />)
 emit('en-rows-viewer', <RowsView locale="en" canEdit={false} />)
 emit('ja-rows', <RowsView locale="ja" />, { locale: 'ja' })
 emit('ja-rows-editing', <RowsView locale="ja" editing />, { locale: 'ja' })
 emit('en-empty', <EmptyView />)
-/* The sign, the tally, the wedding month and the Today line — plus the FILTERED version, where
-   every figure that describes a whole month is deliberately withheld. */
+/* Plus the filtered version, where every figure describing a whole month is withheld. */
 emit('en-sign', <SignView locale="en" />)
 emit('en-sign-filtered', <SignView locale="en" unfiltered={false} />)
 emit('ja-sign', <SignView locale="ja" />, { locale: 'ja' })
 emit('ja', <BoardView locale="ja" />, { locale: 'ja' })
 emit('ja-closed', <BoardView locale="ja" open={false} />, { locale: 'ja' })
 
-// One file per NON-DEFAULT accent, so a preset that breaks a contrast pair is visible rather
-// than merely measured. The default is skipped because every other page above already renders
-// it — a duplicate would be one more file to look at saying nothing new.
+// One file per non-default accent, so a preset that breaks a contrast pair is visible rather than
+// merely measured. The default is skipped: every page above renders it.
 for (const accent of ACCENTS) {
   if (accent === DEFAULT_ACCENT) continue
   emit(`en-${accent}`, <BoardView locale="en" open={false} />, { accent })

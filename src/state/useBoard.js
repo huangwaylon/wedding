@@ -1,23 +1,11 @@
 /**
  * The board: tasks, config, and every mutation.
  *
- * Four things here are load-bearing.
- *
- * IT PAINTS FROM THE SNAPSHOT BEFORE IT ASKS THE NETWORK ANYTHING. Even a REST read is a
- * round trip, so a launch that waited for one would show a blank board every time.
- *
- * EVERY MUTATION IS OPTIMISTIC. The local edit lands instantly and a failure rolls back to the
- * snapshot of state taken before the edit — not to a hand-computed inverse, which is where
- * this kind of code usually goes wrong.
- *
- * A WRITE RETURNS NOTHING BUT SUCCESS. A Sheets write answers with the ranges it touched and
- * nothing about the rest of the board, so the optimistic state IS the state until something
- * re-reads — and the throttled focus refresh is what does that. Reading the board back after
- * every save would make one device pick up the other's edits sooner, at the cost of doubling
- * every write; the refresh already covers it.
- *
- * REFRESH ON FOCUS IS THROTTLED. Two people and any number of planners share one sheet with no
- * push channel, so the board re-reads when the app comes forward — do not remove the floor.
+ * It paints from the snapshot before touching the network: even a REST read is a round trip, so a
+ * launch that waited for one would show a blank board. Every mutation is optimistic; a failure
+ * reverts the rows it touched (`revert`). A write returns nothing but success — a Sheets write
+ * answers with the ranges it touched — so the optimistic state IS the state until the focus refresh
+ * re-reads, throttled to `REFRESH_FLOOR_MS`: one sheet, several editors, no push channel.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -34,20 +22,16 @@ const REFRESH_FLOOR_MS = 30_000
 export const STATUS = { LOADING: 'loading', READY: 'ready', ERROR: 'error' }
 
 export function newId() {
-  // Available in every browser this app targets; the fallback exists only so the module can be
-  // imported under vitest's `node` environment without a DOM.
+  // `randomUUID` exists in every targeted browser; the fallback is for vitest's `node` environment.
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
   return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
 }
 
 /**
- * A pending write, as DATA rather than as a closure, which is the whole reason folding is
- * possible: a `() => api.updateTasks([task])` in a queue is opaque, and two of them cannot be
- * recognised as the same row written twice.
- *
- * `create` and `update` both carry a LIST, always. One row and forty are the same plan, so a
- * fold never changes an op's shape — and a single-row op beside a batched one would be two code
- * paths to keep in step for no gain, since the client is the writer and a batch always lands.
+ * A pending write, as data rather than a closure: two queued `() => api.updateTasks([task])` cannot
+ * be recognised as the same row written twice, and `foldWrite` needs the plan inspectable. `create`
+ * and `update` always carry a list, so one row and forty are the same plan, a fold never changes
+ * an op's shape, and there is no single-row path to keep in step.
  */
 const REQUESTS = {
   create: (plan) => api.createTasks(plan.tasks),
@@ -59,42 +43,32 @@ const REQUESTS = {
 }
 
 /**
- * Two ADJACENT writes as one request, or null when they must stay two.
+ * Two adjacent writes as one request, or null when they must stay two.
  *
- * ADJACENCY IS THE ENTIRE SAFETY ARGUMENT. Only the write at the TAIL of the queue is ever
- * offered here, and a write that has been dispatched has already left the queue — so a fold
- * can never move an operation past another one touching the same row, and it can never touch a
- * request already in flight. Everything it does merge is either the same row written twice,
- * where the later payload IS the outcome of both because a write rewrites the whole row from
- * it, or rows batched into one op that writes them in list order.
+ * Adjacency is the whole safety argument: only the undispatched tail is offered here, so a fold
+ * cannot reorder writes to one row and cannot touch a request in flight. It merges the same row
+ * written twice — the later payload is the outcome of both, a write rewriting the whole row from
+ * it — or rows batched into one op, written in list order.
  *
- * WHAT IT DELIBERATELY REFUSES: anything across ops. `update` then `delete` on one row is the
- * resurrection defect `TaskDetail`'s unmount flush already cost once — folding it would either
- * write an empty `deleted_at` over the tombstone or drop an edit somebody watched land.
- * `delete` then `restore` must stay two writes for the same reason.
+ * Never across ops: `update` then `delete` would write an empty `deleted_at` over the tombstone or
+ * drop an edit somebody watched land, and `delete` then `restore` is that reversed.
  *
  * @param {object} queued the tail of the queue, undispatched
- * @param {object} incoming
- * @returns {object|null} the plan that replaces `queued`, or null to leave it alone
+ * @returns {object|null} the plan replacing `queued`, or null to leave it alone
  */
 export function foldWrite(queued, incoming) {
   if (!queued || !incoming) return null
   if (queued.op !== incoming.op && !(queued.op === 'create' && incoming.op === 'update')) return null
 
-  /**
-   * Rows batched into one op. LAST WRITER WINS PER ROW, in place: a row edited twice inside one
-   * batch must appear once, or the outcome would depend on which payload was written second.
-   */
+  // Rows batched into one op, last writer wins per row and in place: a row edited twice in one
+  // batch must appear once, or the outcome depends on payload order.
   if (queued.op === incoming.op && (queued.op === 'create' || queued.op === 'update')) {
     return { op: queued.op, tasks: mergeById(queued.tasks, incoming.tasks) }
   }
 
-  /**
-   * A row created and then edited before its create was sent — ticking a subtask typed a second
-   * ago. It stays a `create`, carrying the final values, which is what two sequential writes
-   * would have left. Only when the create actually holds that row: an update to anything else
-   * has to stay behind it, because the row it names does not exist yet.
-   */
+  // A row created then edited before its create was sent stays a `create` carrying the final
+  // values, which two sequential writes would also leave — but only if the create holds that row,
+  // an update to anything else having to wait for the row to exist.
   if (queued.op === 'create' && incoming.op === 'update') {
     const known = incoming.tasks.every((task) => queued.tasks.some((held) => held.id === task.id))
     if (!known) return null
@@ -107,25 +81,46 @@ export function foldWrite(queued, incoming) {
 /** Append, replacing in place anything already present under the same id. */
 function mergeById(held, incoming) {
   const merged = held.slice()
+  const at = new Map(merged.map((row, index) => [row.id, index]))
   for (const task of incoming) {
-    const at = merged.findIndex((row) => row.id === task.id)
-    if (at < 0) merged.push(task)
-    else merged[at] = task
+    const found = at.get(task.id)
+    if (found === undefined) {
+      at.set(task.id, merged.push(task) - 1)
+    } else {
+      merged[found] = task
+    }
   }
   return merged
 }
 
 /**
- * One request at a time, adjacent writes folded, and every caller told what happened.
+ * Undo one optimistic edit without undoing anybody else's.
  *
- * A PLAIN OBJECT RATHER THAN A PROMISE CHAIN IN A REF, because the two rules it holds are the
- * ones a source check cannot verify: that a request is never dispatched while another is out,
- * and that a caller whose write was folded away does not act as though its own landed
- * separately. Both are invisible on screen, so both have to be callable — `test/board.test.js`
- * drives this directly.
+ * Restoring the whole pre-edit array would undo any later edit that has already landed
+ * optimistically: the queue is serial, but the next job's edit lands at push time. So only the rows
+ * this edit touched are reverted, against the current array, identified by comparing `after` to
+ * `before` by reference — exact because every `optimistic` here passes untouched rows through
+ * unchanged, so identity cannot fall out of step with the updater. A row absent from `before` was a
+ * failed create and is dropped.
+ */
+export function revert(current, before, after) {
+  const was = new Map(before.map((row) => [row.id, row]))
+  const touched = new Set()
+  for (const row of after) if (was.get(row.id) !== row) touched.add(row.id)
+  if (!touched.size) return current
+  return current
+    .filter((row) => !touched.has(row.id) || was.has(row.id))
+    .map((row) => (touched.has(row.id) ? was.get(row.id) : row))
+}
+
+/**
+ * One request at a time, adjacent writes folded, every caller told what happened.
  *
- * Callers are settled newest first: on a failure each one restores the tasks it captured, and
- * the OLDEST snapshot is the only one that predates the whole batch, so it has to land last.
+ * A plain object rather than a promise chain in a ref: its two rules are invisible on screen and
+ * unverifiable by a source check — a request is never dispatched while another is out, and a caller
+ * whose write was folded away does not act as though its own landed separately — so both have to be
+ * callable, and `test/board.test.js` drives them. Callers settle newest first: each restores the
+ * tasks it captured, and the oldest snapshot, the only one predating the batch, lands last.
  *
  * @param {(plan: object) => Promise<unknown>} send
  */
@@ -148,8 +143,7 @@ export function createWriteQueue(send) {
         } catch (error) {
           failure = error
         }
-        // Every caller of this job stops waiting BEFORE any of them is settled, so the first
-        // one to look sees a truthful `pending`.
+        // All callers stop waiting before any is settled, so `pending` stays truthful.
         waiting -= job.settle.length
         for (let i = job.settle.length - 1; i >= 0; i -= 1) {
           if (failure) job.settle[i].reject(failure)
@@ -208,25 +202,29 @@ export function useBoard({ editKey, onUnauthorized }) {
 
   const lastRead = useRef(0)
   const reading = useRef(false)
+  /** The read in flight, so a forced refresh can wait it out instead of giving up. */
+  const inFlight = useRef(null)
+  /** The rows on screen now, for guards that must not be a render behind. */
+  const tasksRef = useRef(tasks)
+  tasksRef.current = tasks
+  /** Read inside `run` without making every mutation callback depend on it. */
+  const staleRef = useRef(true)
+  staleRef.current = stale
   const unauthorizedRef = useRef(onUnauthorized)
   unauthorizedRef.current = onUnauthorized
 
-  /**
-   * Every write, in order, with adjacent ones folded into a single request. Built lazily and
-   * once: a queue rebuilt on a render would drop whatever was still in it.
-   */
+  // Every write, in order, adjacent ones folded. Built once: a queue rebuilt on a render would
+  // drop whatever was still in it.
   const queue = useRef(null)
   if (!queue.current) queue.current = createWriteQueue((plan) => REQUESTS[plan.op](plan))
 
   const config = useMemo(() => mergeConfig(sheetConfig), [sheetConfig])
 
   /**
-   * The ONE place a failure is classified, recorded, and reported upward if it is a refused key.
-   *
-   * Both halves of the app can be told the key is dead: a write obviously, and a READ too, because
-   * an editor reads through the Sheets API and a rotated key mints nothing. A second copy of this
-   * is how one of those two stops flagging it — and a read that quietly failed would leave a stale
-   * board on screen with every edit control still on it.
+   * The only place a failure is classified, recorded, and reported upward when the key is refused.
+   * A read can be told the key is dead too — an editor reads through the Sheets API and a rotated
+   * key mints nothing — so a second copy is how one of the two stops flagging it, leaving a stale
+   * board on screen with every edit control on it.
    */
   const fail = useCallback((failure) => {
     const code = failure?.code ?? API_ERROR.TRANSIENT
@@ -243,44 +241,66 @@ export function useBoard({ editKey, onUnauthorized }) {
     setError(null)
     setStale(false)
     writeSnapshot(board.tasks, board.config)
-    // `board.needsSetup` is deliberately not tracked: a spreadsheet whose tabs do not exist yet
-    // reads as an empty board, and the empty board already says the right thing to an editor
-    // and to a viewer. The first write builds the structure.
+    // `needsSetup` is not tracked: a spreadsheet without its tabs reads as an empty board, which
+    // says the right thing to an editor and to a viewer. The first write builds the structure.
   }, [])
 
+  /**
+   * Split from `refresh` so `refresh` holds only the rules about whether to read, and so a forced
+   * caller has a promise to wait on.
+   *
+   * @returns {Promise<boolean>} whether a board was accepted
+   */
+  const readOnce = useCallback(async () => {
+    reading.current = true
+    // Re-checked after the await: a tick landing during a read is a write this board predates, and
+    // accepting it un-ticks the row on screen. `issued` catches a write that started and finished
+    // inside the window, which `pending` cannot see.
+    const before = queue.current.issued
+    try {
+      const board = await api.readBoard()
+      if (queue.current.pending > 0 || queue.current.issued !== before) return false
+      accept(board)
+      return true
+    } catch (failure) {
+      fail(failure)
+      // A failed refresh must never blank a board already on screen: the snapshot is stale, not
+      // wrong.
+      setStatus((previous) => (previous === STATUS.LOADING ? STATUS.ERROR : previous))
+      return false
+    } finally {
+      reading.current = false
+    }
+  }, [accept, fail])
+
+  /**
+   * @param {object} [opts]
+   * @param {boolean} [opts.force] skip the throttle floor and wait out a read in flight.
+   *   `saveConfig`, `compact` and the seed have no optimistic half, so each reports success on this
+   *   re-read landing; returning early because a focus read was open confirms a save over stale
+   *   values on screen.
+   * @returns {Promise<boolean>} whether a board was accepted
+   */
   const refresh = useCallback(
     async ({ force = false } = {}) => {
-      if (reading.current) return
-      // A read must never land on top of an unsaved write. Its board was composed before that
-      // write reached the sheet, so accepting it would wipe the optimistic edit off the screen.
-      if (queue.current.pending > 0) return
-      const at = Date.now()
-      if (!force && at - lastRead.current < REFRESH_FLOOR_MS) return
-      reading.current = true
-      lastRead.current = at
-      // AND THE CHECK HAS TO BE MADE AGAIN AFTER THE AWAIT. A read takes a moment, so a tick
-      // landing during one is a write this board predates — accepted, it un-ticks the row on
-      // screen, which reads as the app losing the tap. `issued` catches a write that both
-      // started AND finished inside the window, which `pending` cannot see.
-      const before = queue.current.issued
-      try {
-        const board = await api.readBoard()
-        if (queue.current.pending > 0 || queue.current.issued !== before) return
-        accept(board)
-      } catch (failure) {
-        fail(failure)
-        // A failed refresh must never blank a board that is already on screen. The snapshot is
-        // stale, not wrong, and saying so beats an error page.
-        setStatus((previous) => (previous === STATUS.LOADING ? STATUS.ERROR : previous))
-      } finally {
-        reading.current = false
+      if (reading.current) {
+        if (!force) return false
+        await inFlight.current
       }
+      // A read must never land on an unsaved write: its board was composed before that write
+      // reached the sheet, so accepting it wipes the optimistic edit off the screen.
+      if (queue.current.pending > 0) return false
+      const at = Date.now()
+      if (!force && at - lastRead.current < REFRESH_FLOOR_MS) return false
+      lastRead.current = at
+      inFlight.current = readOnce()
+      return inFlight.current
     },
-    [accept, fail],
+    [readOnce],
   )
 
-  // Re-read when the key changes: a device that has just been handed one reads through the
-  // Sheets API instead of `doGet`, and one that has just given it up must go the other way.
+  // Re-read when the key changes: a device handed one reads through the Sheets API instead of
+  // `doGet`, and one that gave it up goes the other way.
   useEffect(() => {
     refresh({ force: true })
   }, [refresh, editKey])
@@ -299,53 +319,63 @@ export function useBoard({ editKey, onUnauthorized }) {
   }, [refresh])
 
   /**
-   * Every mutation goes through here, and there is exactly one of these on purpose.
-   *
-   * Bump `saving`, queue the write, settle the rows, classify the failure, flag a rejected key,
-   * decrement `saving`: written out once per mutation, one copy will eventually forget the
-   * `unauthorized` callback and a rotated key will leave the app still showing edit controls.
-   *
-   * `optimistic` is the only variable part. With it, the local edit lands immediately and any
-   * failure restores exactly what was there before — captured through the updater rather than
-   * by closing over `tasks`, so two edits in quick succession cannot resurrect the first one's
-   * starting point.
-   *
-   * SETTLING IS "NOTHING IS IN FLIGHT", NOT A PER-ROW LEDGER. The queue dispatches one request
-   * at a time, so once it is empty no write is outstanding and no row may still claim to be
-   * pending. That is one rule rather than bookkeeping each op has to get right, and a row left
-   * dimmed forever is exactly the bug the bookkeeping version would produce.
+   * Nothing is in flight, so no row may still claim to be pending. Keyed on an empty queue rather
+   * than a per-op ledger, which is how a row ends up dimmed forever: the queue dispatches one
+   * request at a time. `run` calls it in `finally`, so it covers the failure path — reads happen
+   * only on focus, so nothing else clears a row dimmed by a write that failed behind one that
+   * landed.
+   */
+  const settle = useCallback(() => {
+    if (queue.current.pending > 0) return
+    setTasks((previous) =>
+      previous.some((task) => task.pending)
+        ? previous.map((task) => (task.pending ? { ...task, pending: false } : task))
+        : previous,
+    )
+  }, [])
+
+  /**
+   * The only mutation wrapper: bump `saving`, queue the write, settle the rows, classify the
+   * failure, flag a rejected key, decrement `saving`. Written out per mutation, one copy eventually
+   * forgets the `unauthorized` callback and a rotated key leaves the app showing edit controls.
+   * `optimistic` is the only variable part, and the rows a failure reverts to are captured through
+   * the updater rather than by closing over `tasks`.
    *
    * @param {object} plan the write, as data — see `REQUESTS` and `foldWrite`
    * @param {(tasks: object[]) => object[]} [optimistic]
    * @returns {Promise<boolean>} whether it landed
    */
-  const run = useCallback(async (plan, optimistic) => {
-    let rollback = null
-    if (optimistic) {
-      setTasks((previous) => {
-        rollback = previous
-        return optimistic(previous)
-      })
-    }
-    setSaving((count) => count + 1)
-    try {
-      await queue.current.push(plan)
-      if (queue.current.pending === 0) {
-        setTasks((previous) =>
-          previous.some((task) => task.pending)
-            ? previous.map((task) => (task.pending ? { ...task, pending: false } : task))
-            : previous,
-        )
+  const run = useCallback(
+    async (plan, optimistic) => {
+      let before = null
+      let after = null
+      if (optimistic) {
+        setTasks((previous) => {
+          before = previous
+          after = optimistic(previous)
+          return after
+        })
       }
-      return true
-    } catch (failure) {
-      if (rollback) setTasks(rollback)
-      fail(failure)
-      return false
-    } finally {
-      setSaving((count) => count - 1)
-    }
-  }, [fail])
+      setSaving((count) => count + 1)
+      try {
+        await queue.current.push(plan)
+        // A landed write proves the endpoint and the key are fine, so an earlier failure's notice
+        // comes down; otherwise it sits there until a read happens to succeed. Not while `stale`,
+        // where the notice is about the board coming from the device, which a write does not
+        // change.
+        if (!staleRef.current) setError(null)
+        return true
+      } catch (failure) {
+        if (before) setTasks((current) => revert(current, before, after))
+        fail(failure)
+        return false
+      } finally {
+        setSaving((count) => count - 1)
+        settle()
+      }
+    },
+    [fail, settle],
+  )
 
   const addTask = useCallback(
     (draft) => {
@@ -355,21 +385,32 @@ export function useBoard({ editKey, onUnauthorized }) {
     [run],
   )
 
+  /**
+   * An update may not clear a tombstone, and this is the only guard covering every route to it.
+   *
+   * `update` rewrites the whole row from its payload, so an empty `deleted_at` resurrects a deleted
+   * task, wearing whatever edit preceded the delete and with its subtasks still tombstoned, the
+   * cascade's rows not being in this write. `TaskDetail` disarms its unmount flush on its own
+   * delete and save, but a row also unmounts when a refresh brings back a board in which the other
+   * editor deleted it, and that flush still holds the pre-delete task. Deciding it against the row
+   * the board holds now covers both. A row absent altogether was compacted out; `restore`
+   * legitimately clears the cell and does not come through here.
+   */
   const editTask = useCallback(
-    (task) =>
-      run({ op: 'update', tasks: [task] }, (previous) =>
+    (task) => {
+      const current = tasksRef.current.find((row) => row.id === task.id)
+      if (!current || (!isLive(current) && isLive(task))) return Promise.resolve(false)
+      return run({ op: 'update', tasks: [task] }, (previous) =>
         previous.map((row) => (row.id === task.id ? { ...task, pending: true } : row)),
-      ),
+      )
+    },
     [run],
   )
 
   /**
-   * A subtask is a task with a parent and no date. It goes through the same `run` as everything
-   * else — a second write path would be another hand-written try/catch, which is exactly what
-   * `run` exists to prevent.
-   *
-   * ENTERING FIVE IN A ROW IS THE DESIGNED-FOR GESTURE, so the second onwards are typed while
-   * the first is still out. The queue folds them into one `create`.
+   * A subtask is a task with a parent and no date, written through the same `run`; a second write
+   * path would be another hand-written try/catch. Five in a row is the designed-for gesture, so the
+   * second onwards are typed while the first is out and the queue folds them into one `create`.
    */
   const addSubtask = useCallback(
     (parent, title) => {
@@ -389,9 +430,8 @@ export function useBoard({ editKey, onUnauthorized }) {
   )
 
   /**
-   * Done is a timestamp, not a boolean, because "when did this get finished" is worth keeping
-   * and because a blank cell is the obvious spelling of not-done in a spreadsheet somebody may
-   * open by hand.
+   * Done is a timestamp, not a boolean: when it was finished is worth keeping, and a blank cell is
+   * the obvious spelling of not-done in a spreadsheet somebody may open by hand.
    */
   const toggleDone = useCallback(
     (task) => editTask({ ...task, doneAt: task.doneAt ? '' : new Date().toISOString() }),
@@ -399,8 +439,8 @@ export function useBoard({ editKey, onUnauthorized }) {
   )
 
   /**
-   * The write cascades to subtasks in one request, so the optimistic update has to as well —
-   * otherwise the children stay on screen for a moment and then vanish when the read lands.
+   * The write cascades to subtasks in one request, so the optimistic update must too, or children
+   * linger for a moment and vanish when the read lands.
    */
   const stamp = (id, deletedAt) => (previous) =>
     previous.map((row) =>
@@ -415,9 +455,9 @@ export function useBoard({ editKey, onUnauthorized }) {
   const restoreTask = useCallback((id) => run({ op: 'restore', id }, stamp(id, '')), [run])
 
   /**
-   * Seed a starter checklist. Deliberately NOT optimistic: forty rows appearing and then
-   * vanishing on a failure is worse than a moment of a spinner, and this runs once in the life
-   * of a board. The read afterwards is what puts them on screen.
+   * Seed a starter checklist. Not optimistic: forty rows appearing and then vanishing on a failure
+   * is worse than a moment of a spinner, and this runs once in the life of a board. The read
+   * afterwards puts them on screen.
    *
    * @returns {Promise<number>} how many tasks were seeded, or 0 on any failure
    */
@@ -435,10 +475,9 @@ export function useBoard({ editKey, onUnauthorized }) {
   )
 
   /**
-   * NOT OPTIMISTIC, AND THE ONE MUTATION THE SHEET STILL WAITS FOR. Giving it an optimistic
-   * half is cheap and would be wrong: Settings is where somebody changes the zone and the
-   * wedding date, and drawing a new countdown that then reverts is worse than a spinner on the
-   * button. The read afterwards is what the new values arrive by.
+   * Not optimistic either, and the one mutation the sheet waits for: Settings is where the zone and
+   * the wedding date change, and a new countdown that then reverts is worse than a spinner on the
+   * button. The read afterwards is how the new values arrive.
    */
   const saveConfig = useCallback(
     async (partial) => {
@@ -460,11 +499,9 @@ export function useBoard({ editKey, onUnauthorized }) {
   )
 
   /**
-   * Tombstoned rows worth offering a Restore for.
-   *
-   * A subtask whose parent is ALSO deleted is excluded: the delete cascaded, so restoring the
-   * parent brings it back too. Listing it separately turns one delete into four restore rows,
-   * three of which would resurrect an orphan under a still-deleted parent.
+   * Tombstoned rows worth a Restore. A subtask whose parent is also deleted is excluded: the delete
+   * cascaded, so restoring the parent brings it back. Listing it separately turns one delete into
+   * four restore rows, three of which resurrect an orphan under a still-deleted parent.
    */
   const deletedTasks = useMemo(() => {
     const gone = new Set(tasks.filter((task) => !isLive(task)).map((task) => task.id))
@@ -475,7 +512,7 @@ export function useBoard({ editKey, onUnauthorized }) {
     tasks,
     deletedTasks,
     config,
-    /** The spreadsheet's OWN zone, only used to warn when it disagrees with config. */
+    /** The spreadsheet's own zone, used only to warn when it disagrees with config. */
     sheetTimeZone,
     status,
     error,
