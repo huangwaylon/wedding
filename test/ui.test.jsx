@@ -916,6 +916,37 @@ describe('the hero', () => {
     expect(ruleFor(app, '.hero__sub')).toMatch(/min-width: 0/)
   })
 
+  it('hands the status-bar strip to the page, and darkens the inset so its glyphs stay legible', () => {
+    // `default` leaves iOS owning that strip in an installed app: it draws its own backdrop over the
+    // scrolling document there, so the list shows through above the photograph and `position: fixed`
+    // cannot cover it — the strip is not the web view's to paint. `black-translucent` hands it to the
+    // page, `env(safe-area-inset-top)` then reports the inset, and `--hero-photo`'s band composes it.
+    expect(html).toMatch(
+      /name="apple-mobile-web-app-status-bar-style" content="black-translucent"/,
+    )
+
+    // The glyphs are white as a result, and they sit on the picture. A wash over the inset is the
+    // only thing between them and a blown-out sky. 0.55 is the alpha `--photo-control` is held to,
+    // where the harness measures white at 4.03:1 over that worst case.
+    const top = /--photo-scrim-top:([\s\S]*?);/.exec(code(tokens))
+    expect(top, '--photo-scrim-top missing').toBeTruthy()
+    expect(top[1]).toMatch(/to bottom/)
+    const first = /rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/.exec(top[1])
+    expect(Number(first[4]), 'below 0.55 the status-bar glyphs are unmeasured').toBeGreaterThanOrEqual(
+      0.55,
+    )
+    for (const channel of [1, 2, 3]) {
+      expect(Number(first[channel]), 'the wash must be dark under white glyphs').toBeLessThan(64)
+    }
+
+    // A MULTIPLE of --safe-top, so it is exactly zero where there is no inset. Any constant added to
+    // it — even a few px of softening — puts a dark band across the top of the photograph on every
+    // desktop and in every harness screenshot.
+    expect(top[1], 'the fade must be scaled by the inset, not offset from it').toMatch(
+      /calc\(\s*var\(--safe-top\)\s*\*\s*[\d.]+\s*\)/,
+    )
+  })
+
   it('keeps the scrim a gradient whose dense end is dark enough to read white on', () => {
     // THE contrast mechanism for every word over the photograph. The background there is
     // unknown, so the type is measured against the worst case the scrim allows — its end stop
@@ -954,7 +985,7 @@ describe('the hero', () => {
     // the photo is still there.
     const scrimRule = ruleFor(app, '.hero__scrim')
     expect(scrimRule, '.hero__scrim rule missing').toBeTruthy()
-    expect(scrimRule).toMatch(/background: var\(--photo-scrim\)/)
+    expect(scrimRule).toMatch(/background: var\(--photo-scrim-top\), var\(--photo-scrim\)/)
     expect(scrimRule).toMatch(/position: absolute/)
     expect(scrimRule).toMatch(/inset: 0/)
     // The shadow on the type is belt and braces for the sliver above the gradient's dense end,

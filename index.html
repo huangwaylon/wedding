@@ -50,7 +50,19 @@
          standards-track name Chromium asks for. -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!--
+      `black-translucent`, and it is what makes the header reach the top of the screen. With
+      `default`, iOS owns the status-bar strip in an installed app: it draws its own backdrop over
+      the scrolling document there, so the list showed through above the photograph and no amount of
+      `position: fixed` could cover it — the strip is not the web view's to paint. `black-translucent`
+      hands the strip to the page, `env(safe-area-inset-top)` then reports the inset, and
+      `--hero-photo`'s band already composes it, so the photograph fills it.
+
+      The glyphs turn white as a result. `--photo-scrim-top` is what keeps them legible over a bright
+      sky; a crop whose top strip is dark is still the thing to avoid, for the picture's sake rather
+      than the clock's.
+    -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Wedding" />
     <!--
       An allowlist. `script-src 'self'` is possible because no third-party JavaScript runs here:

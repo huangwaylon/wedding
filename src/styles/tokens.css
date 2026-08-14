@@ -45,6 +45,18 @@
     rgba(20, 23, 15, 0.38) 62%,
     rgba(20, 23, 15, 0.78) 100%
   );
+  /* The OS status bar sits ON the photograph — the web view owns that strip, and its glyphs are
+     white. This is what keeps them legible over a bright sky: 0.55 alpha measures 4.03:1 for white
+     over a blown-out white sky, the same figure --photo-control is held to. The fade is a MULTIPLE
+     of --safe-top, so it is exactly zero where there is no inset: a constant extent would put a dark
+     band across the top of the picture on every desktop and in every harness screenshot. The bottom
+     scrim cannot do this job — one gradient reaching both ends darkens the middle, which is where
+     the picture is. */
+  --photo-scrim-top: linear-gradient(
+    to bottom,
+    rgba(20, 23, 15, 0.55) 0,
+    rgba(20, 23, 15, 0) calc(var(--safe-top) * 1.4)
+  );
   --photo-shadow: 0 1px 12px rgba(20, 23, 15, 0.55);
   /* A dark disc, so a control's glyph on the photograph stays white over any pixel: 4.03:1 over a
      blown-out sky at 0.55, 2.73:1 at 0.42, which misses the 3:1 graphic floor. */

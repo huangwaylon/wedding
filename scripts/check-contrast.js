@@ -196,6 +196,19 @@ add(
   contrast('#ffffff', over(SCRIM, SCRIM_ALPHA, '#ffffff')),
   4.5,
 )
+
+/**
+ * The OS status bar's glyphs, which sit on the photograph: the web view owns that strip, so they are
+ * white and --photo-scrim-top is all they have. Its FIRST stop is the one under them, and they are
+ * graphics rather than text, so the floor is 3:1.
+ */
+const TOP_STOP = /rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/.exec(token('photo-scrim-top'))
+const TOP = `#${[1, 2, 3].map((i) => Number(TOP_STOP[i]).toString(16).padStart(2, '0')).join('')}`
+add(
+  'white status-bar glyphs on the top scrim over a white sky',
+  contrast('#ffffff', over(TOP, Number(TOP_STOP[4]), '#ffffff')),
+  3,
+)
 // --photo-ink-2 is the countdown and the venue, both --fs-caption: no large-text relief.
 const SCRIMMED = over(SCRIM, SCRIM_ALPHA, '#ffffff')
 add(

@@ -327,10 +327,12 @@ vertical crop; check a replacement at 393px wide and at the 48rem layout.
 
 Two constraints on the crop, both from the band being pinned:
 
-- The top ~60px sits under the iOS status bar, which draws **dark** glyphs
-  (`apple-mobile-web-app-status-bar-style: default`) and which the scrim does not reach — it is
-  fully transparent until 28% down. Compose so that strip reads light. A dark canopy across the top
-  makes the clock and battery unreadable, and the app has no channel for that pixel.
+- The top of the picture is under the iOS status bar. The page owns that strip
+  (`apple-mobile-web-app-status-bar-style: black-translucent`), so the glyphs are white and
+  `--photo-scrim-top` darkens the inset behind them — measured at 4.03:1 by `npm run contrast`. The
+  wash is scaled by `env(safe-area-inset-top)`, so it is exactly zero on anything without an inset.
+  A crop whose top strip is already dark therefore loses that area to the wash twice over; compose
+  it light.
 - The band is on screen at every scroll position, so it is read for as long as the app is open.
 
 Regenerate with two `sips` passes, never one — combining `-c` with `--resampleHeightWidth` silently

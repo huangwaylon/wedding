@@ -303,6 +303,7 @@ Measured, and `npm run contrast` re-checks every pair:
 | `--ink-3` on an accent wash | not measured | forbidden — ~4.6:1 is no margin at 13px, and kanji at low contrast is unreadable in a way Latin is not. `check-contrast` measures `--ink` and `--ink-2` on every preset's wash and not `--ink-3`, because nothing may use it. The wedding plaque is the only rule consuming `--accent-wash` and its label and tally are `--ink-2` (6.74:1 worst case) |
 | `--line-input` on surface / bg / sunken | 4.00 / 3.77 / 3.38 | WCAG 1.4.11's 3:1 on all three, `.chip` and `.btn--secondary` swapping their fill to `--sunken` on hover while keeping it |
 | white type over `--photo-scrim`'s dense end, on a blown-out sky | 8.98:1 | the scrim is the contrast mechanism, the backdrop being unmeasurable; lightening the end stop fails AA |
+| white OS status-bar glyphs over `--photo-scrim-top`, on a blown-out sky | 4.03:1 | the page owns that strip, so its glyphs are ours to make legible; 3:1, they being graphics |
 | accent vs `--good` / `--critical`, in OKLab | tarn 0.198/0.202, pine 0.134/0.176, rosehip 0.260/0.128 | 0.15 is comfortable on `.dot--soon`'s 8px disc, so `tarn` is the only possible default |
 
 - Whoever picks pine or rosehip accepts a `soon` dot they may not separate. Never add a preset without
@@ -359,7 +360,19 @@ Measured, and `npm run contrast` re-checks every pair:
 - `.hero` is `position: fixed`, not `sticky`: WebKit does not promote a sticky element to its own layer, so
   a later promoted element (`.chips`'s `mask-image`, row images) composites above it and the list draws over
   the photograph mid-flick. `.plan__month` is still sticky; the pairing is gone. The containing block is the
-  viewport, so the horizontal safe-area insets repeat here.
+  viewport, so the horizontal safe-area insets repeat here. `.hero` also carries an opaque
+  `background-color` as a backstop: the two bands fill its box between them, so it is never seen, and it is
+  what guarantees no row can appear inside the header's own rectangle.
+- `apple-mobile-web-app-status-bar-style` is `black-translucent`, and `position: fixed` is not sufficient
+  without it. Under `default`, iOS owns the status-bar strip in an installed app and draws its own backdrop
+  over the scrolling document there, so the list shows through above the photograph and no fixed element can
+  cover it — the strip is not the web view's to paint. `black-translucent` hands it to the page,
+  `env(safe-area-inset-top)` then reports the inset, and `--hero-photo`'s band already composes it.
+- The glyphs are white as a consequence, and they sit on the picture. `--photo-scrim-top` is the wash that
+  keeps them legible, at the alpha `--photo-control` is held to. Its extent is a multiple of `--safe-top`,
+  so it is exactly zero without an inset; any constant added to it puts a dark band across the top of the
+  photograph on every desktop and in every harness screenshot. `.hero__scrim` lists it above
+  `--photo-scrim`, because one gradient reaching both ends darkens the middle, where the picture is.
 - `--hero-height` is the header's whole occupied height and must be exact, a fixed header reserving no flow
   space. Four things offset by it: `.views`'s padding, `.plan__month`'s sticky `top`, `html`'s
   `scroll-padding-top` (or `scrollIntoView` leaves a focused field behind the photograph) and the FAB's

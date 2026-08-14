@@ -55,6 +55,10 @@
   margin-inline: auto;
   max-width: var(--column-max);
   z-index: var(--z-header);
+  /* A backstop, not decoration. The two bands below fill this box between them, so this is never
+     seen — but it is what guarantees that no scrolling row can appear inside the header's own
+     rectangle if one of them ever fails to paint. */
+  background-color: var(--surface);
   /* One local stacking context, so no ancestor's z-index lifts the scrim, the gear or the type
      above the FAB. */
   isolation: isolate;
@@ -90,11 +94,14 @@
 }
 
 /* The contrast mechanism for every word over the photograph — see --photo-scrim for the measured
-   worst case. Lighten its end stop and white type over a bright sky fails AA. */
+   worst case. Lighten its end stop and white type over a bright sky fails AA.
+
+   TWO gradients, listed top-layer first. The second carries the type at the bottom of the band; the
+   first covers the safe-area inset, where the OS status bar's white glyphs sit on the picture. */
 .hero__scrim {
   position: absolute;
   inset: 0;
-  background: var(--photo-scrim);
+  background: var(--photo-scrim-top), var(--photo-scrim);
 }
 
 /* On the photograph, not in a bar of its own, which would cost a row of chrome for one rarely
