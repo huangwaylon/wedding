@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { taskToRow } from '../schema.js'
 import { formatDayLong } from '../lib/time.js'
 import { useT } from '../i18n/index.js'
+import EditToggle from './EditToggle.jsx'
 import SubtaskList from './SubtaskList.jsx'
 import {
   CategoryField,
@@ -29,7 +30,6 @@ import {
   fieldErrors,
   taskFromDraft,
 } from './TaskFields.jsx'
-import { ICON_SIZE, PencilIcon } from './icons.jsx'
 
 /**
  * The row this task would be written as, as one comparable string: the session's change
@@ -205,23 +205,8 @@ export default function TaskDetail({
             </button>
           ) : null}
 
-          {/* `aria-pressed` rather than two controls: a screen reader is told this is a toggle and
-              its setting. */}
-          <button
-            type="button"
-            className="btn btn--secondary btn--sm tcard__edit"
-            aria-pressed={editing}
-            onClick={() => (editing ? done() : setDraft(draftFrom(task)))}
-          >
-            {editing ? (
-              t('common.editDone')
-            ) : (
-              <>
-                <PencilIcon style={ICON_SIZE.inline} />
-                {t('common.edit')}
-              </>
-            )}
-          </button>
+          {/* One control, shared with the notes document — see `EditToggle`. */}
+          <EditToggle editing={editing} onToggle={() => (editing ? done() : setDraft(draftFrom(task)))} />
         </div>
       ) : null}
     </>

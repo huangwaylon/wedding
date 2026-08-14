@@ -60,7 +60,9 @@ describe('the Code.gs column contract', () => {
   })
 
   it('carries only the nine columns a task has', () => {
-    // A task is a title, a day and a tick. None of these may come back.
+    // A task is a title, a day and a tick. None of these may come back. `notes` here means a MEMO
+    // PER TASK — a field that would cost a control on a 393px screen and a column to understand; the
+    // shared notes document is one cell in the config tab and nothing to do with a row.
     for (const gone of ['start', 'end', 'all_day', 'notes', 'owner']) {
       expect(TASK_COLUMNS).not.toContain(gone)
     }

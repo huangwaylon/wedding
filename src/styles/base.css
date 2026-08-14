@@ -26,6 +26,10 @@ html {
      UA's own focus scrolling, which no JS change can reach. --hero-height is the header's whole
      occupied height. */
   scroll-padding-top: var(--hero-height);
+  /* And the tab bar is pinned to the bottom, so the same argument applies at the other end: without
+     this, a field behind the bar is "already visible" and the caret lands under it. --tabbar-height
+     is the bar's whole occupied height, its safe-area inset included. */
+  scroll-padding-bottom: calc(var(--tabbar-height) + var(--space-4));
 }
 
 body {
@@ -105,6 +109,7 @@ svg {
 button,
 input,
 select,
+textarea,
 optgroup {
   margin: 0;
   font: inherit;
@@ -114,9 +119,12 @@ optgroup {
 }
 
 /* 16px minimum on form controls. Mobile Safari auto-zooms the viewport when a focused input's
-   font-size is under 16px and will not zoom back out. Do not lower this. */
+   font-size is under 16px and will not zoom back out. Do not lower this, and do not omit `textarea`:
+   WebKit's own default for one is ~13.3px monospace, which is under the type floor, in a face whose
+   token was deliberately deleted, and under the zoom floor as well. */
 input,
-select {
+select,
+textarea {
   font-size: max(1rem, var(--fs-body));
 }
 

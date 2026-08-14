@@ -118,6 +118,17 @@
   --hero-strip: 1.875rem;
   --hero-height: calc(var(--safe-top) + var(--hero-photo) + var(--hero-strip));
 
+  /* ---- The pinned tab bar ----------------------------------------------
+     The mirror of the block above, and named the same way: --tabbar-row is the row of buttons,
+     --tabbar-height its WHOLE occupied height, inset included, and that total is the only one
+     anything offsets by — `.views`' bottom padding, the FAB, the toast stack and `html`'s
+     scroll-padding-bottom. Nothing else may compose --safe-bottom here, or the inset is counted
+     twice and a 34px dead strip appears below the last row. 3.5rem holds a 22px glyph over a 13px
+     word at the 44px target's own generosity; it is chrome on every screen, which is the price of
+     the second destination. */
+  --tabbar-row: 3.5rem;
+  --tabbar-height: calc(var(--tabbar-row) + var(--safe-bottom));
+
   /* ---- Radii -----------------------------------------------------------
      Inner radius <= outer minus container padding; never nest equal radii. --radius-xl is the ceiling
      on rectangles. */
@@ -204,8 +215,12 @@
   --transition-base: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* ---- Stacking order ---------------------------------------------------
-     The header outranks the month headings, which scroll under it on a bare `z-index: 1` inside
-     their own group. Everything overlaying the whole app outranks the header. */
+     --z-header is the app's PINNED CHROME tier, and both pinned things take it: the header and the
+     tab bar are at opposite ends of the viewport and can never overlap, so a second token at the
+     same number would be two names for one idea. They outrank the month headings, which scroll under
+     them on a bare `z-index: 1` inside their own group. Everything overlaying the whole app outranks
+     both — the FAB, so a floating control wins wherever it does overlap, and the sheet, so a modal
+     scrim covers the bar rather than leaving it tappable underneath. */
   --z-header: 100;
   --z-fab: 200;
   --z-sheet: 300;

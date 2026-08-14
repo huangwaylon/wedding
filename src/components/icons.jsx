@@ -6,14 +6,16 @@
  */
 
 /**
- * The three sizes anything outside this file may ask for, so a glyph size is a NAME rather than a
+ * The four sizes anything outside this file may ask for, so a glyph size is a NAME rather than a
  * pair of literals at five call sites. `em` for the two inside type, tracking the control's size;
- * `rem` for the decorative glyph, which sits in no control. INLINE beside 13px label text · FAB the
- * one 24px glyph · DISPLAY the empty board's mark.
+ * `rem` for the two that sit beside their own label or in no control at all. INLINE beside 13px
+ * label text · FAB the one 24px glyph · TAB above a tab's word, where the glyph carries the row and
+ * must not track the 13px caption · DISPLAY the empty board's mark.
  */
 export const ICON_SIZE = {
   inline: { width: '1em', height: '1em' },
   fab: { width: '1.5em', height: '1.5em' },
+  tab: { width: '1.375rem', height: '1.375rem' },
   display: { width: '2rem', height: '2rem' },
 }
 
@@ -130,6 +132,75 @@ export function RingsIcon(props) {
   )
 }
 
+/* ---- The two tabs and the notes toolbar -------------------------------- Five glyphs, each beside
+   or under its own word: a tab carries a label and every toolbar button an `aria-label`, so none of
+   these is ever the only thing naming the control. The two letters are drawn as outlines like every
+   other glyph here rather than set as type — a `<text>` element would resolve through the font stack
+   and land at a different weight in Hiragino than in SF Pro. */
+
+/** The plan: a tick against two lines. Distinct from `BulletsIcon` below, which is dots. */
+export function ChecklistIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="m3.5 7.5 2 2 3.5-4" />
+      <path d="m3.5 16.5 2 2 3.5-4" />
+      <path d="M12.5 8h8M12.5 17h8" />
+    </svg>
+  )
+}
+
+/** The notes: a bound book, its spine drawn. Not `DocumentIcon`'s single sheet, which is the
+    Paperwork category's glyph and would put the same shape on a tab and on a row. */
+export function NotebookIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M6.5 3.5h13v17h-13Z" />
+      <path d="M9.5 3.5v17" />
+      <path d="M12.5 8.5h4M12.5 12h4" />
+    </svg>
+  )
+}
+
+/** Bold, as a B. */
+export function BoldIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M7.5 4.5h5.5a3.75 3.75 0 0 1 0 7.5H7.5Z" />
+      <path d="M7.5 12h6.25a3.75 3.75 0 0 1 0 7.5H7.5Z" />
+    </svg>
+  )
+}
+
+/** A bullet list. The dots are filled: an outlined 2px circle at this size is a smudge. */
+export function BulletsIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="5" cy="7" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="17" r="1.1" fill="currentColor" stroke="none" />
+      <path d="M9.5 7h11M9.5 12h11M9.5 17h11" />
+    </svg>
+  )
+}
+
+/** A heading, as an H. */
+export function HeadingIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M6 4.5v15M18 4.5v15M6 12h12" />
+    </svg>
+  )
+}
+
+/** Italic, as a slanted I with its serifs — a bare slash would read as "no" or "divide". */
+export function ItalicIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M10 4.5h7M7 19.5h7M14.5 4.5 9.5 19.5" />
+    </svg>
+  )
+}
+
 /* ---- The categories ---------------------------------------------------- One glyph per category,
    and not one colour: colour follows STATE and a row carries exactly one coloured mark, so fourteen
    hues would make that mark carry two claims. Shape costs no contrast and survives greyscale. Every
@@ -212,7 +283,9 @@ function CameraIcon(props) {
   )
 }
 
-function NotesIcon(props) {
+/** Two quavers, for Music. Named for the notation, and not `Notes` — the notes DOCUMENT is a tab of
+    its own, and one word for both would put the wrong glyph on it. */
+function QuaverIcon(props) {
   return (
     <svg {...base} {...props}>
       <circle cx="8" cy="17.5" r="2.4" />
@@ -286,7 +359,7 @@ const CATEGORY_ICONS = {
   food: BowlIcon,
   stationery: EnvelopeIcon,
   photo: CameraIcon,
-  music: NotesIcon,
+  music: QuaverIcon,
   beauty: ScissorsIcon,
   gifts: GiftIcon,
   paperwork: DocumentIcon,

@@ -9,7 +9,7 @@
  * browser. A screenshot is still required — see `scripts/preview.jsx`.
  */
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ACCENTS, ACCENT_HEX, BG_HEX, DEFAULT_ACCENT } from '../src/lib/theme.js'
 import { STATE } from '../src/lib/progress.js'
@@ -539,17 +539,19 @@ describe('touch ergonomics', () => {
     expect(ruleFor(primitives, '.sheet__body')).toMatch(/overscroll-behavior: contain/)
   })
 
-  it('keeps the toast clear of the FAB', () => {
+  it('keeps the toast clear of the FAB, which is itself clear of the tab bar', () => {
     // --z-toast is above --z-fab, so a full-width toast would hide the button behind every
-    // "Saved".
-    expect(ruleFor(primitives, '.toasts')).toMatch(/--fab-size/)
+    // "Saved" — and the button now stands on the bar, so the stack has to clear both.
+    const toasts = ruleFor(primitives, '.toasts')
+    expect(toasts).toMatch(/--fab-size/)
+    expect(toasts).toMatch(/--tabbar-height/)
   })
 })
 
 describe('layout', () => {
-  it('reserves clearance for the FAB, the only fixed chrome, so it covers no row', () => {
-    // Reserved ONCE, by the views wrapper. Without the reservation the button lands on top of the
-    // last row's controls.
+  it('reserves clearance for BOTH pieces of bottom chrome, so neither covers a row', () => {
+    // Reserved ONCE, by the views wrapper, and the bar's term as well as the button's: without the
+    // first the tab bar lands on the last row's controls, and without the second the button does.
     const views = ruleFor(app, '.views')
     expect(views, '.views rule missing').toBeTruthy()
     // [\s\S], not `.`: the calc can wrap across lines, and a `.`-based regex silently stops
@@ -557,13 +559,16 @@ describe('layout', () => {
     const clearance = /padding-bottom:([\s\S]*?);/.exec(views)
     expect(clearance, '.views reserves no bottom clearance').toBeTruthy()
     expect(clearance[1]).toContain('--fab-size')
-    expect(clearance[1]).toContain('--safe-bottom')
+    expect(clearance[1]).toContain('--tabbar-height')
+    // And NOT the inset on top of it: --tabbar-height already contains --safe-bottom, so naming it
+    // again here counts it twice and leaves a dead strip below the last row.
+    expect(clearance[1], 'the safe-area inset is counted twice').not.toContain('--safe-bottom')
 
     // And no width may take it away again. Scoped to the media block's own body, brace
     // counted: a lazy [\s\S]*? escapes the block and matches the base rule, which is a test
     // that always passes.
     for (const block of blocksOf(app, 48)) {
-      expect(block, 'the FAB clearance must not be width-gated').not.toMatch(
+      expect(block, 'the bottom clearance must not be width-gated').not.toMatch(
         /\.views \{[^}]*padding-bottom/,
       )
     }
@@ -577,15 +582,66 @@ describe('layout', () => {
     expect(ruleFor(app, '.views')).toMatch(/margin: 0 auto/)
   })
 
-  it('has no fixed bar to keep clear of', () => {
-    // ONE SCREEN, ONE SCROLLER, NO TAB BAR. A tab bar costs 56px plus its safe-area inset of
-    // permanent chrome on every screen, to hold one card and a photograph — and it forces the
-    // standing notices onto every tab, because the out-of-date-script warning is what explains a
-    // control missing from a row.
-    expect(code(app)).not.toContain('tabbar')
-    expect(code(app)).not.toContain('tabbtn')
-    expect(code(tokens)).not.toContain('--tabbar-height')
-    expect(code(tokens)).not.toContain('--z-tabbar')
+  it('composes --tabbar-height as EXACTLY the bar plus its inset, and nothing else', () => {
+    // The mirror of --hero-height below. A fixed bar reserves no flow space, so this token is the
+    // only thing standing between the last row and the bar: `.views`' bottom padding, the FAB, the
+    // toast stack and `html`'s scroll-padding-bottom all offset by it and nothing measures the bar
+    // itself. A term missing puts the bar over a row's controls; a term too many leaves a gap.
+    const height = /--tabbar-height:([^;]*);/.exec(code(tokens))[1].trim()
+    expect(height).toBe('calc(var(--tabbar-row) + var(--safe-bottom))')
+  })
+
+  it('pins the tab bar at the bottom, in the pinned-chrome tier the header already holds', () => {
+    const bar = ruleFor(app, '.tabbar')
+    expect(bar, '.tabbar rule missing').toBeTruthy()
+    expect(bar).toMatch(/position: fixed/)
+    expect(bar).toMatch(/bottom: 0/)
+    // NOT a --z-tabbar of its own. The header and the bar are at opposite ends of the viewport and
+    // cannot overlap, so a second token at the same number would be two names for one idea — the
+    // thing --ring-width and --dim were created to stop.
+    expect(bar).toMatch(/z-index: var\(--z-header\)/)
+    expect(code(tokens), 'a second token for one idea').not.toContain('--z-tabbar')
+
+    // It paints INTO the inset while --tabbar-height counts it, exactly as `.hero__photo` does at
+    // the top; the buttons take the bar's own height.
+    expect(bar).toMatch(/padding-bottom: var\(--safe-bottom\)/)
+    expect(ruleFor(app, '.tabbtn')).toMatch(/min-height: var\(--tabbar-row\)/)
+  })
+
+  it('carries the horizontal insets on the bar’s inner column, not on the bar', () => {
+    // A fixed element's containing block is the viewport, so `body`'s left/right insets (base.css)
+    // do not reach here: without this a landscape notch sits on the first tab. The bar itself is
+    // full-bleed so its fill reaches both screen edges.
+    const bar = ruleFor(app, '.tabbar')
+    expect(bar).toMatch(/left: 0/)
+    expect(bar).toMatch(/right: 0/)
+    const inner = ruleFor(app, '.tabbar__inner')
+    expect(inner).toMatch(/padding-inline: var\(--safe-left\) var\(--safe-right\)/)
+    expect(inner).toMatch(/max-width: var\(--column-max\)/)
+  })
+
+  it('makes the bar OPAQUE, with no wash and no backdrop filter to fall back from', () => {
+    // Every measured figure in tokens.css is against an opaque token, and the two exceptions are the
+    // two places where a scrim IS the stated mechanism; a translucent wash over a scrolling card is
+    // unmeasurable. A blur also promotes a compositing layer, which is what cost this app its
+    // sticky header once — and an @supports fallback is a second appearance nobody screenshots.
+    expect(ruleFor(app, '.tabbar')).toMatch(/background-color: var\(--surface\)/)
+    expect(code(app)).not.toContain('backdrop-filter')
+  })
+
+  it('gives the selected tab three channels, so it is never colour alone', () => {
+    // The accent ink, a rule on the bar's own top edge, and `aria-current` in the markup.
+    expect(ruleFor(app, '.tabbtn--on')).toMatch(/color: var\(--accent\)/)
+    expect(ruleFor(app, '.tabbtn--on::before')).toMatch(/background-color: var\(--accent\)/)
+    expect(app, 'the label is a channel too').toContain('.tabbtn__label')
+  })
+
+  it('scroll-pads the document at BOTH ends of the pinned chrome', () => {
+    // `scrollIntoView({ block: 'nearest' })` measures against the scrollport and calls anything in
+    // either band already visible, so a focused field there sits behind the photograph or under the
+    // tab bar. This corrects both callers AND the UA's own focus scrolling, which no JS can reach.
+    expect(ruleFor(base, 'html')).toMatch(/scroll-padding-top: var\(--hero-height\)/)
+    expect(ruleFor(base, 'html')).toMatch(/scroll-padding-bottom: calc\(var\(--tabbar-height\)/)
   })
 
   it('has only the ONE documented breakpoint, across EVERY stylesheet', () => {
@@ -656,13 +712,6 @@ describe('layout', () => {
     const photo = ruleFor(app, '.hero__photo')
     expect(photo).toMatch(/height: calc\(var\(--safe-top\) \+ var\(--hero-photo\)\)/)
     expect(photo).toMatch(/padding-top: var\(--safe-top\)/)
-  })
-
-  it('scroll-pads the document by the pinned header’s height', () => {
-    // `scrollIntoView({ block: 'nearest' })` measures against the scrollport and calls anything in
-    // the top band already visible, so a focused field there sits behind the photograph. This
-    // corrects both callers AND the UA's own focus scrolling, which no JS change can reach.
-    expect(ruleFor(base, 'html')).toMatch(/scroll-padding-top: var\(--hero-height\)/)
   })
 
   it('turns pull-to-refresh off on the document', () => {
@@ -1017,7 +1066,7 @@ describe('the open row', () => {
     // makes a one-control row and a two-control row put the toggle at the same x — with
     // `justify-content` alone it would slide left the moment the delete appeared, under a thumb
     // that is about to press it again.
-    expect(ruleFor(app, '.tcard__edit')).toMatch(/margin-inline-start: auto/)
+    expect(ruleFor(app, '.edit-toggle')).toMatch(/margin-inline-start: auto/)
     expect(ruleFor(app, '.tcard__foot')).toMatch(/border-top: 1px solid var\(--line\)/)
   })
 
@@ -1107,5 +1156,102 @@ describe('the checklist and the tally', () => {
     // A meter in a checklist row would be a bar with nothing behind it.
     expect(code(app)).not.toMatch(/\.subtask[\w-]*[^{]*\{[^}]*(--state-fill|\.meter)/)
     expect(ruleFor(app, '.subtask__title')).toMatch(/font-size: var\(--fs-body\)/)
+  })
+})
+
+describe('the notes document', () => {
+  it('gives the one multi-line field the same 16px no-zoom floor as every other control', () => {
+    // WebKit's own default for a textarea is ~13.3px MONOSPACE: under the type floor, in a face
+    // whose token was deliberately deleted, and under the floor Safari zooms the viewport at and
+    // will not zoom back from. Both selector lists in base.css have to name it — `font: inherit`
+    // for the face and this for the size — and neither is visible from a passing suite.
+    expect(ruleFor(base, 'input,\nselect,\ntextarea')).toMatch(/max\(1rem, var\(--fs-body\)\)/)
+    expect(ruleFor(base, 'button,\ninput,\nselect,\ntextarea,\noptgroup')).toMatch(/font: inherit/)
+  })
+
+  it('lets the field follow its content rather than owning a scroller or a dvh height', () => {
+    // One document scroller is the shell's rule, so a fixed height would nest a second one — and
+    // `interactive-widget=resizes-content` shrinks `dvh` when the keyboard opens, which would resize
+    // the box under the caret on every focus. `NotesView` drives the height; this is only the floor.
+    const field = ruleFor(primitives, '.textarea')
+    expect(field, '.textarea rule missing').toBeTruthy()
+    expect(field).toMatch(/resize: none/)
+    expect(field).toMatch(/min-height:/)
+    expect(field).not.toMatch(/overflow/)
+    expect(field, 'a fixed height would nest a second scroller').not.toMatch(/^\s*height:/m)
+    // The rendered document and the editor share a line-height, or the text reflows on every Done.
+    expect(field).toMatch(/line-height: var\(--lh-body\)/)
+    expect(ruleFor(app, '.doc')).toMatch(/line-height: var\(--lh-body\)/)
+  })
+
+  it('sticks the notes bar under the header, the way a month heading does', () => {
+    // A long document has to keep Done reachable without scrolling back to the top, and a
+    // bottom-sticky bar would land on iOS's own keyboard accessory row. Opaque, because the card
+    // scrolls underneath it, and below --z-header so it slides under the photograph.
+    const bar = ruleFor(app, '.notes__bar')
+    expect(bar, '.notes__bar rule missing').toBeTruthy()
+    expect(bar).toMatch(/position: sticky/)
+    expect(bar).toMatch(/top: var\(--hero-height\)/)
+    expect(bar).toMatch(/z-index: 1;/)
+    expect(bar).toMatch(/background-color: var\(--bg\)/)
+  })
+
+  it('keeps every step of the document inside the four-step scale, and off --fs-xl', () => {
+    // --fs-xl is the hero title's and a row day's size; a heading there competes with the header.
+    // So the document is 18/16 and subordination comes from weight, ink and space.
+    expect(ruleFor(app, '.doc__h2')).toMatch(/font-size: var\(--fs-lg\)/)
+    expect(ruleFor(app, '.doc__h3')).toMatch(/font-size: var\(--fs-body\)/)
+    expect(ruleFor(app, '.doc')).toMatch(/font-size: var\(--fs-body\)/)
+    for (const rule of ['.doc', '.doc__h2', '.doc__h3', '.doc__item']) {
+      expect(ruleFor(app, rule), rule).not.toMatch(/--fs-xl|--fs-caption/)
+    }
+  })
+
+  it('restores list markers HERE and only here, and keeps them at the aid tier', () => {
+    // base.css strips them globally — "this is an app, not a document" — and this is the one
+    // warranted exception. The marker is the aid and the words are the content, so --ink-3, the
+    // same tier as a category glyph.
+    expect(ruleFor(app, '.doc__list--bullets')).toMatch(/list-style: disc/)
+    expect(ruleFor(app, '.doc__list--numbers')).toMatch(/list-style: decimal/)
+    expect(ruleFor(app, '.doc__item::marker')).toMatch(/color: var\(--ink-3\)/)
+    // Nothing outside the document may bring them back.
+    const restored = [...code(app).matchAll(/^([.\w-]+[^{]*)\{[^}]*list-style: (?!none)/gm)]
+    expect(restored.map((match) => match[1].trim())).toEqual([
+      '.doc__list--bullets',
+      '.doc__list--numbers',
+    ])
+  })
+
+  it('emphasises at 600, never at the UA’s bolder', () => {
+    // The weights are 400/500/600: Hiragino ships W3/W6 with nothing between, so a 700 request is
+    // synthesised and smears kanji.
+    expect(ruleFor(app, '.doc strong')).toMatch(/font-weight: 600/)
+  })
+
+  it('spaces the document per element, so a heading hugs what it introduces', () => {
+    // A uniform `gap` cannot say "clear of what precedes, close to what follows" — the same
+    // larger-between-groups reasoning as `.plan` against `.plan__group`.
+    expect(ruleFor(app, '.doc')).not.toMatch(/gap:/)
+    expect(ruleFor(app, '.doc__h2')).toMatch(/margin-block: var\(--space-6\) 0/)
+    expect(app).toContain('.doc__h2 + *')
+  })
+
+  it('builds the document out of elements, never out of markup', () => {
+    // The whole reason `parseMarkdown` returns data: the document is written by anybody holding the
+    // edit key and read by everybody, and this device keeps a write-capable bearer token in
+    // localStorage. One innerHTML anywhere in the app and that is a script-injection surface with a
+    // shared credential in front of it.
+    //
+    // COMMENTS STRIPPED FIRST, like every other absence assertion here: `Markdown.jsx` and
+    // `markdown.js` both explain this rule by naming what they forbid, so a raw scan matches the
+    // prose and fails whatever the code does — which is the same defect in the other direction.
+    for (const dir of ['src/components', 'src/lib']) {
+      for (const name of readdirSync(dir)) {
+        const source = readFileSync(`${dir}/${name}`, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, '')
+        expect(source, `${dir}/${name}`).not.toContain('innerHTML')
+      }
+    }
   })
 })

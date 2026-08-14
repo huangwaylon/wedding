@@ -494,6 +494,32 @@ describe('config', () => {
     await sheets.setConfig(ID, { timezone: 'Europe/London' })
     expect(api.grid.config.at(-1)).toEqual(['a_note', 'do not touch'])
   })
+
+  it('SHARES THE TAB WITH THE NOTES DOCUMENT, touching one cell per gesture', async () => {
+    // The whole reason a document can live in a key/value tab with no lock: `serializeConfig` emits
+    // only the fields it is handed and this writes only the rows the payload names, so a notes save
+    // and a Settings save landing together cannot overwrite each other. Break either half and the
+    // two fight over one range.
+    const api = makeApi({ tabs: gridOf([]) })
+    await sheets.setConfig(ID, { venue: 'The hall', notes: '# Venue\n- Booked' })
+    await sheets.setConfig(ID, { notes: '# Venue\n- Booked\n- Deposit paid' })
+    expect(api.grid.config).toEqual([
+      ['key', 'value'],
+      ['timezone', 'Asia/Tokyo'],
+      ['venue', 'The hall'],
+      ['notes', '# Venue\n- Booked\n- Deposit paid'],
+    ])
+  })
+
+  it('stores a multi-line document verbatim, newlines and leading hashes included', async () => {
+    // RAW, so a leading `#` or `-` stays text rather than becoming a formula or a bullet the Sheets
+    // UI invents, and the interior newlines survive the round trip.
+    const api = makeApi({ tabs: gridOf([]) })
+    const document = '# Venue\n\n- **Booked** the pavilion\n1. Deposit paid'
+    await sheets.setConfig(ID, { notes: document })
+    expect(api.grid.config.at(-1)).toEqual(['notes', document])
+    expect(api.log.at(-1).body?.valueInputOption ?? 'RAW').toBe('RAW')
+  })
 })
 
 describe('the header repair', () => {

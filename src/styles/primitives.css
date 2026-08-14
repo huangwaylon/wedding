@@ -115,12 +115,16 @@
 }
 
 /* ---- FAB ---------------------------------------------------------------
-   The one coloured element that floats and the one coloured shadow. Fixed chrome, like the header;
-   `.views` reserves --fab-size of clearance below its content, and both halves are required. */
+   The one coloured element that floats and the one coloured shadow. Fixed chrome, like the header and
+   the tab bar; it sits ABOVE the bar and `.views` reserves both plus --fab-size of clearance below
+   its content, and every one of those three is required — dropping any is how the button once landed
+   on top of a row's delete. It keeps the right-hand corner rather than moving into the bar: over two
+   `flex: 1` tabs on a 393px screen a centred button covers the seam and a left-aligned one covers a
+   tab's centre, so a reach for the second destination would open the new-task sheet. */
 .fab {
   position: fixed;
   right: max(var(--space-4), var(--safe-right));
-  bottom: calc(var(--space-4) + var(--safe-bottom));
+  bottom: calc(var(--tabbar-height) + var(--space-3));
   z-index: var(--z-fab);
   display: flex;
   align-items: center;
@@ -198,6 +202,21 @@
   margin: 0;
   min-width: 1.25rem;
   opacity: 1;
+}
+
+/* ---- The one multi-line field -----------------------------------------
+   Worn with `.input`, which gives it the border that identifies a control, the ink and the 16px
+   no-zoom floor; this adds only what a box of prose needs. --lh-body, the same as the rendered
+   document, so the text does not reflow when the mode changes. No resize handle and no inner
+   scroller: the height follows the content (`NotesView` drives it) and there is one document
+   scroller. Never a `dvh` height either — `interactive-widget=resizes-content` shrinks `dvh` when the
+   keyboard opens, which would resize the box under the caret on every focus. --space-3 of block
+   padding because `.input`'s centres a single line in a 44px box. */
+.textarea {
+  min-height: 40dvh;
+  padding-block: var(--space-3);
+  line-height: var(--lh-body);
+  resize: none;
 }
 
 .field {
@@ -555,7 +574,7 @@
 .toasts {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--fab-size) + var(--space-5) + var(--safe-bottom));
+  bottom: calc(var(--tabbar-height) + var(--fab-size) + var(--space-5));
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;

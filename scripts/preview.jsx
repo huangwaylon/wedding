@@ -11,7 +11,9 @@
  *
  * A static render runs no effect, so these files show every default on first paint. The
  * accordion, commit-on-blur, the native date wheel and the keyboard's effect on a sheet are
- * covered by `scripts/drive.mjs` instead.
+ * covered by `scripts/drive.mjs` instead — as is the notes field's height, which is driven from
+ * `scrollHeight`, so `en-notes-editing` here draws it at its bare `min-height` with the text
+ * clipped. That page is for the toolbar and the type, not the box.
  */
 
 import { copyFileSync, writeFileSync } from 'node:fs'
@@ -24,7 +26,9 @@ import { findTemplate, materialize } from '../src/lib/templates.js'
 import EmptyBoard from '../src/components/EmptyBoard.jsx'
 import FilterChips, { FILTER_ALL } from '../src/components/FilterChips.jsx'
 import Hero from '../src/components/Hero.jsx'
+import NotesView from '../src/components/NotesView.jsx'
 import Plan from '../src/components/Plan.jsx'
+import TabBar, { TABS } from '../src/components/TabBar.jsx'
 import { ICON_SIZE, PlusIcon } from '../src/components/icons.jsx'
 
 const TOKYO = 'Asia/Tokyo'
@@ -123,8 +127,12 @@ function surfaces(locale) {
 
 const noop = () => {}
 
-/** One scrolling document; the header and the FAB are the only pinned chrome. */
-function Shell({ children, fab = false }) {
+/**
+ * One scrolling document, with the three pinned things: the header, the FAB and the tab bar. The bar
+ * is in every fixture, because what it can get wrong is standing on the last row — and that is only
+ * visible with real content behind it.
+ */
+function Shell({ children, fab = false, tab = TABS.PLAN }) {
   return (
     <div className="app">
       <div className="views">{children}</div>
@@ -133,6 +141,7 @@ function Shell({ children, fab = false }) {
           <PlusIcon style={ICON_SIZE.fab} />
         </span>
       ) : null}
+      <TabBar tab={tab} onTab={noop} />
     </div>
   )
 }
@@ -298,6 +307,67 @@ function SignView({ locale, unfiltered = true }) {
   )
 }
 
+/**
+ * The document a couple would actually write, using every block and both marks, so the whole type
+ * scale is in one screenshot. Three pages: read, edit and the empty state — a static render fires no
+ * click, so `editing` is the only way the toolbar and the field reach a capture.
+ */
+const NOTES = {
+  en: [
+    '# Venue',
+    'The garden pavilion, **confirmed** for the 18th.',
+    'Rain plan is the orangery — no extra charge.',
+    '',
+    '## Still to confirm with them',
+    '- Chair covers, ivory',
+    '- Access from 9am for the florist',
+    '',
+    '# Food',
+    '1. Tasting menu, five courses',
+    '2. Two vegetarian, one *gluten free*',
+    '3. Cake cut at 8pm',
+  ].join('\n'),
+  ja: [
+    '# 会場',
+    'ガーデンパビリオン。18日で**確定**。',
+    '雨天時はオランジェリー。追加料金なし。',
+    '',
+    '## 会場に確認すること',
+    '- 椅子カバーはアイボリー',
+    '- 装花の搬入は9時から',
+    '',
+    '# 料理',
+    '1. コースは5品',
+    '2. ベジタリアン2名、*グルテンフリー*1名',
+    '3. ケーキ入刀は20時',
+  ].join('\n'),
+}
+
+function NotesPage({ locale, notes = NOTES[locale], canEdit = true, editing = false }) {
+  const { overall } = surfaces(locale)
+  return (
+    <Shell tab={TABS.NOTES}>
+      <Hero
+        config={CONFIG}
+        today={TODAY}
+        canEdit={canEdit}
+        overall={overall}
+        onOpenSettings={noop}
+        photo={PHOTO}
+      />
+      <div className="view stack">
+        <NotesView
+          notes={notes}
+          canEdit={canEdit}
+          onSave={noop}
+          onFieldFocus={noop}
+          editing={editing}
+        />
+      </div>
+    </Shell>
+  )
+}
+
 function EmptyView() {
   return (
     <Shell fab>
@@ -350,6 +420,12 @@ emit('en-rows-viewer', <RowsView locale="en" canEdit={false} />)
 emit('ja-rows', <RowsView locale="ja" />, { locale: 'ja' })
 emit('ja-rows-editing', <RowsView locale="ja" editing />, { locale: 'ja' })
 emit('en-empty', <EmptyView />)
+emit('en-notes', <NotesPage locale="en" />)
+emit('en-notes-editing', <NotesPage locale="en" editing />)
+emit('en-notes-empty', <NotesPage locale="en" notes="" />)
+emit('en-notes-viewer', <NotesPage locale="en" canEdit={false} />)
+emit('ja-notes', <NotesPage locale="ja" />, { locale: 'ja' })
+emit('ja-notes-editing', <NotesPage locale="ja" editing />, { locale: 'ja' })
 /* Plus the filtered version, where every figure describing a whole month is withheld. */
 emit('en-sign', <SignView locale="en" />)
 emit('en-sign-filtered', <SignView locale="en" unfiltered={false} />)

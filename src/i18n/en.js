@@ -59,6 +59,23 @@ export default {
   'filter.all': 'All',
   'filter.label': 'Show',
 
+  /* The two destinations. Each button carries this word as well as a glyph. */
+  'tab.label': 'Views',
+  'tab.plan': 'Plan',
+  'tab.notes': 'Notes',
+
+  'notes.label': 'What has been decided',
+  'notes.placeholder': '# Venue\n- Booked the pavilion\n- Deposit paid',
+  'notes.emptyTitle': 'Nothing written down yet',
+  'notes.emptyEditor': 'Keep what has been settled here — the venue, the caterer, who is bringing what.',
+  'notes.emptyViewer': 'The couple has not written anything here yet.',
+  /* On the editor, where somebody is about to type. The board is world-readable by design. */
+  'notes.public': 'Anybody with the link can read this. Keep bank details and passwords out of it.',
+  'notes.bold': 'Bold',
+  'notes.italic': 'Italic',
+  'notes.heading': 'Heading',
+  'notes.bullets': 'Bullet list',
+
   'list.emptyFiltered': 'Nothing matches.',
   'list.showAll': 'Show everything',
   /* The collapsed row's accessible name, and the one place the date is spelled out in full: the
@@ -105,6 +122,9 @@ export default {
   'error.MISSING_TITLE': 'Give the task a name.',
   'error.MISSING_DUE': 'Give the task a due date.',
   'error.BAD_DUE': 'That is not a real date.',
+  /* A spreadsheet cell holds 50,000 characters, so this is refused before it is sent: past the limit
+     the write 400s, which the taxonomy reads as a setup mistake. */
+  'error.NOTES_TOO_LONG': 'Too long to save. The limit is {count} characters.',
 
   'confirm.deleteTitle': 'Delete this task?',
   'confirm.deleteBody': '“{title}” goes to the Deleted list, where you can put it back.',

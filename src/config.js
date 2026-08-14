@@ -84,6 +84,13 @@ export const DEFAULT_CONFIG = {
   timezone: 'Asia/Tokyo',
   /** One home for this list: `lib/templates.js`, which is what seeds it. */
   categories: CATEGORIES,
+  /**
+   * The shared notes document, as markdown. '' and nothing but '', for good: `parseConfig` omits a
+   * blank value so that the default wins — right for a category list, and the reason a non-empty
+   * default here would make the document impossible to CLEAR. Select all, delete, save, and the
+   * template would come back on the next read.
+   */
+  notes: '',
 }
 
 /**
@@ -98,7 +105,23 @@ export const CONFIG_FIELDS = [
   { key: 'venue', field: 'venue', kind: 'text' },
   { key: 'timezone', field: 'timezone', kind: 'text' },
   { key: 'categories', field: 'categories', kind: 'list' },
+  /**
+   * A whole document in a key/value tab, deliberately: it is one cell, so a save touches one cell,
+   * which is the no-lock rule this file's write path is built on, and both read paths already carry
+   * the config tab. A tab of its own would be a third thing that must not drift across a network hop
+   * neither side can import — and adding its range to `loadBoard`'s batch would 400 on every board
+   * built before it, which `looksUninitialized` reads as an unbuilt spreadsheet: an empty board over
+   * a live snapshot. Cost: the tab a person retypes `wedding_date` in holds a multi-line cell.
+   */
+  { key: 'notes', field: 'notes', kind: 'text' },
 ]
+
+/**
+ * A Sheets cell holds 50,000 characters. Past that the write 400s, and every 4xx the retry list does
+ * not name is `misconfigured` — a notice about scopes and spreadsheet ids, for a document somebody
+ * pasted a book into. Refused before it is sent instead, with the reason.
+ */
+export const NOTES_MAX_CHARS = 50_000
 
 export function parseConfig(raw) {
   const parsed = {}

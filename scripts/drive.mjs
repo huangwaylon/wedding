@@ -1,9 +1,11 @@
 /**
  * Drives the running app in a real browser over the Chrome DevTools Protocol: the accordion, the
  * read/edit toggle, commit-on-blur, the create sheet, whether `input[type=date]` stays inside its
- * row, that ticking under a filter keeps the row on screen, and that deleting a just-edited task
- * sends no resurrecting `update`. A static render fires no blur and runs no effect, so none of it
- * is reachable from `scripts/preview.jsx`. The last is a POST count, the fixture replying with the
+ * row, that ticking under a filter keeps the row on screen, that deleting a just-edited task
+ * sends no resurrecting `update`, and the whole notes tab — the tab switch, the field's JS-driven
+ * height, whether a toolbar tap keeps the selection, and that the bar gets out of the keyboard's
+ * way. A static render fires no blur and runs no effect, so none of it is reachable from
+ * `scripts/preview.jsx`. The delete check is a POST count, the fixture replying with the
  * pre-write board: reverting `remove()` in TaskDetail.jsx to a bare `onDelete(task)` prints
  * `["delete:a5:", "update:a5:Edited, then deleted"]`.
  *
@@ -17,6 +19,11 @@
  *   `tickUnderFilter.done` and `pendingKeepsTheTick` are read after the reply rolled the tick
  *   back. The row staying is the first one's assertion; the second is pinned as a CSS fact in
  *   `test/ui.test.jsx`.
+ *
+ * And one way it verifies nothing quietly: THE STUB KEEPS ITS GRID FOR THE LIFE OF THE PROCESS, and
+ * this run deletes the only task with a checklist. On a second run against the same stub every
+ * `.tcard--open` selector throws into `{ error }` and half the report comes back zero, which reads
+ * exactly like a regression. Restart the stub between runs.
  *
  * Counts assume a healthy endpoint: `send` retries a non-terminal failure, so one write against a
  * flaky one is legitimately two or three requests. The fixture never fails.
@@ -186,21 +193,21 @@ report.readMode = await evaluate(`({
   fact: document.querySelector('.tcard--open .tcard__fact')?.textContent,
   trashIcons: document.querySelectorAll('.tcard--open .subtask .btn--icon').length,
   deleteTask: document.querySelectorAll('.tcard--open .btn--danger-quiet').length,
-  toggle: document.querySelector('.tcard--open .tcard__edit')?.getAttribute('aria-pressed'),
+  toggle: document.querySelector('.tcard--open .edit-toggle')?.getAttribute('aria-pressed'),
   // Ticking and adding stay on this path: both are doing the work, not editing the task.
   tickable: document.querySelectorAll('.tcard--open .subtask__toggle').length,
   addField: document.querySelectorAll('.tcard--open .subtask-add__field').length,
 })`)
 
 // The toggle both ways.
-await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
+await evaluate(`document.querySelector('.tcard--open .edit-toggle').click()`)
 await wait(400)
 report.editMode = await evaluate(`({
   editor: document.querySelectorAll('.tcard--open .editor').length,
   fact: document.querySelectorAll('.tcard--open .tcard__fact').length,
   trashIcons: document.querySelectorAll('.tcard--open .subtask .btn--icon').length,
   deleteTask: document.querySelectorAll('.tcard--open .btn--danger-quiet').length,
-  toggle: document.querySelector('.tcard--open .tcard__edit')?.getAttribute('aria-pressed'),
+  toggle: document.querySelector('.tcard--open .edit-toggle')?.getAttribute('aria-pressed'),
 })`)
 report.editorFields = await evaluate(`[...document.querySelectorAll('.tcard--open .editor input, .tcard--open .editor select')].map(n=>n.type||n.tagName)`)
 
@@ -209,8 +216,8 @@ await evaluate(`document.querySelector('.tcard--open .tcard__head').click()`)
 await wait(300)
 await evaluate(`(()=>{const r=[...document.querySelectorAll('.tcard')].find(c=>c.querySelector('.tcard__tally'));r.querySelector('.tcard__head').click();return true})()`)
 await wait(400)
-report.modeAfterReopen = await evaluate(`document.querySelector('.tcard--open .tcard__edit')?.getAttribute('aria-pressed')`)
-await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
+report.modeAfterReopen = await evaluate(`document.querySelector('.tcard--open .edit-toggle')?.getAttribute('aria-pressed')`)
+await evaluate(`document.querySelector('.tcard--open .edit-toggle').click()`)
 await wait(400)
 // Does the date control fit inside its card?
 report.dateFits = await evaluate(`
@@ -267,11 +274,11 @@ report.writesWhileEditing = posts.length - postsBeforeEdit
 // The row still reads its stored values.
 report.rowWhileEditing = await evaluate(`document.querySelector('.tcard--open .tcard__title')?.textContent`)
 
-await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
+await evaluate(`document.querySelector('.tcard--open .edit-toggle').click()`)
 await wait(400)
 report.writesAfterDone = posts.length - postsBeforeEdit
 report.rowAfterDone = await evaluate(`document.querySelector('.tcard--open .tcard__title')?.textContent`)
-report.modeAfterDone = await evaluate(`document.querySelector('.tcard--open .tcard__edit')?.getAttribute('aria-pressed')`)
+report.modeAfterDone = await evaluate(`document.querySelector('.tcard--open .edit-toggle')?.getAttribute('aria-pressed')`)
 await wait(1800)
 report.rowAfterReply = await evaluate(`document.querySelector('.tcard--open .tcard__title')?.textContent`)
 report.dayAfterReply = await evaluate(`document.querySelector('.tcard--open .tcard__day')?.textContent`)
@@ -309,11 +316,11 @@ const undatedRow = await evaluate(`
   })()
 `)
 await wait(500)
-await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
+await evaluate(`document.querySelector('.tcard--open .edit-toggle').click()`)
 await wait(400)
 await setField('.tcard--open .editor input[type=date]', '2027-03-09')
 const postsBeforeDating = posts.length
-await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
+await evaluate(`document.querySelector('.tcard--open .edit-toggle').click()`)
 await wait(2200)
 report.dating = {
   from: undatedRow,
@@ -450,7 +457,7 @@ await evaluate(`
   })()
 `)
 await wait(500)
-await evaluate(`document.querySelector('.tcard--open .tcard__edit').click()`)
+await evaluate(`document.querySelector('.tcard--open .edit-toggle').click()`)
 await wait(400)
 await setField('.tcard--open .editor input:not([type=date])', 'Edited, then deleted')
 const beforeDelete = posts.length
@@ -559,6 +566,174 @@ report.safeArea = await evaluate(`
       monthTop: month,
       headerBottom: Math.round(header.bottom),
     }
+  })()
+`)
+
+/**
+ * THE NOTES TAB. Everything about it that matters is invisible to a static render: the tab switch
+ * itself, the field's height (JS-driven, so the harness page understates it and shows a clipped
+ * box), whether a toolbar tap keeps the selection, and whether the bar gets out of the way.
+ */
+await evaluate(`[...document.querySelectorAll('.tabbtn')].find(b => b.textContent.includes('Notes')).click()`)
+await wait(600)
+report.notes = {
+  current: await evaluate(`[...document.querySelectorAll('.tabbtn')].map(b => b.getAttribute('aria-current'))`),
+  // The header spans both tabs: the countdown and the tracker are facts about the board.
+  hero: await evaluate(`Boolean(document.querySelector('.hero__percent'))`),
+  // The FAB is a plan control; a "+" on a document means nothing, and it would sit over the second
+  // tab's centre.
+  fab: await evaluate(`Boolean(document.querySelector('.fab'))`),
+  rendered: await evaluate(`document.querySelector('.doc')?.textContent`),
+  blocks: await evaluate(`[...document.querySelectorAll('.doc > *')].map(n => n.tagName)`),
+  emphasis: await evaluate(`document.querySelector('.doc strong')?.textContent`),
+  // Sticky, so Done stays reachable down a long document.
+  barSticky: await evaluate(`getComputedStyle(document.querySelector('.notes__bar')).position`),
+}
+await shot('08-notes')
+
+await evaluate(`document.querySelector('.notes__bar .edit-toggle').click()`)
+await wait(500)
+report.notes.editing = {
+  field: await evaluate(`Boolean(document.querySelector('.textarea'))`),
+  tools: await evaluate(`[...document.querySelectorAll('.notes__bar .btn--icon')].map(b => b.getAttribute('aria-label'))`),
+  /**
+   * The bar is withheld for the whole session: `interactive-widget=resizes-content` re-anchors a
+   * bottom-fixed bar just above the iOS keyboard, where two ~196px targets land on the accessory
+   * row — one mis-tap from abandoning an open editor. It is also what makes Done the only exit, so
+   * the session needs no unmount flush.
+   */
+  tabbar: await evaluate(`Boolean(document.querySelector('.tabbar'))`),
+  /** No caret until somebody puts one: a focus() on a surface that re-renders per keystroke drops
+   *  the iOS keyboard mid-word. */
+  focused: await evaluate(`document.activeElement?.className`),
+  /** The box follows its content, so it owns no scroller — there is one document scroller. */
+  fits: await evaluate(`
+    (() => {
+      const el = document.querySelector('.textarea')
+      return { scroll: el.scrollHeight, client: el.clientHeight, grown: el.scrollHeight <= el.clientHeight + 2 }
+    })()
+  `),
+  /** 16px, or mobile Safari zooms the viewport on focus and will not zoom back. */
+  fontSize: await evaluate(`getComputedStyle(document.querySelector('.textarea')).fontSize`),
+  fontFamily: await evaluate(`getComputedStyle(document.querySelector('.textarea')).fontFamily.slice(0, 24)`),
+}
+
+/**
+ * A toolbar tap on a selection. Both halves matter: the text has to change AND the selection has to
+ * survive — React re-renders a controlled textarea from its value and the browser then parks the
+ * caret at the end of it, so without writing the node and the selection together a second tap acts
+ * on the wrong range and every tap sends somebody to the bottom of the document.
+ */
+report.notes.bold = await evaluate(`
+  (() => {
+    const el = document.querySelector('.textarea')
+    const at = el.value.indexOf('garden pavilion')
+    el.focus()
+    el.setSelectionRange(at, at + 'garden pavilion'.length)
+    const before = el.value
+    document.querySelector('.notes__bar [aria-label="Bold"]').click()
+    return { before, after: el.value, start: el.selectionStart, end: el.selectionEnd,
+             selected: el.value.slice(el.selectionStart, el.selectionEnd) }
+  })()
+`)
+await wait(300)
+report.notes.boldAfterRender = await evaluate(`
+  (() => {
+    const el = document.querySelector('.textarea')
+    return { value: el.value.includes('**garden pavilion**'),
+             selected: el.value.slice(el.selectionStart, el.selectionEnd) }
+  })()
+`)
+
+// A second tap is the inverse.
+await evaluate(`document.querySelector('.notes__bar [aria-label="Bold"]').click()`)
+await wait(300)
+report.notes.boldTwice = await evaluate(`document.querySelector('.textarea').value.includes('**garden pavilion**')`)
+
+/** Bullets over two lines: block marks are decided over the whole selection, or a mixed run
+ *  alternates on every tap and never converges. */
+report.notes.bullets = await evaluate(`
+  (() => {
+    const el = document.querySelector('.textarea')
+    el.focus()
+    el.setSelectionRange(el.value.indexOf('The garden'), el.value.length)
+    document.querySelector('.notes__bar [aria-label="Bullet list"]').click()
+    return el.value
+  })()
+`)
+await wait(300)
+
+// One write for the session, and it is a config cell — nothing else in the sheet is touched.
+const beforeNotes = posts.length
+await evaluate(`document.querySelector('.notes__bar .edit-toggle').click()`)
+await wait(2500)
+report.notes.saved = {
+  writes: posts.slice(beforeNotes),
+  toast: await evaluate(`[...document.querySelectorAll('.toast')].map(n => n.textContent)`),
+  mode: await evaluate(`document.querySelector('.notes__bar .edit-toggle')?.getAttribute('aria-pressed')`),
+  tabbarBack: await evaluate(`Boolean(document.querySelector('.tabbar'))`),
+  rendered: await evaluate(`[...document.querySelectorAll('.doc > *')].map(n => n.tagName)`),
+  bullets: await evaluate(`document.querySelectorAll('.doc__list--bullets .doc__item').length`),
+}
+
+/** Opening and closing the session unchanged must send nothing at all. */
+const beforeNoop = posts.length
+await evaluate(`document.querySelector('.notes__bar .edit-toggle').click()`)
+await wait(400)
+await evaluate(`document.querySelector('.notes__bar .edit-toggle').click()`)
+await wait(1500)
+report.notes.unchangedWrites = posts.length - beforeNoop
+
+/** Through the stub's real grid and back: the round trip is the only proof it was stored. */
+await send('Page.reload', { ignoreCache: true })
+await wait(4000)
+await evaluate(`[...document.querySelectorAll('.tabbtn')].find(b => b.textContent.includes('Notes')).click()`)
+await wait(600)
+report.notes.afterReload = {
+  blocks: await evaluate(`[...document.querySelectorAll('.doc > *')].map(n => n.tagName)`),
+  text: await evaluate(`document.querySelector('.doc')?.textContent`),
+  // And the plan is still the tab a launch opens on.
+  opensOn: await evaluate(`document.querySelector('.tabbar')?.dataset?.boot ?? 'checked below'`),
+}
+await shot('09-notes-saved')
+
+report.notes.overflow = await evaluate(`
+  (() => {
+    const bad = []
+    for (const el of document.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect()
+      if (r.width && r.right > document.documentElement.clientWidth + 1) bad.push(el.className || el.tagName)
+    }
+    return [...new Set(bad)].slice(0, 12)
+  })()
+`)
+
+/**
+ * The bottom geometry with a faked inset, the mirror of `safeArea` above. --tabbar-height is the
+ * bar's WHOLE occupied height and four things offset by it; naming --safe-bottom again anywhere
+ * leaves a dead strip, and omitting the bar's term puts it over the last row's controls.
+ */
+report.safeBottom = await evaluate(`
+  (() => {
+    const style = document.createElement('style')
+    style.textContent = ':root { --safe-bottom: 34px }'
+    document.head.appendChild(style)
+    const bar = document.querySelector('.tabbar').getBoundingClientRect()
+    const button = document.querySelector('.tabbtn').getBoundingClientRect()
+    const views = document.querySelector('.views')
+    const reserved = getComputedStyle(views).paddingBottom
+    const doc = document.documentElement
+    // The last thing in the document has to clear the bar.
+    const last = views.lastElementChild.getBoundingClientRect()
+    const out = {
+      barHeight: Math.round(bar.height),
+      barAtBottom: Math.round(doc.clientHeight - bar.bottom),
+      buttonsAboveInset: Math.round(bar.bottom - button.bottom),
+      reserved,
+      lastClearsBar: last.bottom <= bar.top + 0.5,
+    }
+    style.remove()
+    return out
   })()
 `)
 

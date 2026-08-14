@@ -153,6 +153,9 @@ function seed() {
     ['venue', 'The 迎賓館 偕楽園 別邸'],
     ['timezone', 'Asia/Tokyo'],
     ['categories', 'Budget, Venue, Guests, Vendors, Attire, Food, Stationery, Photo, Music, Beauty, Gifts, Paperwork, Honeymoon, Other'],
+    /* The notes document, so the read path has one and an edit takes the in-place write; a board
+       without the row exercises the append half, which `test/sheets.test.js` covers. */
+    ['notes', '# Venue\nThe garden pavilion, **confirmed** for the 18th.'],
   ])
   const sheets = [tasks, config]
   return {

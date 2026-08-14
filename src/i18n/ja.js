@@ -53,6 +53,21 @@ export default {
   'filter.all': 'すべて',
   'filter.label': '表示',
 
+  'tab.label': '表示切り替え',
+  'tab.plan': 'プラン',
+  'tab.notes': 'メモ',
+
+  'notes.label': '決まったこと',
+  'notes.placeholder': '# 会場\n- ガーデンパビリオンを予約\n- 手付金を支払い済み',
+  'notes.emptyTitle': 'まだ何も書かれていません',
+  'notes.emptyEditor': '決まったことをここに残しましょう。会場、料理、誰が何を用意するか。',
+  'notes.emptyViewer': 'まだ何も書かれていません。',
+  'notes.public': 'リンクを知っている人は誰でも読めます。口座情報やパスワードは書かないでください。',
+  'notes.bold': '太字',
+  'notes.italic': '斜体',
+  'notes.heading': '見出し',
+  'notes.bullets': '箇条書き',
+
   'list.emptyFiltered': '該当なし。',
   'list.showAll': 'すべて表示',
   'plan.cardLabel': '{title}：{when}、{state}',
@@ -89,6 +104,7 @@ export default {
   'error.MISSING_TITLE': 'やることを入力してください。',
   'error.MISSING_DUE': '期限日を入力してください。',
   'error.BAD_DUE': '実在する日付ではありません。',
+  'error.NOTES_TOO_LONG': '長すぎて保存できません。上限は{count}文字です。',
 
   'confirm.deleteTitle': 'このタスクを削除しますか?',
   'confirm.deleteBody': '「{title}」は削除済みリストに移動し、元に戻せます。',

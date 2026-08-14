@@ -4,9 +4,9 @@
    task row. The photograph's height is a clamp, so it needs no query.
 
    ---- Shell -------------------------------------------------------------
-   One scroller and two pinned things, the header and the FAB. Neither is in flow, so `.views`
-   reserves --hero-height above its content and the FAB's clearance below, or the button covers the
-   last row. */
+   One scroller and three pinned things: the header, the tab bar and the FAB. None is in flow, so
+   `.views` reserves --hero-height above its content and, below it, the bar plus the FAB's own
+   clearance — or the button covers the last row and the bar covers the button. */
 .app {
   min-height: 100dvh;
 }
@@ -16,7 +16,9 @@
   max-width: var(--column-max);
   margin: 0 auto;
   padding-top: var(--hero-height);
-  padding-bottom: calc(var(--fab-size) + var(--space-6) + var(--safe-bottom));
+  /* --tabbar-height already contains --safe-bottom; adding the inset again leaves a dead strip
+     below the last row. */
+  padding-bottom: calc(var(--tabbar-height) + var(--fab-size) + var(--space-6));
 }
 
 /* Padding only; `.stack` owns the rhythm. A gap here would set it twice, with two meanings. */
@@ -714,9 +716,11 @@
   border-top: 1px solid var(--line);
 }
 
-/* Last always, so it does not move between modes; the delete appears to its left.
-   `margin-inline-start: auto` is what puts it at the same x on a one- and a two-control row. */
-.tcard__edit {
+/* Last always, so the toggle a thumb returns to does not move between modes: the row's delete appears
+   to its left and the notes toolbar's three buttons appear before it. `margin-inline-start: auto` is
+   what puts it at the same x on a one- and a four-control row, and it lives here rather than at two
+   call sites because it is what makes those two the same control. */
+.edit-toggle {
   margin-inline-start: auto;
 }
 
@@ -849,4 +853,179 @@
   /* Painted by the preset the swatch scopes locally — the reason the accent rules are
      attribute-scoped. */
   background-color: var(--accent);
+}
+
+/* ---- The tab bar -------------------------------------------------------
+   Two destinations, pinned to the bottom, and the mirror of `.hero`: `fixed`, --z-header (the pinned
+   chrome tier the header shares — they are at opposite ends and cannot overlap), reserving no flow
+   space, so --tabbar-height is what `.views` pads by and must stay exact.
+
+   OPAQUE --surface, never a translucent wash over a blur. Every measured figure in tokens.css is
+   against an opaque token and the two exceptions are the two places where a scrim IS the stated
+   mechanism; a 0.82 wash over a scrolling card is unmeasurable. It also costs nothing to composite,
+   and this app has already lost a sticky header to WebKit's layer promotion once.
+
+   Full-bleed, so the bar reaches both screen edges, with the column and the horizontal insets on
+   `.tabbar__inner`: the containing block is the viewport, so `body`'s insets do not reach here and a
+   landscape notch would sit on the first tab. */
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-header);
+  /* Paints INTO the inset while --tabbar-height counts it, as `.hero__photo` does at the top. */
+  padding-bottom: var(--safe-bottom);
+  background-color: var(--surface);
+  /* The same hairline as `.hero__progress`'s bottom rule: one rule at each end of the app. */
+  border-top: 1px solid var(--line);
+}
+
+.tabbar__inner {
+  display: flex;
+  width: 100%;
+  max-width: var(--column-max);
+  margin-inline: auto;
+  padding-inline: var(--safe-left) var(--safe-right);
+}
+
+/* Half the bar each. `position: relative` for the selected rule below. */
+.tabbtn {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--tabbar-row);
+  color: var(--ink-3);
+  transition: color var(--transition-fast);
+}
+
+.tabbtn--on {
+  color: var(--accent);
+}
+
+/* A WORD as well as a glyph, always. A pair of unlabelled icons is a guess, and the label is also
+   the second channel that keeps the selected tab from being colour alone — the accent ink, this
+   rule and `aria-current` are three. 13px, the floor. */
+.tabbtn__label {
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  line-height: var(--lh-tight);
+}
+
+/* The third channel: a short rule on the bar's own top edge, which is where a platform tab bar puts
+   it. Drawn over the border rather than beside it, so nothing shifts when the tab changes. */
+.tabbtn--on::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 25%;
+  right: 25%;
+  height: 2px;
+  border-radius: var(--radius-full);
+  background-color: var(--accent);
+}
+
+/* ---- The notes bar ----------------------------------------------------
+   The document's own controls: the Edit/Done toggle, and while editing the three formatting buttons
+   beside it. Sticky rather than fixed, and at the TOP — `top: var(--hero-height)`, the recipe
+   `.plan__month` uses, because a long document must keep Done reachable without scrolling back up,
+   while a bottom-sticky bar would land on iOS's keyboard accessory row. Opaque, because the card
+   scrolls underneath it. */
+.notes__bar {
+  position: sticky;
+  top: var(--hero-height);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--line);
+  background-color: var(--bg);
+}
+
+/* Air above it, because it is a caption on the field rather than the next thing in a stack. */
+.notes__warning {
+  margin-top: var(--space-3);
+}
+
+/* ---- The notes document ------------------------------------------------
+   The one surface in the app that is a document rather than a UI, and the only place list markers are
+   restored: base.css strips them globally because a task list is structure, and here a bullet is a
+   bullet. Three steps, 18/16/13 — nothing reaches --fs-xl, which is the hero title's and a row day's
+   size and would compete with the header — so subordination comes from weight, ink and space.
+
+   Per-element margins rather than one `gap`: a heading has to stand clear of what precedes it and hug
+   what it introduces, which a uniform gap cannot say. Same reasoning as `.plan` against
+   `.plan__group`. */
+.doc {
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--ink);
+}
+
+.doc__p,
+.doc__list {
+  margin-block: var(--space-4);
+}
+
+.doc__h2 {
+  font-size: var(--fs-lg);
+  margin-block: var(--space-6) 0;
+}
+
+/* 16px and weight 600 against the paragraph's 16px and 400 — never 14, which is not distinguishable
+   from body text, and never a third heading level, which would need a size the scale does not have.
+   `parseMarkdown` collapses `###` and deeper onto this one. */
+.doc__h3 {
+  font-size: var(--fs-body);
+  margin-block: var(--space-5) 0;
+}
+
+/* A heading hugs what it introduces. Same specificity as the rules above, so this wins on order. */
+.doc__h2 + *,
+.doc__h3 + * {
+  margin-top: var(--space-2);
+}
+
+/* The card's own padding is the document's outer margin. */
+.doc > :first-child {
+  margin-top: 0;
+}
+
+.doc > :last-child {
+  margin-bottom: 0;
+}
+
+/* The markers ride in the indent rather than hanging outside it, so a wrapped item lines up under
+   its own text. One level only: `parseMarkdown` flattens a deeper list into this one. */
+.doc__list {
+  padding-inline-start: var(--space-5);
+}
+
+.doc__list--bullets {
+  list-style: disc;
+}
+
+.doc__list--numbers {
+  list-style: decimal;
+}
+
+.doc__item {
+  margin-block: var(--space-1);
+}
+
+/* The marker is the aid and the words are the content, so it takes the same tier as `.chip__icon`.
+   --ink-3 is the lightest ink that passes AA, and a marker is a graphic, so it has margin here. */
+.doc__item::marker {
+  color: var(--ink-3);
+}
+
+/* 600, never the UA's `bolder`: the weights are 400/500/600, and Hiragino ships W3/W6 with nothing
+   between — a 700 request synthesises a smear on kanji. */
+.doc strong {
+  font-weight: 600;
 }

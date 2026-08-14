@@ -1,8 +1,9 @@
 # Wedding
 
-A static React app for planning a wedding, with a single Google Sheet as the database. A task is a
-title, a day it is due, and a tick; a task can hold a one-level checklist, and one figure rolls the
-whole plan up.
+A static React app for planning a wedding, with a single Google Sheet as the database. Two tabs: a
+**Plan** — a task is a title, a day it is due, and a tick, and a task can hold a one-level checklist,
+with one figure rolling the whole thing up — and **Notes**, one shared markdown document for what has
+been decided.
 
 Anyone with the URL gets a read-only board — no sign-in, no prompt. The two people planning open the
 same URL with a secret in the fragment (`#k=…`), captured once into `localStorage`, and get editing.
@@ -30,10 +31,21 @@ read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization
 
 ## Behaviour
 
+- **Two tabs, one header.** A bottom bar switches between the plan and the notes; the photograph, the
+  countdown and the progress strip span both, being facts about the board rather than about a list. A
+  launch always opens on the plan. Both the bar and the **+** button get out of the way while anything
+  is being typed.
 - **Progress** ([`src/lib/progress.js`](src/lib/progress.js)): done is 100%, otherwise a task with a
   checklist is the share of its items ticked, otherwise 0%. The header percentage is the mean over
   top-level tasks, each counting equally; the mark on the meter is the share of due dates that have
   passed. There is no pace figure — the overdue count stands alone, as a button that jumps to those rows.
+- **Notes** is one document everybody sees, opening rendered and read-only behind the same **Edit**
+  toggle a task row uses. Its editor is a plain field plus four buttons — heading, bullet list, bold,
+  italic — and markdown is deliberately small: headings, bullet and numbered lists, `**bold**`,
+  `*italic*`, a newline being a line break. No links, no images, no tables, no HTML; anything else is
+  shown as the characters that were typed. One write per editing session, on Done. The document lives in
+  one `config` cell, so [the access model](#security-model) applies to it unchanged — **and it is
+  world-readable, so nothing private goes in it.**
 - **Subtasks** are one level deep, carry no date, and do not enter the overall percentage; their
   parent's `3/5` tally does. A row whose `parent_id` cannot be placed one level under a live task is
   shown as a top-level task, never hidden. All-subtasks-done does not mark a parent done.
@@ -96,6 +108,10 @@ falls back to the default in [`src/config.js`](src/config.js).
 | `venue` | `Meguro Gajoen` | Free text |
 | `timezone` | `Asia/Tokyo` | IANA name; the zone today's date is resolved in |
 | `categories` | `Venue, Attire, Guests` | Comma-separated; an empty list falls back to the 14 defaults |
+| `notes` | `# Venue⏎- Booked` | The whole Notes document, markdown, in one cell. Multi-line; a Sheets cell holds 50,000 characters and the app refuses a longer one rather than letting the write fail |
+
+One cell per key, and a save writes only the keys it is changing — which is what lets a document share
+this tab with the settings without a lock. Emptying `notes` by hand is a legitimate way to clear it.
 
 ### Starter checklists
 
@@ -357,6 +373,10 @@ whose rect ends exactly on the image edge produces no crop at all.
   unreadable to editors, who then see the row in the **No date** group while readers still see the
   date. Leave the `tasks` tab formatted as plain text.
 - Nothing in the sheet is private, and nothing private should go in it.
+- Two people editing the Notes document at once is last-writer-wins over the whole document: there is no
+  lock and no push channel, and a refresh happens on focus at most once every 30s. Ticking two different
+  tasks never collides this way, because each write touches only its own row.
+- The spreadsheet's own revision history is the Notes document's only undo; there is no Cancel.
 
 ## File map
 
@@ -366,11 +386,11 @@ whose rect ends exactly on the image edge produces no crop at all.
 | `apps-script/` | `Code.gs` (anonymous read, token mint) and its manifest; deployed by hand |
 | `src/schema.js` | the sheet contract: columns, row ↔ task mapping, every A1 range, validation |
 | `src/config.js` | build-time values, storage keys, the `config` tab's field list and defaults |
-| `src/App.jsx` | the shell: access, the clock, the filter, every mutation's toast |
-| `src/lib/` | `api` (dispatch, failure taxonomy), `connection` (token cache), `sheets` (every Sheets API call), `access` (the capability URL), `time`, `progress`, `templates`, `snapshot`, `serviceWorker`, `theme` |
-| `src/state/` | `useBoard` (optimistic CRUD, the folding write queue, throttled refresh), `useNow`, `useToasts` |
+| `src/App.jsx` | the shell: access, the clock, which tab is up, the filter, every mutation's toast |
+| `src/lib/` | `api` (dispatch, failure taxonomy), `connection` (token cache), `sheets` (every Sheets API call), `access` (the capability URL), `time`, `progress`, `markdown` (the notes grammar and its toolbar transforms), `templates`, `snapshot`, `serviceWorker`, `theme` |
+| `src/state/` | `useBoard` (optimistic CRUD, the folding write queue, throttled refresh), `useToday`, `useToasts` |
 | `src/components/` | one file per view, with inline-SVG icons in `icons.jsx` |
 | `src/i18n/` | the engine, the `en`/`ja` catalogs, the registry |
 | `src/styles/` | `tokens`, `base`, `primitives`, `app`, loaded in that order |
-| `test/` | vitest specs. `schema.test.js` pins the two column lists against each other, `script.test.js` executes `Code.gs`, `sheets.test.js` drives the REST client against a fake that parses A1 ranges, `connection.test.js` covers the mint |
+| `test/` | vitest specs. `schema.test.js` pins the two column lists against each other, `script.test.js` executes `Code.gs`, `sheets.test.js` drives the REST client against a fake that parses A1 ranges, `connection.test.js` covers the mint, `markdown.test.js` the notes grammar |
 | `scripts/` | `preview.jsx` + `harness.html` (static visual harness), `drive.mjs` + `stub-endpoint.mjs` (drive the app against both backends), `check-contrast.js`, `build-sw.js`, `make-icons.js` |

@@ -26,10 +26,13 @@ import DueLabel from '../src/components/DueLabel.jsx'
 import EmptyBoard from '../src/components/EmptyBoard.jsx'
 import FilterChips, { FILTER_ALL } from '../src/components/FilterChips.jsx'
 import Hero, { coupleTitle } from '../src/components/Hero.jsx'
+import Markdown from '../src/components/Markdown.jsx'
 import Meter from '../src/components/Meter.jsx'
 import Notice from '../src/components/Notice.jsx'
+import NotesView from '../src/components/NotesView.jsx'
 import Plan from '../src/components/Plan.jsx'
 import SettingsSheet from '../src/components/SettingsSheet.jsx'
+import TabBar, { TABS } from '../src/components/TabBar.jsx'
 import TaskCard from '../src/components/TaskCard.jsx'
 import { draftFrom, taskFromDraft } from '../src/components/TaskFields.jsx'
 import Toasts from '../src/components/Toasts.jsx'
@@ -1070,5 +1073,203 @@ describe('BottomSheet’s open effect', () => {
     // without the ref a sheet reopened for a second task would close the first one's state.
     expect(source).toMatch(/close\.current = onClose/)
     expect(source).toMatch(/close\.current\(\)/)
+  })
+})
+
+describe('TabBar', () => {
+  const barWith = (tab) => renderToStaticMarkup(<TabBar tab={tab} onTab={noop} />)
+
+  it('offers both destinations, each with a WORD as well as a glyph', () => {
+    // A pair of unlabelled icons is a guess, and the label is also the channel that keeps the
+    // selected tab from being carried by the accent alone.
+    const html = barWith(TABS.PLAN)
+    expect(html).toContain('Plan')
+    expect(html).toContain('Notes')
+    expect([...html.matchAll(/class="tabbtn__label"/g)]).toHaveLength(2)
+    expect([...html.matchAll(/<svg/g)]).toHaveLength(2)
+  })
+
+  it('marks the selected tab in the markup as well as in colour, and only one', () => {
+    // `aria-current`, not `role="tablist"`: two thumb targets gain nothing from roving tabindex and
+    // arrow traversal, and half of that pattern is worse than none of it. It also survives a static
+    // render, which a click-driven selection would not.
+    const html = barWith(TABS.NOTES)
+    expect([...html.matchAll(/aria-current="page"/g)]).toHaveLength(1)
+    expect([...html.matchAll(/tabbtn--on/g)]).toHaveLength(1)
+    expect(html).toContain('<nav class="tabbar" aria-label=')
+    expect(html).not.toContain('role="tab')
+  })
+
+  it('names itself, and never with a bare literal', () => {
+    expect(barWith(TABS.PLAN)).toContain('aria-label="Views"')
+  })
+})
+
+describe('Markdown', () => {
+  const doc = (text) => renderToStaticMarkup(<Markdown text={text} />)
+
+  it('renders the document’s top level as h2, the h1 being the couple’s names', () => {
+    // The header carries the one `<h1>` on both tabs, so a document heading at h1 would break the
+    // heading order for a screen reader on every screen.
+    expect(doc('# Venue')).toContain('<h2 class="doc__h2"')
+    expect(doc('## Deposit')).toContain('<h3 class="doc__h3"')
+    expect(doc('# Venue')).not.toContain('<h1')
+  })
+
+  it('renders emphasis as strong and em, which carry meaning', () => {
+    expect(doc('**yes**')).toContain('<strong>yes</strong>')
+    expect(doc('*maybe*')).toContain('<em>maybe</em>')
+    expect(doc('***both***')).toContain('<strong><em>both</em></strong>')
+    expect(doc('**yes**')).not.toMatch(/<b>|<i>/)
+  })
+
+  it('renders the two list kinds as the two list elements', () => {
+    expect(doc('- a\n- b')).toContain('<ul class="doc__list doc__list--bullets">')
+    expect(doc('1. a')).toContain('<ol class="doc__list doc__list--numbers">')
+    expect([...doc('- a\n- b').matchAll(/<li class="doc__item">/g)]).toHaveLength(2)
+  })
+
+  it('keeps a single newline as a line break inside one paragraph', () => {
+    const html = doc('One\nTwo')
+    expect([...html.matchAll(/<p class="doc__p">/g)]).toHaveLength(1)
+    expect(html).toContain('<br/>')
+  })
+
+  it('RENDERS MARKUP AS TEXT, which is why the parser returns data', () => {
+    // The document is written by anybody holding the edit key and read by everybody, and this device
+    // keeps a write-capable bearer token in localStorage. Nothing here may become an element.
+    const html = doc('<img src=x onerror=alert(1)>\n- [click](javascript:alert(1))')
+    expect(html).not.toContain('<img')
+    expect(html).not.toContain('<a ')
+    expect(html).toContain('&lt;img')
+    expect(html).toContain('javascript:alert(1)')
+  })
+
+  it('renders nothing at all for an empty document, leaving the empty state to its caller', () => {
+    expect(doc('')).toBe('')
+    expect(doc('   \n\n')).toBe('')
+  })
+})
+
+describe('NotesView', () => {
+  const NOTES = '# Venue\nBooked the pavilion.\n- Deposit paid'
+  const notesWith = (extra = {}) =>
+    renderToStaticMarkup(
+      <NotesView notes="" canEdit onSave={noop} onFieldFocus={noop} {...extra} />,
+    )
+
+  it('OPENS READ-ONLY, showing the rendered document and no field', () => {
+    // Read mode is also the preview, and the Edit toggle is also the preview toggle: a split view
+    // would halve a 361px column to ~180px, where a bulleted line wraps every three words.
+    const html = notesWith({ notes: NOTES })
+    expect(html).toContain('doc__h2')
+    expect(html).toContain('Booked the pavilion.')
+    expect(html).not.toContain('<textarea')
+  })
+
+  it('gives an editor the toggle and a viewer no bar at all', () => {
+    expect(notesWith({ notes: NOTES })).toContain('notes__bar')
+    expect(notesWith({ notes: NOTES })).toMatch(/aria-pressed="false"[^>]*>/)
+    const viewer = notesWith({ notes: NOTES, canEdit: false })
+    expect(viewer).not.toContain('notes__bar')
+    expect(viewer).not.toContain('aria-pressed')
+    // The document itself is unchanged: a viewer reads exactly what an editor wrote.
+    expect(viewer).toContain('Booked the pavilion.')
+  })
+
+  it('invites an editor to write the first thing and tells a viewer there is nothing', () => {
+    // Buttons a viewer cannot press are worse than a sentence, which is `EmptyBoard`'s rule.
+    const editor = notesWith()
+    expect(editor).toContain('Nothing written down yet')
+    expect(editor).toContain('the venue, the caterer')
+    const viewer = notesWith({ canEdit: false })
+    expect(viewer).toContain('has not written anything here yet')
+    expect(viewer).not.toContain('the venue, the caterer')
+  })
+
+  it('never opens the editor by itself on an empty document', () => {
+    // An auto-opened, auto-focused field on a tab switch raises the keyboard over the bar that was
+    // just tapped.
+    expect(notesWith()).not.toContain('<textarea')
+  })
+
+  it('renders the field, four toggles and the warning once editing', () => {
+    // A static render fires no click, so `editing` is the only way this mode reaches a test.
+    const html = notesWith({ notes: NOTES, editing: true })
+    expect(html).toContain('<textarea')
+    expect(html).toContain('Booked the pavilion.')
+    for (const label of ['Heading', 'Bullet list', 'Bold', 'Italic']) {
+      expect(html, label).toContain(`aria-label="${label}"`)
+    }
+    expect(html).toMatch(/aria-pressed="true"/)
+    // The one place the board's own openness is stated, where somebody is about to type.
+    expect(html).toContain('Keep bank details and passwords out of it')
+  })
+
+  it('wears the 16px input skin and no autofocus', () => {
+    // The class is what buys the border, the ink and the no-zoom floor; `.textarea` adds only the
+    // prose metrics. Autofocus on a surface that re-renders per keystroke drops the iOS keyboard.
+    const html = notesWith({ editing: true })
+    expect(html).toContain('class="input textarea"')
+    expect(html).not.toContain('autofocus')
+    expect(html).toContain('placeholder=')
+  })
+
+  it('carries no unmount flush, unlike a task row', () => {
+    // A row can be re-sorted or closed out from under its session, so its cleanup has to write. A
+    // document cannot: `App` withholds the tab bar for the whole session, so Done is the only exit
+    // and no stray tap writes a half-finished paragraph. Read as text, comments stripped, because
+    // the header explains the mechanism it deliberately does NOT have.
+    const source = readFileSync('src/components/NotesView.jsx', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^[ \t]*\/\/.*\n/gm, '')
+    expect(source).not.toMatch(/flush/)
+    expect(source).not.toMatch(/=> \(\) =>/)
+    // And the save payload is the notes key ALONE — see `App`'s `saveNotes`.
+    expect(source).toMatch(/onSave\(next\)/)
+  })
+})
+
+/**
+ * `App` as text, for the two rules about the notes document that no render can show: what its save
+ * sends, and which chrome is withheld while it is open. Comments stripped, because the file explains
+ * both by naming what it must not do.
+ */
+describe('App’s notes wiring', () => {
+  const source = readFileSync('src/App.jsx', 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*\n/gm, '')
+
+  it('saves the notes key ALONE', () => {
+    // `serializeConfig` emits only the fields it is handed and `setConfig` writes only the rows the
+    // payload names, which is the whole reason a document can share the config tab with no lock.
+    // Spreading the merged config here would write this build's defaults over the sheet and clobber
+    // a Settings save landing beside it.
+    expect(source).toMatch(/saveConfig\(\{ notes \}\)/)
+    expect(source).not.toMatch(/saveConfig\(\{[^}]*\.\.\./)
+  })
+
+  it('withholds BOTH pieces of bottom chrome while anything holds unsaved text', () => {
+    // The FAB does not move with the keyboard, and `interactive-widget=resizes-content` re-anchors
+    // the tab bar just above it — two wide targets on the accessory row, one mis-tap from abandoning
+    // an open editor. `typing` is the same count both read.
+    expect(source).toMatch(/canEdit && tab === TABS\.PLAN && !typing/)
+    expect(source).toMatch(/typing \? null : <TabBar/)
+  })
+
+  it('keeps the header and the standing notices on both tabs', () => {
+    // Whose wedding, how many days and how much is done are facts about the board, not about a list;
+    // and a refused edit link is why the notes have no Edit button, so explaining it on the other tab
+    // explains nothing. Both appear once, above the tab switch.
+    expect(source.match(/<Hero/g)).toHaveLength(1)
+    expect(source.match(/\{notices\}/g)).toHaveLength(1)
+    expect(source.indexOf('{notices}')).toBeLessThan(source.indexOf('tab === TABS.NOTES'))
+  })
+
+  it('opens on the plan and never remembers otherwise', () => {
+    // Session state, like `expanded`: launching into the notes puts the board behind a tab nobody
+    // asked to be on.
+    expect(source).toMatch(/useState\(TABS\.PLAN\)/)
+    expect(source).not.toMatch(/STORAGE_KEYS\.tab/)
   })
 })

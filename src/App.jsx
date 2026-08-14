@@ -1,5 +1,5 @@
 /**
- * The app shell: access, board state, the ticking clock, and one scroll.
+ * The app shell: access, board state, the ticking clock, which tab is up, and one scroll.
  *
  * Access is resolved once, at boot, from the URL fragment (`lib/access.js`), and the fragment is
  * stripped only when running as an installed app: in Safari it has to stay, so that "Add to Home
@@ -9,10 +9,16 @@
  * `canEdit` decides what renders but is not the security boundary — the endpoint refuses every
  * keyless write — so nothing here need be defensive beyond hiding controls.
  *
- * One scroll, and the photograph is the header. No tabs and no fixed bar but the FAB: a phone
- * cannot spare a permanent 56px plus safe-area inset, the standing notices are global (a refused
- * edit link and an unreadable board are facts about the app, not about a row), and there is exactly
- * one document scroller. Returning to the photograph is one tap on the status bar.
+ * TWO TABS, AND ONLY ONE IS MOUNTED. The plan is the work; the notes are what has been decided. The
+ * header spans both, because whose wedding, how many days and how much is done are facts about the
+ * board rather than about a list. The standing notices span both too: a refused edit link and an
+ * unreadable board explain a control that is missing wherever somebody is standing.
+ *
+ * The tab bar and the FAB are the only other pinned chrome, and both are withheld while anything
+ * holds unsaved text — see `typing`. Which tab is up is SESSION state: relaunching into the notes
+ * with the plan behind them is not what the app is for, so it always opens on the plan. There is one
+ * document scroller, so the switch resets it deliberately rather than landing somebody halfway down
+ * a list they have not seen.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -32,8 +38,10 @@ import EmptyBoard from './components/EmptyBoard.jsx'
 import FilterChips, { FILTER_ALL } from './components/FilterChips.jsx'
 import Hero from './components/Hero.jsx'
 import Notice from './components/Notice.jsx'
+import NotesView from './components/NotesView.jsx'
 import Plan from './components/Plan.jsx'
 import SettingsSheet from './components/SettingsSheet.jsx'
+import TabBar, { TABS } from './components/TabBar.jsx'
 import TaskFormSheet from './components/TaskFormSheet.jsx'
 import Toasts from './components/Toasts.jsx'
 import { ICON_SIZE, PlusIcon, RefreshIcon } from './components/icons.jsx'
@@ -96,6 +104,11 @@ export default function App() {
   const today = useToday(timeZone)
 
   const [filter, setFilter] = useState(() => readStored(STORAGE_KEYS.filter) || FILTER_ALL)
+  /**
+   * Which destination is up. Session state, never `localStorage`, like `expanded`: the plan is what
+   * the app is for, and launching into the notes puts it behind a tab nobody asked to be on.
+   */
+  const [tab, setTab] = useState(TABS.PLAN)
   /** Which cards are open. Never `localStorage`: twelve open cards on relaunch cannot be read. */
   const [expanded, setExpanded] = useState(() => new Set())
   /**
@@ -232,6 +245,23 @@ export default function App() {
     [board, show, t],
   )
 
+  /**
+   * The notes document. `{ notes }` ALONE, never `{ ...config, notes }`: `serializeConfig` emits only
+   * the fields it is handed and `setConfig` writes only the rows the payload names, which is the whole
+   * reason a document can share the config tab without a lock — one gesture, one cell. Spreading the
+   * merged config here would write this build's defaults over the sheet and clobber a Settings save
+   * landing beside it.
+   *
+   * It waits for the write, as Settings does: `saveConfig` has no optimistic half, so the toast is
+   * the only confirmation there is.
+   */
+  const saveNotes = useCallback(
+    async (notes) => {
+      show((await board.saveConfig({ notes })) ? t('toast.saved') : t('toast.failed'))
+    },
+    [board, show, t],
+  )
+
   const seed = useCallback(
     async (templateId) => {
       const count = await board.seedTemplate(templateId, {
@@ -283,6 +313,37 @@ export default function App() {
 
   const day = weddingDay(board.config)
 
+  /**
+   * The board's standing problems, on whichever tab is up rather than on the plan alone: a refused
+   * edit link is why the notes have no Edit button, and a notice explaining that on the other tab
+   * explains nothing.
+   */
+  const notices = (
+    <>
+      {rejected ? (
+        <Notice tone="warn" title={t('access.rejected')} body={t('access.rejectedHint')} />
+      ) : null}
+
+      {/* A failed read never blanks a board on screen: the copy is stale, not wrong. */}
+      {board.stale && board.error ? (
+        <Notice title={t('status.stale')} body={t('status.staleHint')}>
+          <RetryButton onRetry={board.refresh} label={t('status.refresh')} />
+        </Notice>
+      ) : null}
+
+      {/* Only a terminal failure earns a persistent notice: a transient one is a thing to
+          retry, and the stale banner covers the case with cached data to fall back on. */}
+      {board.error && !board.stale && isTerminal(board.error) && !SILENCED.has(board.error) ? (
+        <Notice
+          tone="warn"
+          title={t(`api.${board.error}`)}
+          /* `HINTED` keeps the list of codes with a useful second line out of the markup. */
+          body={HINTED.has(board.error) ? t(`api.${board.error}Hint`) : null}
+        />
+      ) : null}
+    </>
+  )
+
   return (
     <div className="app">
       <div className="views">
@@ -295,29 +356,16 @@ export default function App() {
         />
 
         <div className="view stack">
-          {rejected ? (
-            <Notice tone="warn" title={t('access.rejected')} body={t('access.rejectedHint')} />
-          ) : null}
+          {notices}
 
-          {/* A failed read never blanks a board on screen: the copy is stale, not wrong. */}
-          {board.stale && board.error ? (
-            <Notice title={t('status.stale')} body={t('status.staleHint')}>
-              <RetryButton onRetry={board.refresh} label={t('status.refresh')} />
-            </Notice>
-          ) : null}
-
-          {/* Only a terminal failure earns a persistent notice: a transient one is a thing to
-              retry, and the stale banner covers the case with cached data to fall back on. */}
-          {board.error && !board.stale && isTerminal(board.error) && !SILENCED.has(board.error) ? (
-            <Notice
-              tone="warn"
-              title={t(`api.${board.error}`)}
-              /* `HINTED` keeps the list of codes with a useful second line out of the markup. */
-              body={HINTED.has(board.error) ? t(`api.${board.error}Hint`) : null}
+          {tab === TABS.NOTES ? (
+            <NotesView
+              notes={board.config.notes}
+              canEdit={canEdit}
+              onSave={saveNotes}
+              onFieldFocus={reportTyping}
             />
-          ) : null}
-
-          {board.status === STATUS.LOADING ? (
+          ) : board.status === STATUS.LOADING ? (
             <p className="hint">{t('common.loading')}</p>
           ) : board.status === STATUS.ERROR && !board.tasks.length ? (
             /* A first load that never landed must not fall through to the empty board: "the couple
@@ -376,8 +424,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* Hidden while a field has focus — see `typing`. */}
-      {canEdit && !typing ? (
+      {/* Adding a task is a plan job. Hidden while a field has focus — see `typing`. */}
+      {canEdit && tab === TABS.PLAN && !typing ? (
         <button
           type="button"
           className="fab"
@@ -387,6 +435,11 @@ export default function App() {
           <PlusIcon style={ICON_SIZE.fab} />
         </button>
       ) : null}
+
+      {/* Withheld while anything holds unsaved text: `interactive-widget=resizes-content` re-anchors
+          a bottom-fixed bar just above the iOS keyboard, putting two wide targets on the accessory
+          row, one mis-tap from abandoning an open editor. `.views` reserves its height regardless. */}
+      {typing ? null : <TabBar tab={tab} onTab={setTab} />}
 
       {adding ? (
         <TaskFormSheet

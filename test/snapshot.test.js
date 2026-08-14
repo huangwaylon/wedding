@@ -117,22 +117,33 @@ describe('snapshot', () => {
 
 describe('parseConfig', () => {
   it('maps every declared field', () => {
-    const parsed = parseConfig({
-      partner1_name: 'Aoi',
-      partner2_name: 'Ren',
-      wedding_date: '2027-04-18',
-      venue: 'Meguro',
-      timezone: 'Asia/Tokyo',
-      categories: 'Venue, Attire , Guests',
-    })
-    expect(parsed).toEqual({
-      partner1Name: 'Aoi',
-      partner2Name: 'Ren',
-      weddingDate: '2027-04-18',
-      venue: 'Meguro',
-      timezone: 'Asia/Tokyo',
-      categories: ['Venue', 'Attire', 'Guests'],
-    })
+    // Driven off CONFIG_FIELDS rather than a hand-written object: with the keys spelled out, a new
+    // field could be added and this would still pass while no longer being what its name claims.
+    // Each kind gets a value its own parser has to survive.
+    const sample = { text: 'value', list: 'One, Two ' }
+    const raw = Object.fromEntries(CONFIG_FIELDS.map(({ key, kind }) => [key, sample[kind]]))
+    const parsed = parseConfig(raw)
+    expect(Object.keys(parsed).sort()).toEqual(CONFIG_FIELDS.map((f) => f.field).sort())
+    for (const { field, kind } of CONFIG_FIELDS) {
+      expect(parsed[field], field).toEqual(kind === 'list' ? ['One', 'Two'] : 'value')
+    }
+  })
+
+  it('keeps a multi-line value whole, which is what the notes document is', () => {
+    // A whole document lives in one config cell. Its interior newlines are load-bearing — they are
+    // the paragraphs and the list items — and only the outer whitespace may be trimmed.
+    const notes = '# Venue\n\n- Booked the pavilion\n- Deposit paid'
+    expect(parseConfig({ notes: `\n${notes}\n` }).notes).toBe(notes)
+    expect(parseConfig(serializeConfig({ notes })).notes).toBe(notes)
+  })
+
+  it('lets an EMPTY document read back as empty, which is why its default is ""', () => {
+    // A blank value is omitted so that the default wins — right for a category list, and the reason
+    // `DEFAULT_CONFIG.notes` has to stay ''. Give it any content and "select all, delete, save"
+    // silently restores that content on the next read.
+    expect(parseConfig({ notes: '   ' })).not.toHaveProperty('notes')
+    expect(mergeConfig(parseConfig({ notes: '' })).notes).toBe('')
+    expect(DEFAULT_CONFIG.notes).toBe('')
   })
 
   it('OMITS a blank value so the default wins', () => {
