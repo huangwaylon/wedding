@@ -9,12 +9,15 @@
  * `margin-inline-start: auto` lives in its rule rather than at each call site, which is what makes it
  * the same control in both places: it sits last in a flex row and stays at the same x whether or not
  * a destructive control has appeared beside it.
+ *
+ * @param {boolean} [props.busy] the notes document waits for its write, having no optimistic half, so
+ *   the control says so and refuses a second press; a task row's write is optimistic and never does
  */
 
 import { useT } from '../i18n/index.js'
 import { ICON_SIZE, PencilIcon } from './icons.jsx'
 
-export default function EditToggle({ editing, onToggle }) {
+export default function EditToggle({ editing, busy = false, onToggle }) {
   const { t } = useT()
 
   return (
@@ -22,9 +25,11 @@ export default function EditToggle({ editing, onToggle }) {
       type="button"
       className="btn btn--secondary btn--sm edit-toggle"
       aria-pressed={editing}
+      disabled={busy}
       onClick={onToggle}
     >
-      {editing ? (
+      {busy ? t('common.saving') : null}
+      {busy ? null : editing ? (
         t('common.editDone')
       ) : (
         <>

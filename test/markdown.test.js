@@ -1,17 +1,24 @@
 /**
- * The notes document's grammar and the toolbar's three transforms.
+ * The notes document's grammar and the four transforms its toolbar applies.
  *
- * Both halves are pure, which is why they live in `lib/`: the parser's job is to decide what a line
- * IS, and the transforms' is to decide where the caret ends up — neither needs a DOM, and the
- * awkward cases (a bare caret, a mixed run of lines, half-finished emphasis) are unreachable from a
- * static render.
+ * Both halves are pure, which is why they live in `lib/`: the parser's job is to decide what a line IS,
+ * and the transforms' is to decide what the text and the caret become — neither needs a DOM, and none of
+ * the awkward cases is reachable from a static render. A bare caret, a selection carrying a trailing
+ * space, a selection crossing a newline, a mixed run of lines, half-finished emphasis: every one of them
+ * writes to a cell two people share, so whatever comes out has to be something the grammar reads back.
  *
- * The renderer is asserted in `test/render.test.jsx`; what matters here is that nothing this
- * produces can carry markup.
+ * The renderer is asserted in `test/render.test.jsx`; what matters here is that nothing this produces
+ * can carry markup.
  */
 
 import { describe, expect, it } from 'vitest'
-import { parseMarkdown, toggleBold, toggleBullets, toggleHeading } from '../src/lib/markdown.js'
+import {
+  parseMarkdown,
+  toggleBold,
+  toggleBullets,
+  toggleHeading,
+  toggleItalic,
+} from '../src/lib/markdown.js'
 
 /** The blocks' kinds, in order: the quickest way to say what a document became. */
 const kinds = (text) => parseMarkdown(text).map((block) => block.kind)
@@ -92,10 +99,32 @@ describe('parseMarkdown: marks', () => {
   it('marks bold and italic, and nests them', () => {
     expect(parseMarkdown('**a**')[0].lines[0]).toEqual([{ text: 'a', bold: true }])
     expect(parseMarkdown('*a*')[0].lines[0]).toEqual([{ text: 'a', italic: true }])
-    expect(parseMarkdown('**a *b***')[0].lines[0]).toEqual([
+    expect(parseMarkdown('***a***')[0].lines[0]).toEqual([{ text: 'a', bold: true, italic: true }])
+    expect(parseMarkdown('**a *b* c**')[0].lines[0]).toEqual([
       { text: 'a ', bold: true },
       { text: 'b', italic: true, bold: true },
+      { text: ' c', bold: true },
     ])
+  })
+
+  it('pairs a delimiter only with a run its own length, either way round', () => {
+    // The closer has to be the START of its run as well as the right length. Without that, the second
+    // asterisk of a `**` reads as a run of one and closes an outer `*` — so `*a **b** c*` came out as
+    // `<em>a *</em>` plus a dropped paragraph, and the toolbar produces exactly that shape when you
+    // italicise a phrase and then embolden a word inside it.
+    expect(parseMarkdown('*a **b** c*')[0].lines[0]).toEqual([
+      { text: 'a ', italic: true },
+      { text: 'b', bold: true, italic: true },
+      { text: ' c', italic: true },
+    ])
+  })
+
+  it('RENDERS TWO ADJACENT RUNS OF DIFFERENT LENGTHS AS TYPED, which is the documented limit', () => {
+    // `**a *b***` is legal CommonMark — the closing run of three splits, one asterisk to the italic
+    // and two to the bold — and pairing it needs a delimiter stack, which is more machinery than this
+    // grammar is. So it renders as typed, which is the failure this file chooses everywhere: the
+    // alternative rule pairs it and mangles `*a **b** c*` above instead, and mangled beats nothing.
+    expect(parseMarkdown('**a *b***')[0].lines[0]).toEqual([{ text: '**a *b***' }])
   })
 
   it('keeps the surrounding text as its own runs', () => {
@@ -114,10 +143,13 @@ describe('parseMarkdown: marks', () => {
     expect(parseMarkdown('**not closed')[0].lines[0]).toEqual([{ text: '**not closed' }])
   })
 
-  it('needs a non-space inside the marker, so arithmetic survives', () => {
-    // `2 * 3 * 4` italicised everything between the asterisks before this rule existed.
+  it('needs a non-space on BOTH sides of the marker, so arithmetic survives', () => {
+    // Without the flanking rule, `2 * 3 * 4` italicises everything between the asterisks. Both halves
+    // are exercised: the first two inputs are refused by the OPENER guard, the third only by the
+    // closer's — drop `isSpace(text[at - 1])` and `a *b * c` italicises "b ".
     expect(parseMarkdown('2 * 3 * 4')[0].lines[0]).toEqual([{ text: '2 * 3 * 4' }])
     expect(parseMarkdown('a ** b ** c')[0].lines[0]).toEqual([{ text: 'a ** b ** c' }])
+    expect(parseMarkdown('a *b * c')[0].lines[0]).toEqual([{ text: 'a *b * c' }])
   })
 
   it('does not let a bold marker open an italic one', () => {
@@ -206,5 +238,110 @@ describe('toggleBullets and toggleHeading', () => {
   it('works on the first line of a document and on the last, with no trailing newline', () => {
     expect(toggleBullets('only', 0, 0).text).toBe('- only')
     expect(toggleBullets('a\nb', 2, 3).text).toBe('a\n- b')
+  })
+})
+
+describe('toggleItalic', () => {
+  it('wraps in one asterisk, and off again', () => {
+    expect(toggleItalic('say yes now', 4, 7)).toEqual({ text: 'say *yes* now', start: 5, end: 8 })
+    expect(toggleItalic('say *yes* now', 5, 8)).toEqual({ text: 'say yes now', start: 4, end: 7 })
+  })
+
+  it('NESTS inside bold rather than demoting it', () => {
+    // The runs outside the selection have to match the mark exactly. Relax that and Italic on a word
+    // inside `**bold**` strips one asterisk from each end — silently turning bold into italic — where
+    // wrapping gives `***both***`, which is how the two marks are spelled together.
+    expect(toggleItalic('**bold**', 2, 6)).toEqual({ text: '***bold***', start: 3, end: 7 })
+    expect(toggleItalic('**bold**', 0, 8)).toEqual({ text: '***bold***', start: 1, end: 9 })
+    expect(parseMarkdown('***bold***')[0].lines[0]).toEqual([
+      { text: 'bold', bold: true, italic: true },
+    ])
+  })
+})
+
+describe('the marks over awkward selections', () => {
+  it('shrinks the selection to its non-space core', () => {
+    // `** foo **` is bold in no parser — the flanking rule refuses it — and a double-tap-drag on iOS
+    // routinely carries a trailing space, so wrapping the raw selection would produce visible
+    // asterisks and no bold.
+    const edit = toggleBold('say yes now', 3, 8)
+    expect(edit.text).toBe('say **yes** now')
+    expect(edit.text.slice(edit.start, edit.end)).toBe('yes')
+    expect(parseMarkdown(edit.text)[0].lines[0]).toContainEqual({ text: 'yes', bold: true })
+  })
+
+  it('collapses an all-whitespace selection to a caret instead of inverting its own bounds', () => {
+    expect(toggleBold('a   b', 1, 4)).toEqual({ text: 'a****   b', start: 3, end: 3 })
+  })
+
+  it('MARKS EACH LINE of a multi-line selection, never across the newline', () => {
+    // `spansOf` reads one line at a time, so `**one\ntwo**` renders as two lines of literal
+    // asterisks — which is what select-all plus Bold produced.
+    const edit = toggleBold('one\ntwo', 0, 7)
+    expect(edit.text).toBe('**one**\n**two**')
+    for (const block of parseMarkdown(edit.text)) {
+      for (const line of block.lines) expect(line).toEqual([{ text: line[0].text, bold: true }])
+    }
+  })
+
+  it('steps over a block marker, so bolding a list marks the item and not the dash', () => {
+    expect(toggleBold('- one\n- two', 0, 11).text).toBe('- **one**\n- **two**')
+    expect(toggleBold('# Venue\ntext', 0, 12).text).toBe('# **Venue**\n**text**')
+  })
+
+  it('strips a multi-line mark only when every line carries one', () => {
+    expect(toggleBold('**one**\ntwo', 0, 11).text).toBe('**one**\n**two**')
+    expect(toggleBold('**one**\n**two**', 0, 15).text).toBe('one\ntwo')
+  })
+
+  it('leaves a blank line inside a multi-line selection unmarked', () => {
+    expect(toggleBold('one\n\ntwo', 0, 8).text).toBe('**one**\n\n**two**')
+  })
+
+  it('survives a reversed selection, whatever produced it', () => {
+    expect(toggleBold('abcdef', 4, 2)).toEqual(toggleBold('abcdef', 2, 4))
+  })
+})
+
+describe('the block toggles over awkward selections', () => {
+  it('prefixes a BLANK line, which is the Enter-then-tap gesture', () => {
+    // Inside a multi-line selection a blank line is skipped — a bullet on nothing is a stray dash —
+    // but skipping it for a bare caret makes the button look broken.
+    expect(toggleBullets('a\n', 2, 2).text).toBe('a\n- ')
+    expect(toggleHeading('', 0, 0).text).toBe('# ')
+    expect(toggleBullets('   ', 1, 1).text).toBe('- ')
+  })
+
+  it('REPLACES a marker from the other family rather than stacking one on it', () => {
+    expect(toggleHeading('- a', 0, 3).text).toBe('# a')
+    expect(toggleBullets('# a', 0, 3).text).toBe('- a')
+    expect(toggleBullets('1. a', 0, 4).text).toBe('- a')
+    // And an indent deeper than the parser reads is normalised rather than doubled up.
+    expect(toggleBullets('    - a', 0, 7).text).toBe('- a')
+  })
+
+  it('prefixes a document that begins with a newline instead of inserting more', () => {
+    // `lastIndexOf('\n', -1)` clamps to 0 and FINDS that newline, which returns a reversed span; the
+    // toggle then inserted a newline per tap and grew the document forever.
+    expect(toggleBullets('\nabc', 0, 0).text).toBe('- \nabc')
+    expect(toggleHeading('\nabc', 0, 0).text).toBe('# \nabc')
+  })
+
+  it('round-trips every transform through the parser without throwing', () => {
+    // The transforms write to the shared cell, so whatever they produce has to be something the
+    // grammar can read back.
+    const shapes = ['', 'a', '# a\nb', '- a\n- b', '**a**', '*a*', 'a\n\nb', '   ', '1. a']
+    for (const transform of [toggleBold, toggleItalic, toggleBullets, toggleHeading]) {
+      for (const shape of shapes) {
+        for (const [start, end] of [[0, 0], [0, shape.length], [1, 1], [0, 1]]) {
+          if (start > shape.length || end > shape.length) continue
+          const edit = transform(shape, start, end)
+          expect(typeof edit.text, `${transform.name} ${JSON.stringify(shape)}`).toBe('string')
+          expect(edit.start).toBeLessThanOrEqual(edit.end)
+          expect(edit.end).toBeLessThanOrEqual(edit.text.length)
+          expect(() => parseMarkdown(edit.text)).not.toThrow()
+        }
+      }
+    }
   })
 })

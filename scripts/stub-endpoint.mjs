@@ -154,8 +154,27 @@ function seed() {
     ['timezone', 'Asia/Tokyo'],
     ['categories', 'Budget, Venue, Guests, Vendors, Attire, Food, Stationery, Photo, Music, Beauty, Gifts, Paperwork, Honeymoon, Other'],
     /* The notes document, so the read path has one and an edit takes the in-place write; a board
-       without the row exercises the append half, which `test/sheets.test.js` covers. */
-    ['notes', '# Venue\nThe garden pavilion, **confirmed** for the 18th.'],
+       without the row exercises the append half, which `test/sheets.test.js` covers. LONGER THAN
+       `.textarea`'s floor on purpose: `drive.mjs` measures whether the field grew to its content, and
+       against a short document the min-height reports a fitting box with `grow()` deleted. */
+    [
+      'notes',
+      [
+        '# Venue',
+        'The garden pavilion, **confirmed** for the 18th.',
+        'Rain plan is the orangery, at no extra charge.',
+        '',
+        '## Still to confirm',
+        '- Chair covers, ivory',
+        '- Access from 9am for the florist',
+        '- Who signs for the delivery',
+        '',
+        '# Food',
+        '1. Tasting menu, five courses',
+        '2. Two vegetarian, one *gluten free*',
+        '3. Cake cut at 8pm',
+      ].join('\n'),
+    ],
   ])
   const sheets = [tasks, config]
   return {

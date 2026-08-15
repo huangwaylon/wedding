@@ -3,26 +3,27 @@
  *
  * IT OPENS READ-ONLY, like a task row. Read mode is also the preview and the Edit toggle is also the
  * preview toggle, which is why there is no third mode and no split view: a side-by-side preview
- * halves a 361px column to ~180px, where a bulleted line wraps every three words. What read mode
- * shows is what everybody else sees.
+ * halves a 361px column to ~180px, where a bulleted line wraps every three words.
  *
- * ONE WRITE PER SESSION, on Done, and nothing sent when the text is unchanged. Two divergences from
- * `TaskDetail`, both deliberate:
+ * ONE WRITE PER SESSION, and THE SESSION WAITS FOR IT. `saveConfig` has no optimistic half, so
+ * `notes` keeps its old value for the write plus the forced re-read; closing on the unawaited promise
+ * put the pre-save document back on screen for a second and a half, and re-entering Edit inside that
+ * window loaded the stale text — so the next Done wrote it back over the save that had just landed.
+ * Settings waits for the same reason. A failure keeps the session open with the text in it, which is
+ * better than a toast over a document that has silently reverted.
+ *
+ * Two divergences from `TaskDetail`, both deliberate:
  *
  * No unmount flush. A row can be re-sorted or closed out from under its session, so its cleanup has
- * to write; a document cannot, because `App` withholds the tab bar for the whole session (the same
- * `typing` report that holds off a service-worker reload and hides the FAB), so Done is the only exit
- * and a half-finished paragraph is never written by a stray tap.
+ * to write; a document cannot, because `App` withholds the tab bar for the whole session, so Done is
+ * the only exit and a half-finished paragraph is never written by a stray tap.
  *
  * No Cancel. A discard control over arbitrarily much of somebody else's text is worse than none, and
  * the real undo is the spreadsheet's own revision history.
- *
- * `onSave` is `saveConfig`, which has no optimistic half and confirms on a forced re-read, so the
- * session closes on a write that has landed rather than on one that might.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { NOTES_MAX_CHARS } from '../config.js'
+import { NOTES_MAX_CHARS, notesError } from '../config.js'
 import { toggleBold, toggleBullets, toggleHeading, toggleItalic } from '../lib/markdown.js'
 import { useT } from '../i18n/index.js'
 import EditToggle from './EditToggle.jsx'
@@ -76,15 +77,27 @@ export default function NotesView({
   const stored = String(notes ?? '')
   /** `null` is read mode, so no second flag can disagree with it — as in `TaskDetail`. */
   const [draft, setDraft] = useState(() => (initiallyEditing ? stored : null))
-  const [tooLong, setTooLong] = useState(false)
-  const editing = draft !== null
+  /** The refusal, as a code — `notesError`'s, so the catalog owns the wording. */
+  const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
+  /**
+   * A session needs the capability, not only the draft: the bar lives behind `canEdit`, so an editor
+   * who opens Settings mid-session and switches to the read-only view would otherwise be left with the
+   * field on screen, no Done, no toolbar and no tab bar — the gear the only way out. Dropping the
+   * draft is the right cost of choosing to become a viewer.
+   */
+  const editing = canEdit && draft !== null
   const field = useRef(null)
 
   /** Grown on mount, not in an effect: a ref callback runs in the same commit phase and, unlike
-   *  `useLayoutEffect`, does not have to be explained to a server render. */
+   *  `useLayoutEffect`, does not have to be explained to a server render. The caret goes to the END,
+   *  because a never-focused textarea reports a selection of 0,0 — so a toolbar tap before the field
+   *  is touched would open its pair at the very start and turn the first heading into a paragraph. */
   const attach = useCallback((node) => {
     field.current = node
-    if (node) grow(node)
+    if (!node) return
+    node.setSelectionRange(node.value.length, node.value.length)
+    grow(node)
   }, [])
 
   /** The session, not the field, reports `typing`: unsaved text exists with nothing focused, and a
@@ -97,7 +110,7 @@ export default function NotesView({
 
   const type = (event) => {
     setDraft(event.target.value)
-    setTooLong(false)
+    setError(null)
     grow(event.target)
   }
 
@@ -108,31 +121,42 @@ export default function NotesView({
    * end of it, so a transform that returned text alone would send somebody back to the bottom of the
    * document on every tap. Writing the value and the selection here means React's next render finds
    * the node already correct and leaves it — and the caret with it.
+   *
+   * It focuses first, because `onMouseDown` is prevented and `setSelectionRange` does not focus: without
+   * this the mark lands with no caret and no keyboard, so nothing can be typed into the pair it opened.
    */
   const run = (transform) => {
     const node = field.current
     if (!node) return
+    node.focus()
     const next = transform(node.value, node.selectionStart, node.selectionEnd)
     node.value = next.text
     node.setSelectionRange(next.start, next.end)
     setDraft(next.text)
-    setTooLong(false)
+    setError(null)
     grow(node)
   }
 
-  /** Not awaited: `App` reports the outcome as a toast. */
-  const done = () => {
+  /**
+   * Awaited, so the session ends on a write that has landed. `App` reports the outcome as a toast; a
+   * failure leaves the text on screen to try again, since read mode would show the pre-save document.
+   */
+  const done = async () => {
     // Trimmed, because both read paths trim on the way in: without it the first save after a stray
     // trailing newline would report a change every time.
     const next = draft.trim()
-    if (next.length > NOTES_MAX_CHARS) {
-      // The text stays on screen to be shortened, and the session stays open.
-      setTooLong(true)
+    const refused = notesError(next)
+    // The text stays on screen to be shortened, and the session stays open.
+    setError(refused)
+    if (refused) return
+    if (next === stored) {
+      setDraft(null)
       return
     }
-    setTooLong(false)
-    setDraft(null)
-    if (next !== stored) onSave(next)
+    setSaving(true)
+    const ok = await onSave(next)
+    setSaving(false)
+    if (ok) setDraft(null)
   }
 
   return (
@@ -159,7 +183,11 @@ export default function NotesView({
             : null}
 
           {/* One control, shared with a task row — see `EditToggle`. */}
-          <EditToggle editing={editing} onToggle={() => (editing ? done() : setDraft(stored))} />
+          <EditToggle
+            editing={editing}
+            busy={saving}
+            onToggle={() => (editing ? done() : setDraft(stored))}
+          />
         </div>
       ) : null}
 
@@ -171,17 +199,15 @@ export default function NotesView({
           <textarea
             id="notes-field"
             ref={attach}
-            className={`input textarea${tooLong ? ' input--invalid' : ''}`}
+            className={`input textarea${error ? ' input--invalid' : ''}`}
             value={draft}
             placeholder={t('notes.placeholder')}
             onChange={type}
             /* No autofocus: the tap that puts the caret chooses where it goes, and a focus() on a
                surface that re-renders per keystroke is how the iOS keyboard drops mid-word. */
           />
-          {tooLong ? (
-            <span className="field__error">
-              {t('error.NOTES_TOO_LONG', { count: NOTES_MAX_CHARS })}
-            </span>
+          {error ? (
+            <span className="field__error">{t(`error.${error}`, { count: NOTES_MAX_CHARS })}</span>
           ) : null}
           {/* Here rather than anywhere else: this is the surface somebody is most likely to type a
               vendor's bank details into, and it is world-readable by design. */}

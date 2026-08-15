@@ -26,9 +26,9 @@ html {
      UA's own focus scrolling, which no JS change can reach. --hero-height is the header's whole
      occupied height. */
   scroll-padding-top: var(--hero-height);
-  /* And the tab bar is pinned to the bottom, so the same argument applies at the other end: without
-     this, a field behind the bar is "already visible" and the caret lands under it. --tabbar-height
-     is the bar's whole occupied height, its safe-area inset included. */
+  /* And the tab bar is pinned to the bottom, so the same argument applies at the other end: the
+     scrollport's bottom edge is not the bottom of what can be seen. --tabbar-height is the bar's whole
+     occupied height, its safe-area inset included. */
   scroll-padding-bottom: calc(var(--tabbar-height) + var(--space-4));
 }
 

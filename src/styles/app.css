@@ -16,8 +16,10 @@
   max-width: var(--column-max);
   margin: 0 auto;
   padding-top: var(--hero-height);
-  /* --tabbar-height already contains --safe-bottom; adding the inset again leaves a dead strip
-     below the last row. */
+  /* --tabbar-height already contains --safe-bottom; adding the inset again leaves a dead strip below
+     the last row. The FAB's term is unconditional because CSS cannot see which tab is up, so the notes
+     tab ends with its clearance unoccupied — 80px of trailing space, against a button landing on a
+     row's controls. */
   padding-bottom: calc(var(--tabbar-height) + var(--fab-size) + var(--space-6));
 }
 
@@ -703,13 +705,12 @@
   flex: none;
 }
 
-/* The Edit toggle always, the delete only while editing. `space-between` keeps the destructive
-   control at the far end from the toggle a thumb is returning to; with one control the toggle takes
-   `flex-end`, where it stays as the mode changes. */
+/* The Edit toggle always, the delete only while editing. No `justify-content`: the toggle's own
+   `margin-inline-start: auto` absorbs the free space before one would apply, so it holds the far end
+   in both modes and the delete sits at the near one. `.notes__bar` is the same layout. */
 .tcard__foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-3);
   margin-top: var(--space-3);
   padding-top: var(--space-3);
@@ -717,9 +718,9 @@
 }
 
 /* Last always, so the toggle a thumb returns to does not move between modes: the row's delete appears
-   to its left and the notes toolbar's three buttons appear before it. `margin-inline-start: auto` is
-   what puts it at the same x on a one- and a four-control row, and it lives here rather than at two
-   call sites because it is what makes those two the same control. */
+   to its left and the notes toolbar's four buttons before it. `margin-inline-start: auto` is what puts
+   it at the same x on a one- and a five-control row, and it lives here rather than at two call sites
+   because it is what makes those two the same control. */
 .edit-toggle {
   margin-inline-start: auto;
 }
@@ -863,17 +864,19 @@
    OPAQUE --surface, never a translucent wash over a blur. Every measured figure in tokens.css is
    against an opaque token and the two exceptions are the two places where a scrim IS the stated
    mechanism; a 0.82 wash over a scrolling card is unmeasurable. It also costs nothing to composite,
-   and this app has already lost a sticky header to WebKit's layer promotion once.
+   which is also why `.hero` is `fixed` rather than `sticky`.
 
-   Full-bleed, so the bar reaches both screen edges, with the column and the horizontal insets on
-   `.tabbar__inner`: the containing block is the viewport, so `body`'s insets do not reach here and a
-   landscape notch would sit on the first tab. */
+   The fill reaches both screen edges and the INSETS ARE ITS OWN PADDING, so the column inside lands
+   over the one `.views` centres: the containing block is the viewport, so `body`'s insets do not reach
+   here, and insetting the inner box instead centres it in the full viewport and only then pushes it —
+   23px off the rows above it on a notched landscape phone, where the notch was never near the box. */
 .tabbar {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: var(--z-header);
+  padding-inline: var(--safe-left) var(--safe-right);
   /* Paints INTO the inset while --tabbar-height counts it, as `.hero__photo` does at the top. */
   padding-bottom: var(--safe-bottom);
   background-color: var(--surface);
@@ -886,7 +889,9 @@
   width: 100%;
   max-width: var(--column-max);
   margin-inline: auto;
-  padding-inline: var(--safe-left) var(--safe-right);
+  /* --tabbar-height must stay exact, and nothing measures the bar: without this a label that wrapped
+     to two lines would grow it past --tabbar-row and put it over the last row's controls. */
+  height: var(--tabbar-row);
 }
 
 /* Half the bar each. `position: relative` for the selected rule below. */
@@ -903,6 +908,13 @@
   transition: color var(--transition-fast);
 }
 
+/* The only feedback a tap gets before the view swaps: `html` sets `-webkit-tap-highlight-color:
+   transparent`, so without this a tab acknowledges nothing, and the transition above has nothing to
+   transition to. Every other control here has one. */
+.tabbtn:hover {
+  color: var(--ink);
+}
+
 .tabbtn--on {
   color: var(--accent);
 }
@@ -914,6 +926,7 @@
   font-size: var(--fs-caption);
   font-weight: 500;
   line-height: var(--lh-tight);
+  white-space: nowrap;
 }
 
 /* The third channel: a short rule on the bar's own top edge, which is where a platform tab bar puts
@@ -930,7 +943,7 @@
 }
 
 /* ---- The notes bar ----------------------------------------------------
-   The document's own controls: the Edit/Done toggle, and while editing the three formatting buttons
+   The document's own controls: the Edit/Done toggle, and while editing the four formatting buttons
    beside it. Sticky rather than fixed, and at the TOP — `top: var(--hero-height)`, the recipe
    `.plan__month` uses, because a long document must keep Done reachable without scrolling back up,
    while a bottom-sticky bar would land on iOS's keyboard accessory row. Opaque, because the card
@@ -947,15 +960,19 @@
   background-color: var(--bg);
 }
 
-/* Air above it, because it is a caption on the field rather than the next thing in a stack. */
+/* Air above it, because it is a caption on the field rather than the next thing in a stack — and
+   --ink-2 rather than `.hint`'s --ink-3, this being the one sentence standing between somebody and
+   publishing a vendor's account number on a world-readable board. Same specificity as `.hint`, so it
+   wins on order, app.css loading second. */
 .notes__warning {
   margin-top: var(--space-3);
+  color: var(--ink-2);
 }
 
 /* ---- The notes document ------------------------------------------------
    The one surface in the app that is a document rather than a UI, and the only place list markers are
    restored: base.css strips them globally because a task list is structure, and here a bullet is a
-   bullet. Three steps, 18/16/13 — nothing reaches --fs-xl, which is the hero title's and a row day's
+   bullet. Two steps, 18/16 — nothing reaches --fs-xl, which is the hero title's and a row day's
    size and would compete with the header — so subordination comes from weight, ink and space.
 
    Per-element margins rather than one `gap`: a heading has to stand clear of what precedes it and hug
@@ -985,9 +1002,14 @@
   margin-block: var(--space-5) 0;
 }
 
-/* A heading hugs what it introduces. Same specificity as the rules above, so this wins on order. */
-.doc__h2 + *,
-.doc__h3 + * {
+/* A heading hugs what it introduces — but only what it introduces: with a bare `*` this also matched
+   a following HEADING, so `##` under `#` lost the space that is its only channel besides weight and
+   read as the bold first line of the section's body. Same specificity as the rules above plus one, so
+   it wins outright. */
+.doc__h2 + .doc__p,
+.doc__h2 + .doc__list,
+.doc__h3 + .doc__p,
+.doc__h3 + .doc__list {
   margin-top: var(--space-2);
 }
 
@@ -1003,7 +1025,9 @@
 /* The markers ride in the indent rather than hanging outside it, so a wrapped item lines up under
    its own text. One level only: `parseMarkdown` flattens a deeper list into this one. */
 .doc__list {
-  padding-inline-start: var(--space-5);
+  /* --space-6, not --space-5: markers are `outside`, and a two-digit `10.` at 16px overhangs a 20px
+     indent and breaks the left edge of the text column. */
+  padding-inline-start: var(--space-6);
 }
 
 .doc__list--bullets {
@@ -1014,8 +1038,11 @@
   list-style: decimal;
 }
 
-.doc__item {
-  margin-block: var(--space-1);
+/* Between items only. `.doc__list` has no block padding or border, so a leading or trailing item
+   margin collapses straight through it and escapes the `:first-child`/`:last-child` reset above,
+   leaving a document that starts with a list 4px off one that starts with a paragraph. */
+.doc__item + .doc__item {
+  margin-top: var(--space-1);
 }
 
 /* The marker is the aid and the words are the content, so it takes the same tier as `.chip__icon`.

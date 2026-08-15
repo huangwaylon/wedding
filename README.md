@@ -44,8 +44,7 @@ read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization
   italic — and markdown is deliberately small: headings, bullet and numbered lists, `**bold**`,
   `*italic*`, a newline being a line break. No links, no images, no tables, no HTML; anything else is
   shown as the characters that were typed. One write per editing session, on Done. The document lives in
-  one `config` cell, so [the access model](#security-model) applies to it unchanged — **and it is
-  world-readable, so nothing private goes in it.**
+  one `config` cell, so [the access model](#security-model) applies to it unchanged.
 - **Subtasks** are one level deep, carry no date, and do not enter the overall percentage; their
   parent's `3/5` tally does. A row whose `parent_id` cannot be placed one level under a live task is
   shown as a top-level task, never hidden. All-subtasks-done does not mark a parent done.

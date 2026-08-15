@@ -9,7 +9,7 @@
  * pre-write board: reverting `remove()` in TaskDetail.jsx to a bare `onDelete(task)` prints
  * `["delete:a5:", "update:a5:Edited, then deleted"]`.
  *
- * Three ways this file can verify nothing:
+ * Four ways this file can verify nothing:
  *
  * - Without `Emulation.setFocusEmulationEnabled`, headless Chrome dispatches no focus or focusout,
  *   so every commit-on-blur check passes against a board that saved nothing.
@@ -20,10 +20,10 @@
  *   back. The row staying is the first one's assertion; the second is pinned as a CSS fact in
  *   `test/ui.test.jsx`.
  *
- * And one way it verifies nothing quietly: THE STUB KEEPS ITS GRID FOR THE LIFE OF THE PROCESS, and
- * this run deletes the only task with a checklist. On a second run against the same stub every
- * `.tcard--open` selector throws into `{ error }` and half the report comes back zero, which reads
- * exactly like a regression. Restart the stub between runs.
+ * - THE STUB KEEPS ITS GRID FOR THE LIFE OF THE PROCESS, and this run deletes the only task with a
+ *   checklist. On a second run against the same stub every `.tcard--open` selector throws into
+ *   `{ error }` and half the report comes back zero, which reads exactly like a regression. Restart
+ *   the stub between runs.
  *
  * Counts assume a healthy endpoint: `send` retries a non-terminal failure, so one write against a
  * flaky one is legitimately two or three requests. The fixture never fails.
@@ -603,14 +603,27 @@ report.notes.editing = {
    * the session needs no unmount flush.
    */
   tabbar: await evaluate(`Boolean(document.querySelector('.tabbar'))`),
-  /** No caret until somebody puts one: a focus() on a surface that re-renders per keystroke drops
-   *  the iOS keyboard mid-word. */
+  /** No caret until somebody puts one: a focus() on a surface that re-renders per keystroke drops the
+   *  iOS keyboard mid-word. Anything BUT `input textarea` passes; that string is the regression. */
   focused: await evaluate(`document.activeElement?.className`),
-  /** The box follows its content, so it owns no scroller — there is one document scroller. */
+  /**
+   * The box follows its content, so it owns no scroller — there is one document scroller. It is
+   * measured against a document TALLER than `.textarea`'s floor, or `grow()` can be deleted outright
+   * and the min-height still reports a fitting box: `stub-endpoint.mjs` seeds enough lines for that,
+   * and `beyondFloor` is what says the measurement meant anything.
+   */
   fits: await evaluate(`
     (() => {
       const el = document.querySelector('.textarea')
-      return { scroll: el.scrollHeight, client: el.clientHeight, grown: el.scrollHeight <= el.clientHeight + 2 }
+      // Against the CSS floor, so a box that only ever reached its min-height is visible as such.
+      const floor = parseFloat(getComputedStyle(el).minHeight)
+      return {
+        scroll: el.scrollHeight,
+        client: el.clientHeight,
+        floor: Math.round(floor),
+        beyondFloor: el.clientHeight > floor + 2,
+        grown: el.scrollHeight <= el.clientHeight + 2,
+      }
     })()
   `),
   /** 16px, or mobile Safari zooms the viewport on focus and will not zoom back. */
@@ -687,13 +700,15 @@ report.notes.unchangedWrites = posts.length - beforeNoop
 /** Through the stub's real grid and back: the round trip is the only proof it was stored. */
 await send('Page.reload', { ignoreCache: true })
 await wait(4000)
+// Read BEFORE the click: this is the only moment the boot tab is observable, and it must be the plan.
+report.notes.opensOn = await evaluate(
+  `document.querySelector('.tabbtn[aria-current]')?.textContent`,
+)
 await evaluate(`[...document.querySelectorAll('.tabbtn')].find(b => b.textContent.includes('Notes')).click()`)
 await wait(600)
 report.notes.afterReload = {
   blocks: await evaluate(`[...document.querySelectorAll('.doc > *')].map(n => n.tagName)`),
   text: await evaluate(`document.querySelector('.doc')?.textContent`),
-  // And the plan is still the tab a launch opens on.
-  opensOn: await evaluate(`document.querySelector('.tabbar')?.dataset?.boot ?? 'checked below'`),
 }
 await shot('09-notes-saved')
 
@@ -709,28 +724,35 @@ report.notes.overflow = await evaluate(`
 `)
 
 /**
- * The bottom geometry with a faked inset, the mirror of `safeArea` above. --tabbar-height is the
- * bar's WHOLE occupied height and four things offset by it; naming --safe-bottom again anywhere
- * leaves a dead strip, and omitting the bar's term puts it over the last row's controls.
+ * The bottom geometry with a faked inset, the mirror of `safeArea` above. --tabbar-height is the bar's
+ * WHOLE occupied height and four things offset by it; naming --safe-bottom again anywhere leaves a
+ * dead strip, and omitting the bar's term puts it over the last row's controls.
  */
+await evaluate(`[...document.querySelectorAll('.tabbtn')].find(b => b.textContent.includes('Plan')).click()`)
+await wait(600)
 report.safeBottom = await evaluate(`
   (() => {
     const style = document.createElement('style')
     style.textContent = ':root { --safe-bottom: 34px }'
     document.head.appendChild(style)
+    const doc = document.documentElement
+    // SCROLLED TO THE END, and on the plan, whose document is long enough to reach the bar: measured
+    // at the top of a short notes document the content ends hundreds of pixels above it and clears the
+    // bar whatever the views wrapper reserves. (No backticks: this is a template literal.)
+    doc.scrollTop = doc.scrollHeight
     const bar = document.querySelector('.tabbar').getBoundingClientRect()
     const button = document.querySelector('.tabbtn').getBoundingClientRect()
     const views = document.querySelector('.views')
-    const reserved = getComputedStyle(views).paddingBottom
-    const doc = document.documentElement
-    // The last thing in the document has to clear the bar.
-    const last = views.lastElementChild.getBoundingClientRect()
+    const rows = [...document.querySelectorAll('.tcard')]
+    const last = (rows[rows.length - 1] ?? views.lastElementChild).getBoundingClientRect()
     const out = {
       barHeight: Math.round(bar.height),
       barAtBottom: Math.round(doc.clientHeight - bar.bottom),
       buttonsAboveInset: Math.round(bar.bottom - button.bottom),
-      reserved,
-      lastClearsBar: last.bottom <= bar.top + 0.5,
+      reserved: getComputedStyle(views).paddingBottom,
+      scrolledToEnd: Math.round(doc.scrollTop) > 0,
+      lastRowClearsBar: last.bottom <= bar.top + 0.5,
+      gapBelowLastRow: Math.round(bar.top - last.bottom),
     }
     style.remove()
     return out

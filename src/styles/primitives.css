@@ -116,11 +116,11 @@
 
 /* ---- FAB ---------------------------------------------------------------
    The one coloured element that floats and the one coloured shadow. Fixed chrome, like the header and
-   the tab bar; it sits ABOVE the bar and `.views` reserves both plus --fab-size of clearance below
-   its content, and every one of those three is required — dropping any is how the button once landed
-   on top of a row's delete. It keeps the right-hand corner rather than moving into the bar: over two
-   `flex: 1` tabs on a 393px screen a centred button covers the seam and a left-aligned one covers a
-   tab's centre, so a reach for the second destination would open the new-task sheet. */
+   the tab bar; it sits ABOVE the bar and `.views` reserves both plus --fab-size of clearance below its
+   content, and all three terms are required — dropping any puts the button on top of a row's delete.
+   It keeps the right-hand corner rather than moving into the bar: over two `flex: 1` tabs on a 393px
+   screen a centred button covers the seam and a left-aligned one covers a tab's centre, so a reach
+   for the second destination would open the new-task sheet. */
 .fab {
   position: fixed;
   right: max(var(--space-4), var(--safe-right));
@@ -209,11 +209,15 @@
    no-zoom floor; this adds only what a box of prose needs. --lh-body, the same as the rendered
    document, so the text does not reflow when the mode changes. No resize handle and no inner
    scroller: the height follows the content (`NotesView` drives it) and there is one document
-   scroller. Never a `dvh` height either — `interactive-widget=resizes-content` shrinks `dvh` when the
-   keyboard opens, which would resize the box under the caret on every focus. --space-3 of block
-   padding because `.input`'s centres a single line in a 44px box. */
+   scroller.
+
+   THE FLOOR IS IN REM, NOT `dvh`. `interactive-widget=resizes-content` shrinks the viewport when the
+   keyboard opens, so a viewport-derived floor is re-measured on the first keystroke and the box
+   collapses ~135px under the caret, taking the page scroll with it. It applies to `min-height` as much
+   as to `height`, because for any document shorter than the floor the floor IS the height. --space-3
+   of block padding because `.input`'s centres a single line in a 44px box. */
 .textarea {
-  min-height: 40dvh;
+  min-height: 12rem;
   padding-block: var(--space-3);
   line-height: var(--lh-body);
   resize: none;

@@ -1096,7 +1096,7 @@ describe('TabBar', () => {
     const html = barWith(TABS.NOTES)
     expect([...html.matchAll(/aria-current="page"/g)]).toHaveLength(1)
     expect([...html.matchAll(/tabbtn--on/g)]).toHaveLength(1)
-    expect(html).toContain('<nav class="tabbar" aria-label=')
+    expect(html).toContain('<nav class="tabbar" aria-label="Views"')
     expect(html).not.toContain('role="tab')
   })
 
@@ -1149,6 +1149,12 @@ describe('Markdown', () => {
     expect(doc('')).toBe('')
     expect(doc('   \n\n')).toBe('')
   })
+
+  it('wraps the document in `.doc`, which every rule describing it hangs off', () => {
+    // Drop the class and the whole `.doc*` block in app.css becomes dead: the type scale, `strong` at
+    // 600, the marker ink, the per-element rhythm and the line-height it shares with the editor.
+    expect(doc('# Venue')).toContain('<div class="doc">')
+  })
 })
 
 describe('NotesView', () => {
@@ -1169,7 +1175,7 @@ describe('NotesView', () => {
 
   it('gives an editor the toggle and a viewer no bar at all', () => {
     expect(notesWith({ notes: NOTES })).toContain('notes__bar')
-    expect(notesWith({ notes: NOTES })).toMatch(/aria-pressed="false"[^>]*>/)
+    expect(notesWith({ notes: NOTES })).toContain('aria-pressed="false"')
     const viewer = notesWith({ notes: NOTES, canEdit: false })
     expect(viewer).not.toContain('notes__bar')
     expect(viewer).not.toContain('aria-pressed')
@@ -1185,12 +1191,9 @@ describe('NotesView', () => {
     const viewer = notesWith({ canEdit: false })
     expect(viewer).toContain('has not written anything here yet')
     expect(viewer).not.toContain('the venue, the caterer')
-  })
-
-  it('never opens the editor by itself on an empty document', () => {
-    // An auto-opened, auto-focused field on a tab switch raises the keyboard over the bar that was
-    // just tapped.
-    expect(notesWith()).not.toContain('<textarea')
+    // And nothing opens the editor by itself: an auto-focused field on a tab switch raises the keyboard
+    // over the bar that was just tapped.
+    expect(editor).not.toContain('<textarea')
   })
 
   it('renders the field, four toggles and the warning once editing', () => {
@@ -1215,18 +1218,56 @@ describe('NotesView', () => {
     expect(html).toContain('placeholder=')
   })
 
+  it('wears the SHARED toggle rather than a second copy of it', () => {
+    // The control this commit consolidated. Hand-rolling the button again leaves both call sites
+    // working and every other assertion green, so the shape is what has to be pinned: one element,
+    // and no `aria-pressed` of its own anywhere in either file.
+    expect(notesWith({ notes: NOTES })).toContain('class="btn btn--secondary btn--sm edit-toggle"')
+    for (const file of ['NotesView', 'TaskDetail']) {
+      const text = readFileSync(`src/components/${file}.jsx`, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^[ \t]*\/\/.*\n/gm, '')
+      expect(text, file).toMatch(/<EditToggle/)
+      expect(text, `${file} hand-rolls the toggle`).not.toMatch(/aria-pressed/)
+    }
+  })
+
+  it('waits for the write before leaving edit mode, having no optimistic half', () => {
+    // `saveConfig` keeps `notes` at its old value for the write plus the forced re-read, so a session
+    // that closed on the unawaited promise put the pre-save document back on screen — and re-entering
+    // Edit inside that window loaded the stale text, which the next Done then wrote back over the save.
+    const source = readFileSync('src/components/NotesView.jsx', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^[ \t]*\/\/.*\n/gm, '')
+    expect(source).toMatch(/await onSave\(/)
+    expect(source).toMatch(/if \(ok\) setDraft\(null\)/)
+    // And the control says so, rather than accepting a second press into the same write.
+    expect(source).toMatch(/busy=\{saving\}/)
+  })
+
+  it('needs the CAPABILITY as well as a draft, or the editor is stranded', () => {
+    // The bar lives behind `canEdit`, so an editor who switches to the read-only view mid-session would
+    // otherwise keep the field with no Done, no toolbar and — `typing` still being 1 — no tab bar.
+    const html = renderToStaticMarkup(
+      <NotesView notes={NOTES} canEdit={false} onSave={noop} onFieldFocus={noop} editing />,
+    )
+    expect(html).not.toContain('<textarea')
+    expect(html).not.toContain('notes__bar')
+    expect(html).toContain('doc__h2')
+  })
+
   it('carries no unmount flush, unlike a task row', () => {
     // A row can be re-sorted or closed out from under its session, so its cleanup has to write. A
     // document cannot: `App` withholds the tab bar for the whole session, so Done is the only exit
     // and no stray tap writes a half-finished paragraph. Read as text, comments stripped, because
     // the header explains the mechanism it deliberately does NOT have.
+    // ONE call site, counted: `not.toMatch(/flush/)` only catches the word, and the file already has a
+    // `return () => …` cleanup for the `typing` report, so no regex over the shape can cover the one a
+    // flush would take. A second `onSave` anywhere is the thing to catch.
     const source = readFileSync('src/components/NotesView.jsx', 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^[ \t]*\/\/.*\n/gm, '')
-    expect(source).not.toMatch(/flush/)
-    expect(source).not.toMatch(/=> \(\) =>/)
-    // And the save payload is the notes key ALONE — see `App`'s `saveNotes`.
-    expect(source).toMatch(/onSave\(next\)/)
+    expect(source.match(/onSave\(/g)).toHaveLength(1)
   })
 })
 

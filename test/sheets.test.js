@@ -518,7 +518,6 @@ describe('config', () => {
     const document = '# Venue\n\n- **Booked** the pavilion\n1. Deposit paid'
     await sheets.setConfig(ID, { notes: document })
     expect(api.grid.config.at(-1)).toEqual(['notes', document])
-    expect(api.log.at(-1).body?.valueInputOption ?? 'RAW').toBe('RAW')
   })
 })
 

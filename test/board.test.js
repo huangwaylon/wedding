@@ -19,6 +19,7 @@
 
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { serializeConfig } from '../src/config.js'
 import { API_ERROR } from '../src/lib/api.js'
 import { createWriteQueue, foldWrite, revert } from '../src/state/useBoard.js'
 
@@ -106,6 +107,19 @@ describe('the mutation primitive', () => {
     const declaration = declarationOf('editTask')
     expect(declaration).toMatch(/tasksRef\.current\.find/)
     expect(declaration).toMatch(/!isLive\(current\) && isLive\(task\)/)
+  })
+
+  it('sends the config keys it was handed and NOTHING else', () => {
+    // The whole reason a document can share the config tab with the settings and no lock: one gesture
+    // writes one cell. `App`'s text scan pins its own call site, `sheets.js` pins the row filter, and
+    // this joins them — merging `config` in here would break the property with both still green.
+    // Driven through the real `serializeConfig`, since that is what `saveConfig` calls.
+    expect(declarationOf('saveConfig')).toMatch(/serializeConfig\(partial\)/)
+    expect(declarationOf('saveConfig'), 'the payload must not be widened').not.toMatch(/\.\.\./)
+    expect(serializeConfig({ notes: 'x' })).toEqual({ notes: 'x' })
+    // And an emptied document is SENT, rather than dropped as absent: the read omits a blank value so
+    // the default wins, so the write is the only half that can carry the clearing.
+    expect(serializeConfig({ notes: '' })).toEqual({ notes: '' })
   })
 
   it('leaves the seed and the config writes non-optimistic', () => {

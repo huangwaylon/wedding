@@ -10,15 +10,10 @@
  * keyless write — so nothing here need be defensive beyond hiding controls.
  *
  * TWO TABS, AND ONLY ONE IS MOUNTED. The plan is the work; the notes are what has been decided. The
- * header spans both, because whose wedding, how many days and how much is done are facts about the
- * board rather than about a list. The standing notices span both too: a refused edit link and an
- * unreadable board explain a control that is missing wherever somebody is standing.
+ * header spans both, and so do the standing notices — both render once, above the switch.
  *
  * The tab bar and the FAB are the only other pinned chrome, and both are withheld while anything
- * holds unsaved text — see `typing`. Which tab is up is SESSION state: relaunching into the notes
- * with the plan behind them is not what the app is for, so it always opens on the plan. There is one
- * document scroller, so the switch resets it deliberately rather than landing somebody halfway down
- * a list they have not seen.
+ * holds unsaved text — see `typing`.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -183,6 +178,17 @@ export default function App() {
     writeStored(STORAGE_KEYS.filter, next)
   }, [])
 
+  /**
+   * There is one document scroller, so a switch has to reset it: the two destinations are different
+   * lengths, and arriving halfway down a document nobody has seen reads as a broken page. `scrollTo`
+   * rather than a per-tab remembered offset, which needs a scroll listener for something nobody asked
+   * for.
+   */
+  const chooseTab = useCallback((next) => {
+    setTab(next)
+    window.scrollTo(0, 0)
+  }, [])
+
   // A reload must not land between a keystroke and a save: an open sheet and a focused inline field
   // both hold text that exists nowhere else, and `saving` covers a write in flight.
   const busy = Boolean(adding || pendingDelete || settingsOpen || typing) || board.saving > 0
@@ -246,20 +252,18 @@ export default function App() {
   )
 
   /**
-   * The notes document. `{ notes }` ALONE, never `{ ...config, notes }`: `serializeConfig` emits only
-   * the fields it is handed and `setConfig` writes only the rows the payload names, which is the whole
-   * reason a document can share the config tab without a lock — one gesture, one cell. Spreading the
-   * merged config here would write this build's defaults over the sheet and clobber a Settings save
-   * landing beside it.
+   * The notes document, through `report` like every other write. `{ notes }` ALONE, never
+   * `{ ...config, notes }`: `serializeConfig` emits only the fields it is handed and `setConfig` writes
+   * only the rows the payload names, which is the whole reason a document can share the config tab
+   * without a lock — one gesture, one cell. Spreading the merged config here would write this build's
+   * defaults over the sheet and clobber a Settings save landing beside it.
    *
-   * It waits for the write, as Settings does: `saveConfig` has no optimistic half, so the toast is
-   * the only confirmation there is.
+   * It returns whether the write landed, because `NotesView` waits for it: `saveConfig` has no
+   * optimistic half, so a session that closed early would put the pre-save document back on screen.
    */
   const saveNotes = useCallback(
-    async (notes) => {
-      show((await board.saveConfig({ notes })) ? t('toast.saved') : t('toast.failed'))
-    },
-    [board, show, t],
+    (notes) => report(board.saveConfig({ notes }), t('toast.saved')),
+    [board, report, t],
   )
 
   const seed = useCallback(
@@ -439,7 +443,7 @@ export default function App() {
       {/* Withheld while anything holds unsaved text: `interactive-widget=resizes-content` re-anchors
           a bottom-fixed bar just above the iOS keyboard, putting two wide targets on the accessory
           row, one mis-tap from abandoning an open editor. `.views` reserves its height regardless. */}
-      {typing ? null : <TabBar tab={tab} onTab={setTab} />}
+      {typing ? null : <TabBar tab={tab} onTab={chooseTab} />}
 
       {adding ? (
         <TaskFormSheet

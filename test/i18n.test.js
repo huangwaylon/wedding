@@ -45,7 +45,9 @@ const RUNTIME_FAMILIES = [
   ...ACCENTS.map((accent) => `accent.${accent}`),
   /* `DueLabel` builds these from the state and the day count. */
   ...['due.ago', 'due.today', 'due.tomorrow', 'due.in'],
-  ...['MISSING_TITLE', 'MISSING_DUE', 'BAD_DUE'].map((code) => `error.${code}`),
+  /* `TaskFields` builds the first three from `validateTask`'s codes, `NotesView` the last from
+     `notesError`'s. `test/snapshot.test.js` pins that one against the helper. */
+  ...['MISSING_TITLE', 'MISSING_DUE', 'BAD_DUE', 'NOTES_TOO_LONG'].map((code) => `error.${code}`),
   /* `App` builds these as `api.${board.error}`. DERIVED from the taxonomy rather than listed,
      so deleting a code — `busy` went with the script lock — deletes its key requirement too,
      and the unused-key scan then finds the catalog entry nobody can reach. A hand-kept copy of

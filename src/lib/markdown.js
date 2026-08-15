@@ -54,13 +54,19 @@ function runBefore(text, at) {
 }
 
 /**
- * Where a run of exactly `length` asterisks closes the one opened at `from`, or -1. Exactly, so a
- * `**` never closes on the first two of a `***`.
+ * Where a run of exactly `length` asterisks closes the one opened at `from`, or -1.
+ *
+ * A candidate must be the START of its own run and exactly `length` long, or the second asterisk of a
+ * `**` looks like a run of one and closes an outer `*`: without the `runBefore` half, `*a **b** c*`
+ * closes its italic on that asterisk and renders as `<em>a *</em>` plus literal text. The toolbar
+ * produces exactly that shape — italicise a phrase, then embolden a word inside it.
  */
 function closingRun(text, from, length) {
   if (isSpace(text[from])) return -1
   for (let at = from; at < text.length; at += 1) {
-    if (text[at] !== '*' || runAt(text, at) !== length || isSpace(text[at - 1])) continue
+    if (text[at] !== '*') continue
+    if (runAt(text, at) !== length || runBefore(text, at) !== 0) continue
+    if (isSpace(text[at - 1])) continue
     return at
   }
   return -1
@@ -176,50 +182,134 @@ export function parseMarkdown(text) {
  * Each transform takes the text and the selection and returns both.
  *
  * The selection is the point: React re-renders a controlled textarea from its value and the browser
- * then parks the caret at the end, so a toolbar that returned text alone would send somebody back to
- * the bottom of the document on every tap. Pure, so the awkward cases — a bare caret, a mixed run of
- * lines, a mark already there — are pinned by `test/markdown.test.js` rather than by driving a
- * browser.
+ * then parks the caret at the end, so a toolbar that returned text alone would send somebody to the
+ * bottom of the document on every tap. Pure, so the awkward cases — a bare caret, a blank line, a
+ * selection carrying a trailing space, a run of lines already marked — are pinned by
+ * `test/markdown.test.js` rather than by driving a browser.
+ *
+ * Every one is a toggle whose second press is its own inverse, and every one is decided over the WHOLE
+ * selection: per line, a mixed run alternates on each tap and never converges.
  *
  * @typedef {{text: string, start: number, end: number}} Edit
  */
 
 /**
- * `mark` around the selection, or off again.
+ * Any block marker, whatever family, and any indent. A prefix toggle strips this before adding its
+ * own, so Bullet on a heading REPLACES it rather than stacking `# - `; the parser reads only three
+ * spaces of indent, so a deeper one is normalised on the way past.
+ */
+const BLOCK_MARK = /^[ \t]*(?:#{1,6}|[-*]|\d{1,9}[.)])[ \t]+(.*)$/
+
+/** The full lines the selection touches, as `[from, to]` offsets into `text`. */
+function lineSpan(text, start, end) {
+  // `start === 0` is its own case: `lastIndexOf('\n', -1)` clamps to 0 and FINDS a leading newline,
+  // which returns a reversed span and makes the toggle insert newlines instead of prefixing.
+  const from = start === 0 ? 0 : text.lastIndexOf('\n', start - 1) + 1
+  const found = text.indexOf('\n', end)
+  return [from, found < 0 ? text.length : found]
+}
+
+/** A line split into its indent, its content and its trailing space. */
+function parts(line) {
+  const lead = line.slice(0, line.length - line.trimStart().length)
+  const tail = line.slice(line.trimEnd().length)
+  return { lead, core: line.trim(), tail }
+}
+
+/** Whether `core` is already wrapped in a run of exactly `mark`. */
+function wrapped(core, mark) {
+  return (
+    core.length > 2 * mark.length &&
+    runAt(core, 0) === mark.length &&
+    runBefore(core, core.length) === mark.length
+  )
+}
+
+/**
+ * `mark` around one line's selection, or off again.
  *
- * The runs OUTSIDE the selection have to match `mark` exactly, or Italic inside `**bold**` would
+ * The selection is shrunk to its non-space core first: `** foo **` is bold in no parser — the flanking
+ * rule above refuses it — and a double-tap-drag selection on iOS routinely carries a trailing space.
+ * The runs OUTSIDE the selection then have to match `mark` EXACTLY, or Italic inside `**bold**` would
  * strip one asterisk from each end and quietly demote it; unequal, it wraps instead, which is how
  * `***both***` is spelled.
  */
-function toggleMark(text, start, end, mark) {
+function markRun(text, start, end, mark) {
   const width = mark.length
-  const selected = text.slice(start, end)
+  const raw = text.slice(start, end)
+  // An all-whitespace selection collapses to a caret rather than inverting its own bounds.
+  const lead = raw.trim() ? raw.length - raw.trimStart().length : 0
+  const at = start + lead
+  const to = raw.trim() ? end - (raw.length - raw.trimEnd().length) : start
+  const core = text.slice(at, to)
 
   // The marks just outside the selection — where the wrap below leaves them, so a second tap undoes
   // the first.
-  if (runBefore(text, start) === width && runAt(text, end) === width) {
+  if (runBefore(text, at) === width && runAt(text, to) === width) {
     return {
-      text: text.slice(0, start - width) + selected + text.slice(end + width),
-      start: start - width,
-      end: end - width,
+      text: text.slice(0, at - width) + core + text.slice(to + width),
+      start: at - width,
+      end: to - width,
     }
   }
 
   // Or just inside it, which is how a double-tap selects an already-marked word.
-  if (
-    selected.length > 2 * width &&
-    runAt(selected, 0) === width &&
-    runBefore(selected, selected.length) === width
-  ) {
-    const inner = selected.slice(width, -width)
-    return { text: text.slice(0, start) + inner + text.slice(end), start, end: start + inner.length }
+  if (wrapped(core, mark)) {
+    const inner = core.slice(width, -width)
+    return { text: text.slice(0, at) + inner + text.slice(to), start: at, end: at + inner.length }
   }
 
   return {
-    text: `${text.slice(0, start)}${mark}${selected}${mark}${text.slice(end)}`,
-    start: start + width,
-    end: end + width,
+    text: `${text.slice(0, at)}${mark}${core}${mark}${text.slice(to)}`,
+    start: at + width,
+    end: to + width,
   }
+}
+
+/**
+ * `mark` around each touched line's content, or off again.
+ *
+ * A mark is per LINE, because `spansOf` reads one line at a time: `**one\ntwo**` renders as two lines
+ * of literal asterisks, so a select-all plus Bold has to mark each line instead. A blank line is skipped
+ * and a block marker is stepped over, so bolding a list gives `- **item**` and not `**- item**`.
+ */
+function markLines(text, start, end, mark) {
+  const [from, to] = lineSpan(text, start, end)
+  const lines = text.slice(from, to).split('\n')
+
+  /** A line's content after its block marker, which is what the mark wraps. */
+  const body = (line) => {
+    const { core } = parts(line)
+    const bare = BLOCK_MARK.exec(core)
+    return bare ? bare[1] : core
+  }
+
+  const written = lines.filter((line) => line.trim())
+  const strip = written.length > 0 && written.every((line) => wrapped(body(line), mark))
+
+  const next = lines
+    .map((line) => {
+      if (!line.trim()) return line
+      const { lead, core, tail } = parts(line)
+      const inner = body(line)
+      // Adding to a line that already carries the mark is a no-op, not a second pair: a mixed run has
+      // to come out uniform, and `****one****` is a run of four, which pairs with nothing.
+      if (!strip && wrapped(inner, mark)) return line
+      const head = core.slice(0, core.length - inner.length)
+      const marked = strip ? inner.slice(mark.length, -mark.length) : `${mark}${inner}${mark}`
+      return `${lead}${head}${marked}${tail}`
+    })
+    .join('\n')
+
+  return { text: text.slice(0, from) + next + text.slice(to), start: from, end: from + next.length }
+}
+
+function toggleMark(text, start, end, mark) {
+  const from = Math.min(start, end)
+  const to = Math.max(start, end)
+  return text.slice(from, to).includes('\n')
+    ? markLines(text, from, to, mark)
+    : markRun(text, from, to, mark)
 }
 
 /** `**` around the selection, or off. A bare caret opens an empty pair to type inside. */
@@ -231,37 +321,33 @@ export function toggleItalic(text, start, end) {
   return toggleMark(text, start, end, '*')
 }
 
-/** The full lines the selection touches, as `[from, to]` offsets into `text`. */
-function lineSpan(text, start, end) {
-  const from = text.lastIndexOf('\n', start - 1) + 1
-  const found = text.indexOf('\n', end)
-  return [from, found < 0 ? text.length : found]
-}
-
 /**
  * Add `prefix` to every line the selection touches, or strip it from all of them if all of them
- * already carry one. The toggle is decided over the WHOLE selection: per line, a mixed run alternates
- * on every tap and never converges.
+ * already carry one.
  *
- * Blank lines are left alone. A bullet on nothing is a stray dash, and it is the one thing the parser
- * would then read as an item.
+ * A blank line inside a multi-line selection is left alone — a bullet on nothing is a stray dash, and
+ * it is the one thing the parser would then read as an item — but a selection that is ENTIRELY blank
+ * takes the prefix, that being the "Enter, then tap the button" gesture, where skipping it makes the
+ * button look broken.
  *
- * @param {RegExp} carried what counts as already prefixed — anchored, capturing the rest of the line
+ * @param {RegExp} carried what counts as already prefixed with THIS family — anchored, capturing the
+ *   rest of the line, and no wider than the parser's own indent, so "already a bullet" means "renders
+ *   as one"
  */
 function togglePrefix(text, start, end, prefix, carried) {
   const [from, to] = lineSpan(text, start, end)
   const lines = text.slice(from, to).split('\n')
   const written = lines.filter((line) => line.trim())
-  const strip = written.length > 0 && written.every((line) => carried.test(line))
+  const blank = written.length === 0
+  const strip = !blank && written.every((line) => carried.test(line))
 
   const next = lines
     .map((line) => {
-      if (!line.trim()) return line
-      const bare = carried.exec(line)
-      if (strip) return bare[1]
-      // Re-prefixing a marked line REPLACES the mark rather than stacking `- - `: the toggle is off
-      // only when every line carries one, so a mixed run has to come out uniform.
-      return prefix + (bare ? bare[1] : line)
+      if (!blank && !line.trim()) return line
+      if (strip) return carried.exec(line)[1]
+      const bare = BLOCK_MARK.exec(line)
+      // A blank line contributes nothing but its own whitespace, which the marker replaces.
+      return prefix + (bare ? bare[1] : blank ? '' : line)
     })
     .join('\n')
 

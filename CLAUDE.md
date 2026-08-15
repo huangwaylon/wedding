@@ -110,56 +110,32 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
 
 ### The notes document
 
-The second tab: one free-form markdown document, shared, holding what has been decided.
+The second tab: one free-form markdown document, shared, holding what has been decided. `markdown.js`,
+`Markdown.jsx` and `NotesView.jsx` carry the mechanisms; these are the rules that outlive them.
 
-- It lives in `config` under the key `notes`, one cell. That is what makes it safe without a lock — a save
-  touches one cell, `serializeConfig` emits only the fields it is handed and `setConfig` writes only the rows
-  the payload names — and it is why the feature needed no Apps Script redeploy: `doGet` already returns every
-  config row, so a viewer reads it on the deployment that was already live. A tab of its own would be a third
-  thing that must not drift across a hop neither side can import, and adding its range to `loadBoard`'s batch
-  would 400 on every board built before it, which `looksUninitialized` reads as an unbuilt spreadsheet — an
-  empty board over a live snapshot.
-- **`DEFAULT_CONFIG.notes` is `''` and must stay `''`.** `parseConfig` omits a blank value so the default
-  wins, which is right for a category list; give this one any content and "select all, delete, save" restores
-  that content on the next read. Emptiness is a legitimate intent here, not a missing value.
-- `App`'s `saveNotes` sends `{ notes }` alone, never `{ ...config, notes }`: spreading the merged config would
-  write this build's defaults over the sheet and clobber a Settings save landing beside it. Pinned in
-  `test/render.test.jsx` and `test/sheets.test.js`.
-- Refused before it is sent past `NOTES_MAX_CHARS`: a Sheets cell holds 50,000 characters and the write would
-  400, which the taxonomy reads as `misconfigured` — a notice about scopes and spreadsheet ids for a document
-  somebody pasted a book into.
-- `parseMarkdown` returns DATA, and `Markdown.jsx` maps it onto elements, so no HTML string is built and
-  `innerHTML` appears in no file (`test/ui.test.jsx` scans for it, comments stripped). The document is written
-  by anybody holding the key and read by everybody, and the device keeps a write-capable bearer token in
-  `localStorage`: a renderer that concatenated markup would be an injection surface with a shared credential
-  in front of it. Refused for the same reason: links, which is the one injection route left once markup is out
-  (`javascript:` is a URL). Refused because the vocabulary has to stay small: images, tables, code fences,
-  block quotes, rules, task checkboxes — a second checklist no percentage counts is the worst outcome here.
-- Four blocks and two marks. **A single newline is a line break, a blank line a paragraph:** CommonMark
-  reflows consecutive lines into one, so three things typed on three lines arrive as one sentence, and this is
-  a phone. An unmatched marker renders as typed — half-finished emphasis is what a document looks like
-  mid-sentence, and swallowing the rest of it is worse. Delimiters are read as RUNS (`***both***` is one
-  three-asterisk run), and an opener needs a non-space after it or `2 * 3 * 4` is italic.
-- The parser accepts more than the toolbar produces — `##`, `1.`, single-`*` italic — because people type
-  them, and markup rendering as literal punctuation reads as a broken app.
-- Read mode IS the preview and the Edit toggle IS the preview toggle: a split view halves a 361px column to
-  ~180px, where a bulleted line wraps every three words. So there is no third mode.
-- One write per session, on Done, and nothing sent when the text is unchanged. Two divergences from
-  `TaskDetail`: no unmount flush, because `App` withholds the tab bar for the whole session so Done is the
-  only exit and no stray tap writes a half-finished paragraph; and no Cancel, a discard control over
-  arbitrarily much of somebody else's text being worse than none, with the spreadsheet's revision history as
-  the real undo.
-- Every toolbar button is a toggle whose second press is its own inverse, and a block mark is decided over the
-  WHOLE selection — per line, a mixed run alternates on every tap and never converges. Each transform returns
-  the text AND the selection, and `NotesView` writes both to the node: React re-renders a controlled textarea
-  from its value and the browser then parks the caret at the end, so a transform returning text alone sends
-  somebody to the bottom of the document on every tap. `onMouseDown` is prevented, or focus leaves the field
-  and the keyboard drops.
-- No autofocus anywhere in it. A `focus()` on a surface that re-renders per keystroke drops the iOS keyboard
-  mid-word, and the tap that puts the caret chooses where it goes.
-- The last-writer-wins scope is the whole document, unlike a tick: two people editing notes at once is one
-  overwriting the other. Accepted — there is no lock and no push channel — which is why the draft is buffered
-  and a focus refresh cannot pull text out from under the caret.
+- It is one `config` cell (`CONFIG_FIELDS`), never a tab of its own: one cell is what makes a save safe
+  without a lock, and `doGet` already returns every config row, so the feature needed no redeploy.
+  `config.js` states what a tab would have cost.
+- **`DEFAULT_CONFIG.notes` is `''` and must stay `''`** — `parseConfig` omits a blank value so the default
+  wins, so any content here makes the document unclearable. `test/snapshot.test.js` pins it.
+- `saveNotes` sends `{ notes }` alone, never `{ ...config, notes }`, and `saveConfig` does not widen it:
+  `test/render.test.jsx` pins the call site and `test/board.test.js` the payload.
+- `parseMarkdown` returns data and `Markdown.jsx` maps it onto elements, so `innerHTML` may appear in no file
+  under `src/` — `test/ui.test.jsx` walks all of it, comments stripped. Links are refused for the same reason,
+  and task checkboxes because a second checklist no percentage counts is the worst outcome this app has.
+- Nesting pairs delimiters only by equal run length, so `**a *b***` renders as typed: a full CommonMark
+  delimiter stack is more machinery than this grammar is, and the failure has to be literal text rather than
+  mangled text. `test/markdown.test.js` pins both sides of that trade.
+- Every toolbar transform returns the text AND the selection, and a mark is decided over the whole selection
+  and applied per line. Neither is visible on screen: `test/markdown.test.js` is where they are pinned.
+- **The session waits for its write.** `saveConfig` has no optimistic half, so closing on the unawaited
+  promise puts the pre-save document back on screen — and re-entering Edit inside that window loads the stale
+  text, which the next Done writes over the save that just landed. It also needs `canEdit`, not just a draft,
+  or switching to the read-only view mid-session strands the field with no control on screen.
+- No unmount flush and no Cancel, unlike `TaskDetail`. `NotesView` says why; `test/render.test.jsx` pins the
+  absent flush by counting `onSave` call sites, no regex over the shape being able to.
+- Last-writer-wins covers the whole document, unlike a tick: the draft is buffered so a focus refresh cannot
+  pull text out from under the caret, and README records the rest as a known limitation.
 
 ### Dates are required
 
@@ -310,11 +286,11 @@ JSX.
 | column names and every A1 range | `schema.js` |
 | `CATEGORIES` | `templates.js` |
 | every zone, and the layout of a day string — `monthOf`, `dayOfMonth`, `firstOfMonth` exist so nothing else indexes into `YYYY-MM-DD` | `time.js` |
-| `ICON_SIZE`, so a glyph size is a name rather than literals at five call sites | `icons.jsx` |
+| `ICON_SIZE`, so a glyph size is a name rather than a pair of literals at every call site | `icons.jsx` |
 | `BG_HEX`, `ACCENT_HEX` | `theme.js` |
 | `run()`, the only mutation wrapper, and `fail()`, the only classifier | `useBoard.js` |
 | the markdown grammar AND the toolbar's text transforms, both pure | `markdown.js` |
-| the only done control / title-body-action block / wording of a date's nearness / task field markup / markdown → elements | `DoneToggle`, `Notice`, `DueLabel`, `TaskFields`, `Markdown` |
+| the only done control / read-edit toggle / title-body-action block / wording of a date's nearness / task field markup / markdown → elements | `DoneToggle`, `EditToggle`, `Notice`, `DueLabel`, `TaskFields`, `Markdown` |
 
 No new npm dependencies without a clear reason — one is also a CSP decision, and `test/lockfile.test.js`
 pins the list. Add a host, update the CSP in `index.html`. Never put a real secret in a `VITE_` variable:
@@ -331,8 +307,7 @@ same `t`.
   a key built at runtime needs its own coverage test.
 - Plurals go through `Intl.PluralRules`, never a `count === 1` ternary; `ja` has `other` alone.
 - The pure layers stay pure: `time.js`, `progress.js`, `schema.js`, `templates.js` and `markdown.js` never
-  read the
-  singleton, and a test calling `setLocale` must restore it.
+  read the singleton, and a test calling `setLocale` must restore it.
 - An unknown category renders exactly as typed: the sheet is the source of truth, the catalog a courtesy.
 
 ### CSS
@@ -384,8 +359,8 @@ Measured, and `npm run contrast` re-checks every pair:
   in a ui. Anything reaching for 14 is either a caption or body text; decide which.
 - The notes document lives in 18 / 16 and never reaches `--fs-xl`, which is the hero title's and a row day's
   step and would compete with the header; its two heading levels separate on weight, ink and space instead,
-  and there is no third because there is no fifth size. It is also the one place list markers are restored,
-  `base.css` stripping them globally because a task list is structure — here a bullet is a bullet.
+  and there is no third because there is no fifth size. It is also the one place list markers are restored —
+  `test/ui.test.jsx` pins that as an exact set.
 - Japanese is a first-class language here: `letter-spacing: 0`, no `text-transform`, and no `line-height`
   below 1.5 wherever text can be Japanese, everywhere but the hero percentage and including the couple's
   names. Uppercase belongs in js with `toLocaleUpperCase`, `text-transform` being a no-op on kana that
@@ -403,13 +378,9 @@ Measured, and `npm run contrast` re-checks every pair:
   take the full 44px — smaller in type and padding is what makes them secondary. Every user of the old 36px
   floor was a thumb target.
 - Never a form control below 16px: mobile Safari zooms on focus and will not zoom back. `textarea` has to be
-  named in `base.css`'s two selector lists explicitly — WebKit's own default for one is ~13.3px monospace,
-  under the type floor, in a face whose token was deleted, and under the zoom floor as well.
-- `.textarea` owns no scroller and takes no `dvh` height: there is one document scroller, and
-  `interactive-widget=resizes-content` shrinks `dvh` when the keyboard opens, which would resize the box under
-  the caret on every focus. `NotesView` drives the height from `scrollHeight`, adding the border back because
-  everything is `border-box`; the token is only the floor. Consequence: `preview.jsx` draws that field clipped,
-  and `drive.mjs` is what checks it.
+  named in both of `base.css`'s selector lists explicitly, for the reason stated there.
+- `.textarea` owns no scroller and takes no viewport-derived height, floor included; `NotesView` drives it.
+  Consequence: `preview.jsx` draws that field clipped, and `drive.mjs` is what checks it grew.
 - `role="progressbar"`, never `role="meter"`: ARIA reserves `meter` for a gauge rather than a value
   advancing toward completion, and VoiceOver maps it patchily enough to lose the label and the value.
 - `interactive-widget=resizes-content` is load-bearing with a sticky `.sheet__foot`, or Save sits under the
@@ -452,8 +423,9 @@ Measured, and `npm run contrast` re-checks every pair:
 - `--tabbar-height` is its mirror at the other end, named the same way — `--tabbar-row` is the row of buttons,
   the total adds `--safe-bottom` — and four things offset by that: `.views`'s bottom padding, the FAB, the
   toast stack and `html`'s `scroll-padding-bottom` (or a focused field behind the bar counts as visible).
-  **Nothing else may compose `--safe-bottom`**, or the inset is counted twice and a dead strip appears under
-  the last row. `test/ui.test.jsx` pins both compositions as exact strings.
+  **Nothing offsetting by the bar may add `--safe-bottom` again**, or the inset is counted twice and a dead
+  strip appears under the last row. `test/ui.test.jsx` pins both tokens' compositions as exact strings, and
+  `.views`' omission of the inset.
 - `.hero__progress` therefore renders always, even empty, or the padding overstates the header by the
   strip's height. What is withheld on an empty board is the meter; empty, the strip is the header's bottom
   rule, at a fixed `--hero-strip`.
@@ -470,30 +442,20 @@ Measured, and `npm run contrast` re-checks every pair:
   it. It sticks inside `.plan__group`, a flex column, so the next heading pushes it out; parks at
   `--hero-height`; keeps `z-index: 1` below `--z-header`; and its rule is `--line`, never a shadow. The
   wedding month's tint bleeds outward on a negative margin so month names stay in one column. `.notes__bar`
-  is the same recipe, and sticky at the top rather than the bottom because a bottom-sticky bar lands on iOS's
-  own keyboard accessory row.
+  is the same recipe.
 - The header, the tab bar and the FAB are the only pinned chrome, and `.views` reserves all three below and
   above its content. The header and the bar share `--z-header`: they are at opposite ends and cannot overlap,
   so a `--z-tabbar` at the same number would be two names for one idea. Both sit under `--z-fab`, so a
   floating control wins wherever it does overlap, and under `--z-sheet`, so a modal scrim covers the bar
   rather than leaving it tappable.
-- The bar is OPAQUE, with no wash and no `backdrop-filter`: every measured figure in `tokens.css` is against
-  an opaque token and the two exceptions are the two places where a scrim IS the mechanism, a blur promotes a
-  compositing layer (which is what cost `.hero` its `sticky`), and an `@supports` fallback is a second
-  appearance nobody screenshots. Its inner column carries the horizontal insets, the bar itself being
-  full-bleed: a fixed element's containing block is the viewport, so `body`'s insets do not reach it and a
-  landscape notch would sit on the first tab.
-- The selected tab has three channels — accent ink, a rule on the bar's own top edge, `aria-current` — and
-  the word beside the glyph is a fourth. `<nav>` and `aria-current`, never `role="tablist"`: two thumb
-  targets gain nothing from roving tabindex and arrow traversal, half that pattern is worse than none of it,
-  and `aria-current` survives a static render.
-- The FAB is on the plan tab only, and keeps the right-hand corner. Over two `flex: 1` tabs on a 393px screen
-  a centred button covers the seam and a left-aligned one covers a tab's centre, so a reach for the second
-  destination would open the new-task sheet; and a `+` on a document means nothing.
-- Both are withheld while `typing` — the FAB does not move with the keyboard, and
-  `interactive-widget=resizes-content` re-anchors the bar just above it, putting two ~196px targets on the
-  accessory row, one mis-tap from abandoning an open editor. `.views` reserves their space regardless, CSS
-  being unable to see the tab.
+- The bar is OPAQUE and carries the horizontal insets as its own padding, both for reasons `app.css` gives at
+  the rule; `test/ui.test.jsx` pins both, and that its row is height-capped so a wrapped label cannot grow it
+  past a token nothing measures.
+- Never `role="tablist"` for the tabs: `<nav>` plus `aria-current`, which two thumb targets gain more from and
+  which survives a static render. The selected tab carries three channels besides its accent ink.
+- The FAB is on the plan tab only, and both it and the bar are withheld while `typing`. `.views` reserves
+  their space regardless, CSS being unable to see the tab, so the notes tab ends with the FAB's clearance
+  unoccupied — the price of a button that never lands on a row's controls.
 - `.view--bare` carries the top safe-area inset itself, the unconfigured screen rendering no header.
 - No `-webkit-overflow-scrolling: touch` anywhere: a no-op since iOS 13 that breaks `position: sticky`
   inside the same scroller, which the month heading depends on.
@@ -526,17 +488,11 @@ what they get wrong — a bare caret, a mixed run of lines, an unclosed `**` —
   resized window: an iframe gets an honest viewport, headless Chrome reports a width you did not ask for.
   `to=` does not survive a headless capture, so a surface that only appears mid-scroll needs a preview page
   — `en-sign` is that, for the month tally, the wedding plaque and the `Today` line.
-- `scripts/drive.mjs` covers what no static render can, over CDP: the accordion, the read/edit toggle,
-  commit-on-blur, whether the date control stays inside its row, that ticking under a filter keeps the row
-  on screen, that deleting a just-edited task sends one `delete` and no resurrecting `update`, and the notes
-  tab — the switch, the field's grown height, a toolbar tap keeping its selection, the bar leaving while the
-  keyboard is up, and one `config!B` write per session with none for an unchanged one. Its header records the
-  three ways it can silently verify nothing, and that no optimistic state survives its millisecond fixture —
-  so anything about that window must be pinned elsewhere. The fixture is `public/__dev-board.json`, gitignored
+- `scripts/drive.mjs` covers what no static render can, over CDP, and its header enumerates it, records the
+  ways it can silently verify nothing, and says that no optimistic state survives its millisecond fixture — so
+  anything about that window must be pinned elsewhere. The fixture is `public/__dev-board.json`, gitignored
   under that name because the service worker precaches whatever reaches `dist/`, and its `config` is keyed the
-  way the sheet is (`wedding_date`). Restart the stub between runs: it keeps its grid for the life of the
-  process and the run deletes the only task with a checklist, so a second run comes back half zeroes that read
-  exactly like a regression.
+  way the sheet is (`wedding_date`).
 - The two safe-area insets are the only geometry no harness can show, both reporting 0px in an iframe and in a
   headless viewport: `drive.mjs` fakes each and asserts the band's and the bar's rects against them.
 

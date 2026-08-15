@@ -123,6 +123,17 @@ export const CONFIG_FIELDS = [
  */
 export const NOTES_MAX_CHARS = 50_000
 
+/**
+ * What is wrong with a notes document, as a code so the catalog owns the wording — `validateTask`'s
+ * shape, and pure for the same reason: the refusal lives behind a tap no static render can fire, so
+ * this is the only way it is pinned. Null when it is fine.
+ *
+ * It measures the TRIMMED text, which is what a save sends.
+ */
+export function notesError(text) {
+  return String(text ?? '').trim().length > NOTES_MAX_CHARS ? 'NOTES_TOO_LONG' : null
+}
+
 export function parseConfig(raw) {
   const parsed = {}
   for (const { key, field, kind } of CONFIG_FIELDS) {

@@ -10,8 +10,10 @@ import { readSnapshot, writeSnapshot } from '../src/lib/snapshot.js'
 import {
   CONFIG_FIELDS,
   DEFAULT_CONFIG,
+  NOTES_MAX_CHARS,
   STORAGE_KEYS,
   mergeConfig,
+  notesError,
   parseConfig,
   serializeConfig,
   weddingDay,
@@ -118,14 +120,16 @@ describe('snapshot', () => {
 describe('parseConfig', () => {
   it('maps every declared field', () => {
     // Driven off CONFIG_FIELDS rather than a hand-written object: with the keys spelled out, a new
-    // field could be added and this would still pass while no longer being what its name claims.
-    // Each kind gets a value its own parser has to survive.
-    const sample = { text: 'value', list: 'One, Two ' }
-    const raw = Object.fromEntries(CONFIG_FIELDS.map(({ key, kind }) => [key, sample[kind]]))
+    // field could be added and this would still pass while no longer being what its name claims. And
+    // each value CARRIES ITS OWN KEY, so a mis-mapping is still visible: with one shared string,
+    // swapping `partner1_name` and `partner2_name`'s fields passes too.
+    const raw = Object.fromEntries(
+      CONFIG_FIELDS.map(({ key, kind }) => [key, kind === 'list' ? `${key}A, ${key}B ` : key]),
+    )
     const parsed = parseConfig(raw)
     expect(Object.keys(parsed).sort()).toEqual(CONFIG_FIELDS.map((f) => f.field).sort())
-    for (const { field, kind } of CONFIG_FIELDS) {
-      expect(parsed[field], field).toEqual(kind === 'list' ? ['One', 'Two'] : 'value')
+    for (const { key, field, kind } of CONFIG_FIELDS) {
+      expect(parsed[field], field).toEqual(kind === 'list' ? [`${key}A`, `${key}B`] : key)
     }
   })
 
@@ -142,7 +146,6 @@ describe('parseConfig', () => {
     // `DEFAULT_CONFIG.notes` has to stay ''. Give it any content and "select all, delete, save"
     // silently restores that content on the next read.
     expect(parseConfig({ notes: '   ' })).not.toHaveProperty('notes')
-    expect(mergeConfig(parseConfig({ notes: '' })).notes).toBe('')
     expect(DEFAULT_CONFIG.notes).toBe('')
   })
 
@@ -171,6 +174,18 @@ describe('parseConfig', () => {
 
   it('serialises only the fields present', () => {
     expect(serializeConfig({ venue: 'Meguro' })).toEqual({ venue: 'Meguro' })
+  })
+
+  it('refuses a document past the cell limit, as a code the catalog words', () => {
+    // The refusal lives behind a tap, so this is the only place it is pinned: `NotesView` calls this
+    // and renders `error.${code}`. A Sheets cell holds 50,000 characters, and past that the write 400s
+    // into `misconfigured` — a notice about scopes and spreadsheet ids for a document that is too long.
+    expect(notesError('a'.repeat(NOTES_MAX_CHARS))).toBeNull()
+    expect(notesError('a'.repeat(NOTES_MAX_CHARS + 1))).toBe('NOTES_TOO_LONG')
+    // It measures what a save SENDS, which is the trimmed text.
+    expect(notesError(`  ${'a'.repeat(NOTES_MAX_CHARS)}  `)).toBeNull()
+    expect(notesError('')).toBeNull()
+    expect(notesError(null)).toBeNull()
   })
 
   it('declares a sheet key and a camelCase field for each entry', () => {

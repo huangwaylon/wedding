@@ -539,6 +539,12 @@ describe('touch ergonomics', () => {
     expect(ruleFor(primitives, '.sheet__body')).toMatch(/overscroll-behavior: contain/)
   })
 
+  it('stands the FAB on the bar rather than in it', () => {
+    // The fourth thing offsetting by --tabbar-height, and the one a green suite said nothing about:
+    // without the term the button sits on the bar, over a tab's centre.
+    expect(ruleFor(primitives, '.fab')).toMatch(/bottom: calc\(var\(--tabbar-height\)/)
+  })
+
   it('keeps the toast clear of the FAB, which is itself clear of the tab bar', () => {
     // --z-toast is above --z-fab, so a full-width toast would hide the button behind every
     // "Saved" — and the button now stands on the bar, so the stack has to clear both.
@@ -608,16 +614,22 @@ describe('layout', () => {
     expect(ruleFor(app, '.tabbtn')).toMatch(/min-height: var\(--tabbar-row\)/)
   })
 
-  it('carries the horizontal insets on the bar’s inner column, not on the bar', () => {
-    // A fixed element's containing block is the viewport, so `body`'s left/right insets (base.css)
-    // do not reach here: without this a landscape notch sits on the first tab. The bar itself is
-    // full-bleed so its fill reaches both screen edges.
+  it('carries the horizontal insets as the BAR’s own padding, so its column matches the list’s', () => {
+    // A fixed element's containing block is the viewport, so `body`'s left/right insets (base.css) do
+    // not reach here. They have to be the bar's padding and not the inner box's: insetting the inner
+    // box centres it in the FULL viewport and only then pushes it, which lands the tabs ~23px right of
+    // the rows above them on a notched landscape phone. `left: 0` keeps the fill edge to edge.
     const bar = ruleFor(app, '.tabbar')
     expect(bar).toMatch(/left: 0/)
     expect(bar).toMatch(/right: 0/)
+    expect(bar).toMatch(/padding-inline: var\(--safe-left\) var\(--safe-right\)/)
     const inner = ruleFor(app, '.tabbar__inner')
-    expect(inner).toMatch(/padding-inline: var\(--safe-left\) var\(--safe-right\)/)
     expect(inner).toMatch(/max-width: var\(--column-max\)/)
+    expect(inner).toMatch(/margin-inline: auto/)
+    // And the row is height-capped, or a label wrapping to two lines grows the bar past
+    // --tabbar-height, which nothing measures.
+    expect(inner).toMatch(/height: var\(--tabbar-row\)/)
+    expect(ruleFor(app, '.tabbtn__label')).toMatch(/white-space: nowrap/)
   })
 
   it('makes the bar OPAQUE, with no wash and no backdrop filter to fall back from', () => {
@@ -633,7 +645,7 @@ describe('layout', () => {
     // The accent ink, a rule on the bar's own top edge, and `aria-current` in the markup.
     expect(ruleFor(app, '.tabbtn--on')).toMatch(/color: var\(--accent\)/)
     expect(ruleFor(app, '.tabbtn--on::before')).toMatch(/background-color: var\(--accent\)/)
-    expect(app, 'the label is a channel too').toContain('.tabbtn__label')
+    expect(code(app), 'the label is a channel too').toContain('.tabbtn__label')
   })
 
   it('scroll-pads the document at BOTH ends of the pinned chrome', () => {
@@ -1179,6 +1191,9 @@ describe('the notes document', () => {
     expect(field).toMatch(/min-height:/)
     expect(field).not.toMatch(/overflow/)
     expect(field, 'a fixed height would nest a second scroller').not.toMatch(/^\s*height:/m)
+    // Nor a viewport-derived FLOOR: `resizes-content` shrinks the viewport when the keyboard opens, so
+    // for any document shorter than the floor the box is re-measured smaller under the caret.
+    expect(field, 'the floor must not follow the viewport').not.toMatch(/dvh|vh|dvb/)
     // The rendered document and the editor share a line-height, or the text reflows on every Done.
     expect(field).toMatch(/line-height: var\(--lh-body\)/)
     expect(ruleFor(app, '.doc')).toMatch(/line-height: var\(--lh-body\)/)
@@ -1202,7 +1217,8 @@ describe('the notes document', () => {
     expect(ruleFor(app, '.doc__h2')).toMatch(/font-size: var\(--fs-lg\)/)
     expect(ruleFor(app, '.doc__h3')).toMatch(/font-size: var\(--fs-body\)/)
     expect(ruleFor(app, '.doc')).toMatch(/font-size: var\(--fs-body\)/)
-    for (const rule of ['.doc', '.doc__h2', '.doc__h3', '.doc__item']) {
+    for (const rule of ['.doc', '.doc__h2', '.doc__h3', '.doc__p,\n.doc__list']) {
+      expect(ruleFor(app, rule), rule).toBeTruthy()
       expect(ruleFor(app, rule), rule).not.toMatch(/--fs-xl|--fs-caption/)
     }
   })
@@ -1214,12 +1230,17 @@ describe('the notes document', () => {
     expect(ruleFor(app, '.doc__list--bullets')).toMatch(/list-style: disc/)
     expect(ruleFor(app, '.doc__list--numbers')).toMatch(/list-style: decimal/)
     expect(ruleFor(app, '.doc__item::marker')).toMatch(/color: var\(--ink-3\)/)
-    // Nothing outside the document may bring them back.
-    const restored = [...code(app).matchAll(/^([.\w-]+[^{]*)\{[^}]*list-style: (?!none)/gm)]
-    expect(restored.map((match) => match[1].trim())).toEqual([
-      '.doc__list--bullets',
-      '.doc__list--numbers',
-    ])
+    // Nothing outside the document may bring them back, in ANY sheet and at any indent: scanning
+    // app.css alone missed both `primitives.css` and a rule nested in a media block. The VALUE is read
+    // rather than lookahead-excluded — `list-style:\s*(?!none)` backtracks `\s*` to zero characters,
+    // tests the lookahead against the space, and matches every `list-style: none` in the repo.
+    const restored = [tokens, base, primitives, app].flatMap((sheet) =>
+      [...code(sheet).matchAll(/([.\w-][^{};]*)\{([^}]*)\}/g)].flatMap(([, selector, body]) => {
+        const declared = /list-style:([^;}]+)/.exec(body)
+        return declared && declared[1].trim() !== 'none' ? [selector.trim()] : []
+      }),
+    )
+    expect(restored).toEqual(['.doc__list--bullets', '.doc__list--numbers'])
   })
 
   it('emphasises at 600, never at the UA’s bolder', () => {
@@ -1228,12 +1249,20 @@ describe('the notes document', () => {
     expect(ruleFor(app, '.doc strong')).toMatch(/font-weight: 600/)
   })
 
-  it('spaces the document per element, so a heading hugs what it introduces', () => {
+  it('spaces the document per element, so a heading hugs only what it INTRODUCES', () => {
     // A uniform `gap` cannot say "clear of what precedes, close to what follows" — the same
-    // larger-between-groups reasoning as `.plan` against `.plan__group`.
+    // larger-between-groups reasoning as `.plan` against `.plan__group`. And the hug must not reach a
+    // second heading: with a bare `*` it also matched one, so `##` under `#` lost the space that is its
+    // only channel besides weight and read as the bold first line of the body.
     expect(ruleFor(app, '.doc')).not.toMatch(/gap:/)
     expect(ruleFor(app, '.doc__h2')).toMatch(/margin-block: var\(--space-6\) 0/)
-    expect(app).toContain('.doc__h2 + *')
+    expect(code(app), 'the hug rule must name what it hugs').not.toMatch(/\.doc__h\d \+ \*/)
+    expect(code(app)).toContain('.doc__h2 + .doc__p')
+    expect(code(app)).toContain('.doc__h3 + .doc__list')
+    // Item margins go between items only, or the first and last collapse out through the list, which
+    // has no block padding to stop them, and escape the `:first-child`/`:last-child` reset.
+    expect(ruleFor(app, '.doc__item + .doc__item')).toMatch(/margin-top/)
+    expect(ruleFor(app, '.doc__item')).toBeNull()
   })
 
   it('builds the document out of elements, never out of markup', () => {
@@ -1245,13 +1274,19 @@ describe('the notes document', () => {
     // COMMENTS STRIPPED FIRST, like every other absence assertion here: `Markdown.jsx` and
     // `markdown.js` both explain this rule by naming what they forbid, so a raw scan matches the
     // prose and fails whatever the code does — which is the same defect in the other direction.
-    for (const dir of ['src/components', 'src/lib']) {
-      for (const name of readdirSync(dir)) {
-        const source = readFileSync(`${dir}/${name}`, 'utf8')
-          .replace(/\/\*[\s\S]*?\*\//g, '')
-          .replace(/^\s*\/\/.*$/gm, '')
-        expect(source, `${dir}/${name}`).not.toContain('innerHTML')
-      }
+    // ALL of `src/`, walked: scanning `components` and `lib` alone left `App.jsx`, `main.jsx`, the
+    // state hooks and the catalogs free to build markup, and "anywhere in the app" is the claim.
+    const walk = (dir) =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory() ? walk(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`],
+      )
+    const files = walk('src').filter((path) => /\.jsx?$/.test(path))
+    expect(files.length).toBeGreaterThan(20)
+    for (const path of files) {
+      const source = readFileSync(path, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '')
+      expect(source, path).not.toContain('innerHTML')
     }
   })
 })

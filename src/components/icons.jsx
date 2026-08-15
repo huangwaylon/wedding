@@ -7,7 +7,7 @@
 
 /**
  * The four sizes anything outside this file may ask for, so a glyph size is a NAME rather than a
- * pair of literals at five call sites. `em` for the two inside type, tracking the control's size;
+ * pair of literals at every call site. `em` for the two inside type, tracking the control's size;
  * `rem` for the two that sit beside their own label or in no control at all. INLINE beside 13px
  * label text · FAB the one 24px glyph · TAB above a tab's word, where the glyph carries the row and
  * must not track the 13px caption · DISPLAY the empty board's mark.
@@ -132,8 +132,8 @@ export function RingsIcon(props) {
   )
 }
 
-/* ---- The two tabs and the notes toolbar -------------------------------- Five glyphs, each beside
-   or under its own word: a tab carries a label and every toolbar button an `aria-label`, so none of
+/* ---- The two tabs and the notes toolbar -------------------------------- Each sits beside or under
+   its own word: a tab carries a label and every toolbar button an `aria-label`, so none of
    these is ever the only thing naming the control. The two letters are drawn as outlines like every
    other glyph here rather than set as type — a `<text>` element would resolve through the font stack
    and land at a different weight in Hiragino than in SF Pro. */
