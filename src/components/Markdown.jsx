@@ -16,14 +16,40 @@
 
 import { Fragment } from 'react'
 import { parseMarkdown } from '../lib/markdown.js'
+import ExternalLink from './ExternalLink.jsx'
 
-/** One line's runs. Italic inside bold, so `**a *b***` nests rather than choosing. */
+/**
+ * One line's runs. Italic inside bold inside the link, so `[**a *b***](url)` nests rather than
+ * choosing, and the anchor is the outermost element: a link wearing a bold word is one target, while
+ * a bold run holding two anchors is two. The anchor itself is `ExternalLink`'s, the only one in the
+ * app — its `target` and `rel` are load-bearing, not decoration.
+ *
+ * CONSECUTIVE SPANS SHARING AN HREF ARE ONE ANCHOR. `parseMarkdown` marks the label's spans
+ * individually, so a label with a mark in it — `[the **pavilion** hall](url)` — arrives as three
+ * spans carrying the same URL; wrapped one at a time that is three anchors, three trailing glyphs
+ * and three tab stops for one link.
+ */
 function Runs({ spans }) {
-  return spans.map((span, index) => {
-    let node = span.text
-    if (span.italic) node = <em>{node}</em>
-    if (span.bold) node = <strong>{node}</strong>
-    return <Fragment key={index}>{node}</Fragment>
+  /** Runs, grouped by the anchor they belong to: `{ href, spans }`, href undefined for plain text. */
+  const groups = []
+  for (const span of spans) {
+    const open = groups.at(-1)
+    if (open && open.href && open.href === span.href) open.spans.push(span)
+    else groups.push({ href: span.href, spans: [span] })
+  }
+
+  return groups.map((group, index) => {
+    const marked = group.spans.map((span, at) => {
+      let node = span.text
+      if (span.italic) node = <em>{node}</em>
+      if (span.bold) node = <strong>{node}</strong>
+      return <Fragment key={at}>{node}</Fragment>
+    })
+    return (
+      <Fragment key={index}>
+        {group.href ? <ExternalLink href={group.href}>{marked}</ExternalLink> : marked}
+      </Fragment>
+    )
   })
 }
 

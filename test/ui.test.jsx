@@ -504,6 +504,19 @@ describe('touch ergonomics', () => {
     expect(check).toMatch(/min-height: var\(--tap-target\)/)
   })
 
+  it('centres the check against the head, however tall the head has grown', () => {
+    // The row is a grid whose items are start-aligned, and a title that wraps to two lines plus a
+    // meta line makes the head ~70px: start-aligned, the circle floated to the top of a block the
+    // eye reads as one thing. `align-self` on the CHECK, not `align-items: center` on the grid,
+    // which would stretch the box instead — a 44x70 hover square is not a 44px control.
+    const check = ruleFor(app, '.tcard__check')
+    expect(check).toMatch(/align-self: center/)
+    expect(ruleFor(app, '.tcard')).toMatch(/align-items: start/)
+    // It centres against the head's grid row, so the open content — a row of its own — cannot drag
+    // it down beside the fields.
+    expect(ruleFor(app, '.tcard__content')).toMatch(/grid-column: 1 \/ -1/)
+  })
+
   it('gives the whole collapsed row a target too', () => {
     // The head is one control for the entire row, so it cannot be shorter than the check
     // beside it: a 28px band of card between two 44px targets is a dead strip in the middle
@@ -1156,6 +1169,23 @@ describe('the checklist and the tally', () => {
     expect(toggle).toMatch(/min-height: var\(--tap-target\)/)
   })
 
+  it('gives a linked row two targets instead of one, and only a linked row', () => {
+    // The one exception to the rule above, and it is forced: an anchor cannot live inside a
+    // `<button>`, so a title holding a URL hands the words to the link and the circle keeps its own
+    // 44px. `flex: none` on the toggle, so the link takes the width — as a modifier on the ROW, so
+    // the tick keeps every rule above it including its `--on` colour.
+    const linked = ruleFor(app, '.subtask--linked .subtask__toggle')
+    expect(linked, '.subtask--linked .subtask__toggle rule missing').toBeTruthy()
+    expect(linked).toMatch(/flex: none/)
+    /* The 44px of an ordinary row comes from `flex: 1` spanning it, so `flex: none` alone left a 26px
+       button — the app's primary interaction, under the one target size there is. Stated here, since
+       `min-height` above cannot be the whole of a target. */
+    expect(linked).toMatch(/min-width: var\(--tap-target\)/)
+    expect(ruleFor(app, '.subtask--linked')).toBeNull()
+    // The title keeps its own class either way, so its type, ink and strikethrough are one rule.
+    expect(ruleFor(app, '.subtask__title')).toMatch(/flex: 1/)
+  })
+
   it('ties the checklist to its parent with one vertical rule and no horizontal ones', () => {
     const list = ruleFor(app, '.subtasks')
     expect(list, '.subtasks rule missing').toBeTruthy()
@@ -1286,7 +1316,52 @@ describe('the notes document', () => {
       const source = readFileSync(path, 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/^\s*\/\/.*$/gm, '')
-      expect(source, path).not.toContain('innerHTML')
+      // Case-insensitive, because `dangerouslySetInnerHTML` does not contain the lowercase `i`
+      // this scan used to look for and slipped past it for as long as the scan existed.
+      expect(source.toLowerCase(), path).not.toContain('innerhtml')
     }
+  })
+
+  it('builds every link in ONE file, with the target and the rel that make it safe', () => {
+    // `target="_blank"` is not a preference: installed to the Home Screen there is no address bar
+    // and no Back, so a same-window navigation replaces the board and the app has to be killed to
+    // come back. `rel` keeps the opened page off `window.opener` and keeps a URL carrying the edit
+    // key out of the `Referer`. Both are one line in one file, so the scan is that no other file
+    // spells an anchor at all.
+    const walk = (dir) =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory() ? walk(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`],
+      )
+    /* ALL of `src`, and every spelling: `<a>`, a self-closing `<a/>`, and `createElement('a')`. The
+       narrow version of this scan was `/<a[\s>]/` over `.jsx` alone, which three of those slip past —
+       and this assertion IS the enforcement of "one anchor in the app". */
+    const anchors = walk('src')
+      .filter((path) => /\.jsx?$/.test(path))
+      .filter((path) => {
+        const source = readFileSync(path, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, '')
+        return /<a[\s>/]/.test(source) || /createElement\(\s*['"]a['"]/.test(source)
+      })
+    expect(anchors).toEqual(['src/components/ExternalLink.jsx'])
+
+    const link = readFileSync('src/components/ExternalLink.jsx', 'utf8')
+    expect(link).toContain('target="_blank"')
+    expect(link).toContain('rel="noopener noreferrer"')
+    // And it takes its href from the allowlist rather than deciding for itself what a URL is.
+    expect(link).toMatch(/from '\.\.\/lib\/links\.js'/)
+  })
+
+  it('underlines a link and gives it room to wrap, colour never being the only channel', () => {
+    const rule = ruleFor(primitives, '.link')
+    expect(rule, '.link rule missing').toBeTruthy()
+    expect(rule).toMatch(/text-decoration: underline/)
+    expect(rule).toMatch(/color: var\(--accent\)/)
+    // A pasted URL is one unbroken word and is routinely wider than a 361px column.
+    expect(rule).toMatch(/overflow-wrap: anywhere/)
+    // The glyph beside it inherits both, so no second colour and no second size.
+    const mark = ruleFor(primitives, '.link__mark')
+    expect(mark).toBeTruthy()
+    expect(mark).not.toMatch(/color:|font-size:/)
   })
 })

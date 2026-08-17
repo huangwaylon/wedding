@@ -543,7 +543,7 @@ describe('the header repair', () => {
   })
 
   it('leaves a trailing column alone, in BOTH directions', async () => {
-    // The read is `tasks!A1:I`, derived from `TASK_COLUMNS`, so a column past I is invisible to
+    // The read is `tasks!A1:<last>`, derived from `TASK_COLUMNS`, so a column past it is invisible to
     // this app and cannot shift an index. `Code.gs` did clear one — it read every column that
     // existed, where a shifting count could take a real column with it — and chasing that here
     // would mean widening the read to tidy something harmless, AND wiping the column a newer
@@ -574,6 +574,25 @@ describe('the header repair', () => {
     await sheets.updateTasks(ID, [task('p1')])
     // One write, not two: the repair would be a whole-grid write of its own.
     expect(api.log.filter((call) => call.method === 'POST')).toHaveLength(1)
+  })
+
+  it('widens a sheet built by an older deployment, without losing a cell of it', async () => {
+    // THE MIGRATION, and there is no migration code: `start` was appended, so a live sheet's header
+    // stops matching, the next editor write repairs it by NAME, and the new column arrives empty on
+    // every existing row. Nothing has to be run by hand and no reader has to be redeployed first.
+    const old = gridOf(FAMILY)
+    const width = HEADER.length - 1
+    old.tasks = old.tasks.map((line) => line.slice(0, width))
+    const api = makeApi({ tabs: old })
+
+    await sheets.updateTasks(ID, [task('p2', { title: 'Edited', start: '2027-01-15' })])
+
+    expect(api.grid.tasks[0]).toEqual(HEADER)
+    const rows = stored(api.grid)
+    expect(rows.map((row) => row.title)).toEqual(FAMILY.map((row) => (row.id === 'p2' ? 'Edited' : row.title)))
+    expect(rows.find((row) => row.id === 'p2').start).toBe('2027-01-15')
+    expect(rows.find((row) => row.id === 'p1').start).toBe('')
+    expect(rows.find((row) => row.id === 'p1').due).toBe('2027-02-01')
   })
 
   it('rebuilds a header somebody deleted entirely', async () => {

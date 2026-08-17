@@ -11,9 +11,11 @@
  * number format on every column it builds), so fields are strings here too and are parsed at the
  * point of use.
  *
- * A task is a title, a day and a tick. No start, no clock time, no all-day flag, no owner, no memo:
- * each costs a control on a 393px screen and a column somebody has to understand in the
- * spreadsheet.
+ * A task is a title, a day and a tick, with an OPTIONAL day it starts. No clock time, no all-day
+ * flag, no owner, no memo: each costs a control on a 393px screen and a column somebody has to
+ * understand in the spreadsheet. `start` earns its column by answering a question the board could not
+ * — which of these am I supposed to be doing now — and it is optional precisely so it costs nothing
+ * on the rows that do not need it.
  */
 
 /**
@@ -34,6 +36,12 @@ export const TASK_COLUMNS = [
   'updated_at',
   'deleted_at',
   'parent_id',
+  /**
+   * The day work on it starts, 'YYYY-MM-DD', or empty. Optional, and last because appending is the
+   * one change that shifts no index: a deployment predating it reads every other column by name and
+   * serves a board without this one, rather than a board of shifted cells.
+   */
+  'start',
 ]
 
 export const TASKS_SHEET = 'tasks'
@@ -101,6 +109,7 @@ export function rowToTask(row) {
     title: cellText(row?.title),
     category: cellText(row?.category),
     due: cellText(row?.due),
+    start: cellText(row?.start),
     doneAt: cellText(row?.done_at),
     createdAt: cellText(row?.created_at),
     updatedAt: cellText(row?.updated_at),
@@ -123,6 +132,9 @@ export function taskToRow(task) {
     title: cellText(task.title),
     category: cellText(task.category),
     due: cellText(task.due),
+    /** Optional, so '' is a value here and not an omission: a write rewrites the whole row, and
+        clearing a start date has to be able to reach the cell. */
+    start: cellText(task.start),
     done_at: cellText(task.doneAt),
     deleted_at: cellText(task.deletedAt),
     /**

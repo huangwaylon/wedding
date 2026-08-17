@@ -244,6 +244,57 @@
   min-width: 0;
 }
 
+/* A field and the one button that acts on it — an optional date and the control that empties it
+   again. Not `.field__row`, whose children share the width equally: here the input takes what is
+   left, and the 44px button must not be squeezed. */
+.field__pair {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.field__pair > .input {
+  /* A date control's intrinsic width is a floor, so the basis is 0 and `min-width` lets it shrink
+     inside a 252px card — see `.input[type="date"]` above. */
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Stated rather than left to the basis: the button is a thumb target and may not be the thing that
+   gives way when the field beside it is wide. */
+.field__pair > .btn {
+  flex: none;
+}
+
+/* ---- Links ------------------------------------------------------------
+   The one thing in the app that leaves it, and the only underlined text there is: colour is never the
+   only channel, and an underline is what a link has always been. --accent on --surface is the same
+   pair `check-contrast` measures as white-on-accent — 8.69:1 at the worst preset — so it needs no
+   figure of its own. */
+.link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  /* Clear of the descenders on a 16px line, where a 1px rule through a `p` or a `y` is a smudge. */
+  text-underline-offset: 2px;
+  /* A pasted URL is one unbroken word and is routinely wider than a 361px column: without this it
+     draws past the card's edge, which is exactly what `drive.mjs`'s overflow check reports. */
+  overflow-wrap: anywhere;
+  transition: color var(--transition-fast);
+}
+
+.link:hover {
+  color: var(--accent-hover);
+}
+
+/* Trails the words at their own colour and size. --space-hair, not --space-1: at 4px it reads as a
+   space and the glyph stops belonging to the link. The nudge sits it on the text's baseline rather
+   than its box, where it rides high beside 16px type. */
+.link__mark {
+  margin-inline-start: var(--space-hair);
+  vertical-align: -0.1em;
+}
+
 /* ---- Chips ------------------------------------------------------------ */
 .chip {
   display: inline-flex;

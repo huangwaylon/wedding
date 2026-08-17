@@ -158,18 +158,75 @@ describe('parseMarkdown: marks', () => {
     expect(span).toEqual({ text: 'both', bold: true })
   })
 
-  it('never produces anything but text and two flags, whatever is in the document', () => {
+  it('never produces anything but text, two flags and an href, whatever is in the document', () => {
     // The parser is the reason there is no `dangerouslySetInnerHTML` anywhere: a span carries a
-    // string and at most `bold`/`italic`, so markup in the sheet is text on screen.
-    const nasty = '<script>alert(1)</script>\n- <img src=x onerror=y>\n# [a](javascript:1)'
+    // string, at most `bold`/`italic`, and at most an href that has already been through the
+    // allowlist — so markup in the sheet is text on screen. Widening this list is the whole cost of
+    // the link, which is why the next assertion pins what an href may be.
+    const nasty =
+      '<script>alert(1)</script>\n- <img src=x onerror=y>\n# [a](javascript:1)\n[b](https://x.example)'
     for (const block of parseMarkdown(nasty)) {
       for (const span of block.spans ?? (block.items ?? block.lines).flat()) {
-        expect(Object.keys(span).every((key) => ['text', 'bold', 'italic'].includes(key))).toBe(true)
+        expect(
+          Object.keys(span).every((key) => ['text', 'bold', 'italic', 'href'].includes(key)),
+        ).toBe(true)
         expect(typeof span.text).toBe('string')
       }
     }
-    // And a link is not a block or a mark at all: it stays the characters somebody typed.
+    // And a link the allowlist refuses is not a mark at all: it stays the characters somebody typed.
     expect(words(parseMarkdown('[a](javascript:1)')[0])).toBe('[a](javascript:1)')
+  })
+
+  it('gives an href to http and https and to nothing else, ever', () => {
+    // The one attribute a reader controls. Every span the parser can produce, over every scheme
+    // somebody might paste: an href that is not http(s) is the injection this grammar exists to
+    // avoid, so the assertion is over the OUTPUT rather than over the inputs thought of today.
+    const documents = [
+      '[a](https://x.example)',
+      '[a](http://x.example)',
+      '[a](javascript:alert(1))',
+      '[a](data:text/html,x)',
+      '[a](mailto:a@b.example)',
+      '[a](//x.example)',
+      '[a](/wedding/)',
+      '[a](x.example)',
+      'bare https://x.example here',
+      'bare www.x.example here',
+      '**[a](https://x.example)**',
+      '- [a](https://x.example)',
+      '# [a](https://x.example)',
+    ]
+    let linked = 0
+    for (const text of documents) {
+      for (const block of parseMarkdown(text)) {
+        for (const span of block.spans ?? (block.items ?? block.lines).flat()) {
+          if (span.href === undefined) continue
+          linked += 1
+          expect(span.href, text).toMatch(/^https?:\/\//i)
+        }
+      }
+    }
+    /* Counted, or a regression that dropped links entirely would satisfy every assertion above while
+       the headline claim went untested: six of those documents hold an http(s) URL. */
+    expect(linked).toBe(6)
+  })
+
+  it('reads a label with marks in it, and prints a broken link as typed', () => {
+    const [link] = parseMarkdown('[**the** venue](https://x.example)')[0].lines[0]
+    expect(link).toEqual({ text: 'the', bold: true, href: 'https://x.example' })
+    // An unclosed bracket, an empty label and a URL with a space in it are all somebody mid-sentence.
+    expect(words(parseMarkdown('[a](https://x.example')[0])).toBe('[a](https://x.example')
+    expect(words(parseMarkdown('[](https://x.example)')[0])).toBe('[](https://x.example)')
+    expect(words(parseMarkdown('[a](https://x .example)')[0])).toBe('[a](https://x .example)')
+  })
+
+  it('links a bare URL, and lets its asterisks be part of the address', () => {
+    // The URL is consumed whole and BEFORE the emphasis scan, or a query string with a `*` in it
+    // opens an italic that swallows the rest of the line.
+    const [span] = parseMarkdown('https://x.example/a*b*c')[0].lines[0]
+    expect(span).toEqual({ text: 'https://x.example/a*b*c', href: 'https://x.example/a*b*c' })
+    // And arithmetic still survives, which is the flanking rule doing its own job.
+    expect(parseMarkdown('2 * 3 * 4')[0].lines[0]).toEqual([{ text: '2 * 3 * 4' }])
   })
 })
 
@@ -330,7 +387,20 @@ describe('the block toggles over awkward selections', () => {
   it('round-trips every transform through the parser without throwing', () => {
     // The transforms write to the shared cell, so whatever they produce has to be something the
     // grammar can read back.
-    const shapes = ['', 'a', '# a\nb', '- a\n- b', '**a**', '*a*', 'a\n\nb', '   ', '1. a']
+    const shapes = [
+      '',
+      'a',
+      '# a\nb',
+      '- a\n- b',
+      '**a**',
+      '*a*',
+      'a\n\nb',
+      '   ',
+      '1. a',
+      '[a](https://x.example)',
+      'see https://x.example now',
+      '[a](https://x.example',
+    ]
     for (const transform of [toggleBold, toggleItalic, toggleBullets, toggleHeading]) {
       for (const shape of shapes) {
         for (const [start, end] of [[0, 0], [0, shape.length], [1, 1], [0, 1]]) {

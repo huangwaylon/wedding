@@ -53,19 +53,40 @@ describe('the Code.gs column contract', () => {
     expect([...new Set(options)]).toEqual(['RAW'])
   })
 
-  it('keeps parent_id last, because appending is the only safe change', () => {
+  it('grows only at the END, because appending is the only safe change', () => {
     // Appending cannot shift an existing column's index, and every range in `schema.js` is
-    // derived from the list's length, so an append widens all of them at once.
-    expect(TASK_COLUMNS[TASK_COLUMNS.length - 1]).toBe('parent_id')
+    // derived from the list's length, so an append widens all of them at once. `start` is the one
+    // column added since the first deployment, which is why it is last and not beside `due`.
+    expect(TASK_COLUMNS[TASK_COLUMNS.length - 1]).toBe('start')
+    expect(TASK_COLUMNS.slice(0, 9)).toEqual([
+      'id',
+      'title',
+      'category',
+      'due',
+      'done_at',
+      'created_at',
+      'updated_at',
+      'deleted_at',
+      'parent_id',
+    ])
   })
 
-  it('carries only the nine columns a task has', () => {
-    // A task is a title, a day and a tick. None of these may come back. `notes` here means a MEMO
-    // PER TASK — a field that would cost a control on a 393px screen and a column to understand; the
-    // shared notes document is one cell in the config tab and nothing to do with a row.
-    for (const gone of ['start', 'end', 'all_day', 'notes', 'owner']) {
+  it('keeps updated_at and deleted_at adjacent, so a cascade is one range per row', () => {
+    // `setDeleted` writes them as one span. A column inserted between them doubles every delete
+    // into two ranges per row, which is also two chances to half-fail.
+    expect(TASK_COLUMNS.indexOf('deleted_at')).toBe(TASK_COLUMNS.indexOf('updated_at') + 1)
+  })
+
+  it('carries only the ten columns a task has', () => {
+    // A task is a title, a day, a tick and — optionally — the day it starts. None of these others
+    // may come back. `notes` here means a MEMO PER TASK — a field that would cost a control on a
+    // 393px screen and a column to understand; the shared notes document is one cell in the config
+    // tab and nothing to do with a row. `end` stays gone: a second required date is a range, which
+    // is what `start` plus `due` deliberately is not — one deadline, one optional beginning.
+    for (const gone of ['end', 'all_day', 'notes', 'owner', 'assignee']) {
       expect(TASK_COLUMNS).not.toContain(gone)
     }
+    expect(TASK_COLUMNS).toHaveLength(10)
   })
 })
 
@@ -81,12 +102,14 @@ describe('rowToTask', () => {
       updated_at: '2026-08-07T00:00:00.000Z',
       deleted_at: '',
       parent_id: '',
+      start: ' 2027-01-15 ',
     })
     expect(task).toEqual({
       id: 'abc',
       title: 'Book the venue',
       category: 'Venue',
       due: '2027-02-01',
+      start: '2027-01-15',
       doneAt: '',
       createdAt: '2026-08-07T00:00:00.000Z',
       updatedAt: '2026-08-07T00:00:00.000Z',
@@ -95,15 +118,19 @@ describe('rowToTask', () => {
     })
   })
 
-  it('reads the day from `due` and from nowhere else', () => {
-    // One column carries the date. A key the layout does not contain is not a fallback.
+  it('reads each day from its own column and from nowhere else', () => {
+    // Two columns, two questions, and a key the layout does not contain is not a fallback for
+    // either: `end` names nothing here, and a start date may never stand in for a deadline.
     expect(rowToTask({ id: 'a', title: 'x', due: '2027-03-09' }).due).toBe('2027-03-09')
     expect(rowToTask({ id: 'a', title: 'x', end: '2027-02-01' }).due).toBe('')
+    expect(rowToTask({ id: 'a', title: 'x', start: '2027-01-15' }).start).toBe('2027-01-15')
+    expect(rowToTask({ id: 'a', title: 'x', start: '2027-01-15' }).due).toBe('')
   })
 
   it('never yields the string "undefined" for a missing cell', () => {
     const task = rowToTask({ id: 'a', title: 'x' })
     expect(task.due).toBe('')
+    expect(task.start).toBe('')
     expect(task.category).toBe('')
     expect(task.parentId).toBe('')
   })
@@ -119,6 +146,7 @@ describe('taskToRow', () => {
     title: 'Book the venue',
     category: 'Venue',
     due: '2027-02-01',
+    start: '',
     doneAt: '',
     deletedAt: '',
     parentId: '',
@@ -135,6 +163,18 @@ describe('taskToRow', () => {
     // silently promotes a subtask to a task.
     expect(taskToRow({ ...task, parentId: 'p1' }).parent_id).toBe('p1')
     expect(taskToRow(task)).toHaveProperty('parent_id')
+  })
+
+  it('always sends start, empty included, so clearing one can reach the cell', () => {
+    // Same rule as `parent_id`, for the same reason: the payload is the whole row. Omitted, an
+    // optional date could be set but never removed — and it is also part of the fingerprint below,
+    // so a session that changed only the start date has to read as changed.
+    expect(taskToRow({ ...task, start: '2027-01-15' }).start).toBe('2027-01-15')
+    expect(taskToRow(task)).toHaveProperty('start')
+    expect(taskToRow(task).start).toBe('')
+    expect(JSON.stringify(taskToRow({ ...task, start: '2027-01-15' }))).not.toBe(
+      JSON.stringify(taskToRow(task)),
+    )
   })
 
   it('omits both timestamps, which is what makes it a FINGERPRINT', () => {

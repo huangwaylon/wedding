@@ -306,6 +306,15 @@ describe('the anonymous read', () => {
     expect(JSON.parse(script.doGet()).tasks[0].due).toBe('2027-01-01T00:00')
   })
 
+  it('reformats a coerced start cell the same way, it being a day like any other', () => {
+    // The optional column reaches the anonymous read through the same `readCell`, so a start date
+    // somebody retyped in the Sheets UI arrives parseable rather than as "Fri Jan 01 2027 …".
+    book.tasks.grid[1][TASK_COLUMNS.indexOf('start')] = new Date('2027-01-01T00:00:00Z')
+    const [row] = JSON.parse(script.doGet()).tasks
+    expect(row.start).toBe('2027-01-01T00:00')
+    expect(typeof row.start).toBe('string')
+  })
+
   it('reformats a coerced config cell too', () => {
     // A wedding date somebody retyped by hand is the realistic case, and it reaches the countdown.
     book.config.grid.push(['wedding_date', new Date('2027-04-18T00:00:00Z')])

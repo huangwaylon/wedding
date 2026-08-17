@@ -420,6 +420,7 @@ export function useBoard({ editKey, onUnauthorized }) {
         parentId: parent.id,
         category: '',
         due: '',
+        start: '',
         doneAt: '',
         deletedAt: '',
         pending: true,

@@ -67,12 +67,17 @@ export default {
   'notes.italic': '斜体',
   'notes.heading': '見出し',
   'notes.bullets': '箇条書き',
+  'notes.edit': 'メモを編集する',
+
+  'link.newTab': '新しいタブで開きます',
 
   'list.emptyFiltered': '該当なし。',
   'list.showAll': 'すべて表示',
   'plan.cardLabel': '{title}：{when}、{state}',
   'plan.cardLabelSubs': '{title}：{when}、{state}、{subs}',
   'plan.theDay': '結婚式',
+  'plan.past': '期限切れ',
+  'plan.ongoing': '進行中',
   'list.subtasks': { other: '{count}件中{done}件完了' },
   'list.subtaskAdd': 'サブタスクを追加',
   'list.markDone': '{title}を完了にする',
@@ -99,6 +104,8 @@ export default {
   'form.category': 'カテゴリ',
   'form.categoryNone': 'カテゴリなし',
   'form.due': '期限',
+  'form.start': '開始日',
+  'form.startClear': '開始日を消す',
   'form.deleteThis': 'このタスクを削除',
 
   'error.MISSING_TITLE': 'やることを入力してください。',

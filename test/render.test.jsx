@@ -50,6 +50,7 @@ function task(overrides = {}) {
     title: 'Book the venue',
     category: 'Venue',
     due: '2027-01-11',
+    start: '',
     doneAt: '',
     createdAt: '',
     updatedAt: '',
@@ -282,10 +283,22 @@ describe('TaskCard', () => {
     expect(html).not.toContain('type="date"')
     expect(html).not.toContain('<select')
     expect(html).not.toMatch(/class="input"/)
-    // What it shows instead: the date spelled out, and the way in.
-    expect(html).toContain('tcard__fact')
-    expect(html).toContain('Mon, January 11, 2027')
+    // What it shows instead: the way in, and nothing else at all on a row with no start date. The
+    // due date is NOT restated here — the row's own day column and the words beside it carry it,
+    // and a line repeating it was the largest thing in an open row.
+    expect(html).not.toContain('tcard__fact')
+    expect(html).not.toContain('January 11, 2027')
     expect(html).toMatch(/aria-pressed="false"[^>]*>.*?Edit</s)
+  })
+
+  it('states the day it STARTS, spelled out, and only when it has one', () => {
+    // The one fact worth a line of its own: a start date is the only thing that can say a task is
+    // already somebody's to do, and it is the reason the row appears under Ongoing.
+    const [started] = rows([task({ start: '2027-01-04' })])
+    const html = render(started, { open: true })
+    expect(html).toContain('tcard__fact')
+    expect(html).toContain('>Start<')
+    expect(html).toContain('Mon, January 4, 2027')
   })
 
   it('offers no delete on the read path either', () => {
@@ -294,18 +307,21 @@ describe('TaskCard', () => {
     expect(render(row, { open: true, editing: true })).toContain('Delete this task')
   })
 
-  it('says so when an open row has no date', () => {
+  it('states no fact at all on an undated row, having none to state', () => {
+    // The day column already prints a dash and the head's accessible name says "No date". A fact
+    // line saying it a third time is a label on an absence.
     const [none] = rows([task({ due: '' })])
-    expect(render(none, { open: true })).toMatch(/tcard__fact[\s\S]*?No date/)
+    expect(render(none, { open: true })).not.toContain('tcard__fact')
   })
 
-  it('renders three fields once editing, with no Save button and no form', () => {
+  it('renders four fields once editing, with no Save button and no form', () => {
     // Every field commits on blur, so there is no dirty state a collapse or a reload can throw
     // away — and therefore nothing to submit.
     const html = render(row, { open: true, editing: true })
     expect(html).toContain('class="editor"')
     expect(html).toContain('>Title<')
     expect(html).toContain('>Due<')
+    expect(html).toContain('>Start<')
     expect(html).toContain('>Category<')
     expect(html).not.toContain('<form')
     // Fields the model does not have.
@@ -313,7 +329,11 @@ describe('TaskCard', () => {
     expect(html).not.toContain('>Notes<')
     expect(html).not.toContain('>All day<')
     expect(html).not.toContain('type="time"')
-    expect(html.match(/type="date"/g)).toHaveLength(1)
+    // TWO days, and no more: the one it is due and the optional one it starts. Both are `type=date`,
+    // so this count is also what catches a third being added.
+    expect(html.match(/type="date"/g)).toHaveLength(2)
+    expect(html).toMatch(/id="edit-a-due"/)
+    expect(html).toMatch(/id="edit-a-start"/)
     // And the facts line gives way to the fields rather than stacking above them.
     expect(html).not.toContain('tcard__fact')
     expect(html).toContain('aria-pressed="true"')
@@ -324,19 +344,25 @@ describe('TaskCard', () => {
     // be saved unvalidated — and it did once save an end before a start.
     const child = rows([task({ id: 'p' }), sub('p', 1)])[0].subtasks[0]
     const html = render(
-      { ...child, progress: { state: STATE.NODATE, days: null, dated: false, tally: null }, subtasks: [] },
+      {
+        ...child,
+        progress: { state: STATE.NODATE, days: null, dated: false, ongoing: false, tally: null },
+        subtasks: [],
+      },
       { open: true, editing: true },
     )
     expect(html).toContain('class="editor"')
+    // Neither day: `taskFromDraft` leaves both cells of a row with a parentId untouched, so a field
+    // offered here would write an unvalidated one.
     expect(html).not.toContain('type="date"')
   })
 
   it('hides the toggle from a viewer, who has nothing to switch to', () => {
-    const parent = rows([task({ id: 'p' }), sub('p', 1)])[0]
+    const parent = rows([task({ id: 'p', start: '2027-01-04' }), sub('p', 1)])[0]
     const viewer = render(parent, { open: true, canEdit: false })
     expect(viewer).not.toContain('tcard__foot')
     expect(viewer).not.toContain('Edit')
-    // But the facts and the checklist are both there — that is the whole disclosure for them.
+    // But the fact and the checklist are both there — that is the whole disclosure for them.
     expect(viewer).toContain('tcard__fact')
     expect(viewer).toContain('Step 1')
   })
@@ -356,24 +382,35 @@ describe('the checklist inside an open row', () => {
       />,
     )
 
-  it('keeps the checklist tickable on the READ path', () => {
-    // Ticking an item is doing the work, not editing the task, so it is in both modes — and it
-    // is the reason a row is opened at all.
+  it('keeps the checklist tickable on the READ path, and adds no field to type in', () => {
+    // Ticking an item is doing the work, not editing the task, so it is on both paths — and it is
+    // the reason a row is opened at all. The add field is NOT: a text input behind the commonest
+    // tap made every open row read as a form to fill in.
     const html = render(parented([sub('p', 1)]), { open: true })
     expect(html).not.toContain('class="editor"')
     expect(html).toContain('subtask__toggle')
-    expect(html).toContain('subtask-add__field')
+    expect(html).not.toContain('subtask-add__field')
+
+    const editing = render(parented([sub('p', 1)]), { open: true, editing: true })
+    expect(editing).toContain('subtask-add__field')
   })
 
-  it('offers no add field on a PROMOTED row, which is the only thing that withholds it', () => {
+  it('draws no empty rail on a row with no checklist and nothing to add to it', () => {
+    // With the add field behind Edit, an editor reading a row with no items has nothing in the
+    // list at all — and an empty `<ul>` still paints its own indent rule.
+    expect(render(parented([]), { open: true })).not.toContain('class="subtasks"')
+    expect(render(parented([]), { open: true, editing: true })).toContain('class="subtasks"')
+  })
+
+  it('offers no add field on a PROMOTED row, whatever the mode', () => {
     // A row the read could not place is drawn as a task, but a child of it would be a grandchild
     // and the next read would promote that one too — so the field would invite somebody to type a
     // checklist that walks out of the row. The existing items stay fully live.
     const row = parented([sub('p', 1), sub('p', 2)])
-    expect(render(row, { open: true })).toContain('subtask-add__field')
+    expect(render(row, { open: true, editing: true })).toContain('subtask-add__field')
 
     const promoted = { ...row, promoted: true }
-    const withheld = render(promoted, { open: true })
+    const withheld = render(promoted, { open: true, editing: true })
     expect(withheld).not.toContain('subtask-add__field')
     expect(withheld.match(/<li class="subtask/g) ?? []).toHaveLength(2)
     expect(withheld).toContain('subtask__toggle')
@@ -395,6 +432,33 @@ describe('the checklist inside an open row', () => {
     const bare = parented([])
     expect(render(bare)).not.toContain('tcard__tally')
     expect(render(bare, { open: true, canEdit: false })).not.toContain('class="subtasks"')
+  })
+
+  it('makes a URL in a title a link, leaving the tick its own target', () => {
+    // A pasted URL is there to be followed, and an anchor cannot live inside the toggle: HTML
+    // admits no interactive descendant in a `<button>`, so the parser hoists it out and the row
+    // ends up with two overlapping controls. The circle keeps its 44px, the words become the link.
+    const linked = parented([sub('p', 1)])
+    linked.subtasks[0] = { ...linked.subtasks[0], title: 'Quote: https://venue.example/a?b=1' }
+    const html = render(linked, { open: true })
+
+    expect(html).toContain('subtask--linked')
+    expect(html).toContain('href="https://venue.example/a?b=1"')
+    expect(html).toContain('target="_blank"')
+    expect(html).toContain('rel="noopener noreferrer"')
+    // The anchor is a SIBLING of the toggle, not inside it.
+    const anchor = html.indexOf('<a class="link"')
+    const closes = html.indexOf('</button>')
+    expect(closes).toBeLessThan(anchor)
+    // And the title keeps its own class either way, so one rule styles both shapes.
+    expect(html).toContain('class="subtask__title"')
+  })
+
+  it('leaves a title with no URL as one whole target', () => {
+    const html = render(parented([sub('p', 1)]), { open: true })
+    expect(html).not.toContain('subtask--linked')
+    expect(html).not.toContain('<a class="link"')
+    expect(html).toMatch(/<button[^>]*class="subtask__toggle"[\s\S]*?subtask__title/)
   })
 
   it('shows the tally and names it in the row’s label', () => {
@@ -433,7 +497,6 @@ describe('the checklist inside an open row', () => {
     const read = render(parented([sub('p', 1)]), { open: true })
     expect(read).not.toContain('aria-label="Delete Step 1"')
     expect(read).toContain('subtask__toggle')
-    expect(read).toContain('subtask-add__field')
 
     const editing = render(parented([sub('p', 1)]), { open: true, editing: true })
     expect(editing).toContain('aria-label="Delete Step 1"')
@@ -444,7 +507,7 @@ describe('the checklist inside an open row', () => {
     // nested forms: the parser drops the inner one, so Enter reached the outer submit and
     // tried to save the TASK. A static render cannot catch that — the nesting only becomes
     // invalid once a browser parses it — so the shape is pinned here instead.
-    const open = render(parented([sub('p', 1)]), { open: true })
+    const open = render(parented([sub('p', 1)]), { open: true, editing: true })
     const start = open.indexOf('class="subtasks"')
     const list = open.slice(start, open.indexOf('</ul>', start))
     expect(list).not.toContain('<form')
@@ -455,7 +518,9 @@ describe('the checklist inside an open row', () => {
   })
 
   it('offers the add row to an editor and not to a viewer', () => {
-    expect(render(parented([sub('p', 1)]), { open: true })).toContain('subtask-add__field')
+    expect(render(parented([sub('p', 1)]), { open: true, editing: true })).toContain(
+      'subtask-add__field',
+    )
     const viewer = render(parented([sub('p', 1)]), { open: true, canEdit: false })
     expect(viewer).not.toContain('subtask-add__field')
     // But the check slot stays occupied, so the two lists line up.
@@ -547,7 +612,7 @@ describe('Plan', () => {
     expect(tallies(html)).toEqual(['1/2', '0/1'])
   })
 
-  it('withholds every whole-month figure while a filter is on', () => {
+  it('withholds every whole-group figure while a filter is on', () => {
     // THE misleading-number case. `Plan` receives the FILTERED list, so a tally counted over
     // the overdue slice of a month would read "0/1 done" about a month that is nine tasks long
     // and mostly finished. The Today line goes with it: a list with holes cannot claim that
@@ -563,9 +628,10 @@ describe('Plan', () => {
 
   it('marks where today falls, once, and only between two rows', () => {
     // The hero counts down and the tracker carries an on-schedule mark; the list — the screen
-    // people live in — had no "you are here" at all.
+    // people live in — had no "you are here" at all. The past side is a FINISHED task: an
+    // unfinished one past its date is lifted into Past deadline and leaves its month.
     const list = rows([
-      task({ id: 'past', due: '2026-12-10' }),
+      task({ id: 'past', due: '2026-12-10', doneAt: '2026-12-09T00:00:00.000Z' }),
       task({ id: 'future', title: 'Second', due: '2027-03-20' }),
     ])
     const html = render(list, { today: TODAY })
@@ -580,8 +646,20 @@ describe('Plan', () => {
     // board entirely in the past has no row for it to sit above.
     const future = rows([task({ id: 'a', due: '2027-03-20' })])
     expect(render(future, { today: TODAY })).not.toContain('plan__now')
-    const past = rows([task({ id: 'a', due: '2026-12-20' })])
+    const past = rows([task({ id: 'a', due: '2026-12-20', doneAt: '2026-12-19T00:00:00.000Z' })])
     expect(render(past, { today: TODAY })).not.toContain('plan__now')
+  })
+
+  it('measures the boundary over the MONTHS alone, never the lifted sections', () => {
+    // Everything above the calendar is already past or in progress, so counting those rows as the
+    // line's past side would put a "Today" line above the first month of an all-future board.
+    const list = rows([
+      task({ id: 'late', due: '2026-12-10' }),
+      task({ id: 'future', title: 'Second', due: '2027-03-20' }),
+    ])
+    const html = render(list, { today: TODAY })
+    expect(html).toContain('Past deadline')
+    expect(html).not.toContain('plan__now')
   })
 
   it('names the wedding’s own month, once, and leaves the others alone', () => {
@@ -595,6 +673,99 @@ describe('Plan', () => {
     expect(html).toContain('the day')
     // On the April heading, not the January one.
     expect(html.indexOf('plan__month--day')).toBeGreaterThan(html.indexOf('January 2027'))
+  })
+
+  it('lifts what is past its deadline into its own section, FIRST, and only when there is any', () => {
+    // The first question on a phone is what has gone wrong, and the answer was scattered down
+    // eleven months of headings. A row is MOVED, never copied: the same task under two headings is
+    // two tasks to anybody scanning, and both tallies would then be wrong.
+    const clean = rows([task({ id: 'a', due: '2027-03-20' })])
+    expect(render(clean, { today: TODAY })).not.toContain('Past deadline')
+
+    const list = rows([
+      task({ id: 'late', title: 'Late one', due: '2026-12-10' }),
+      task({ id: 'soon', title: 'Second', due: '2027-01-20' }),
+    ])
+    const html = render(list, { today: TODAY })
+    expect(months(html)).toEqual(['Past deadline', 'January 2027'])
+    expect(html.indexOf('Past deadline')).toBeLessThan(html.indexOf('January 2027'))
+    expect(html.match(/class="tcard"/g)).toHaveLength(2)
+    expect(html.match(/class="tcard__title">Late one</g)).toHaveLength(1)
+  })
+
+  it('lifts what has started into Ongoing, under the overdue and above the calendar', () => {
+    const list = rows([
+      task({ id: 'late', title: 'Late one', due: '2026-12-10' }),
+      task({ id: 'now', title: 'Started one', due: '2027-01-20', start: '2027-01-02' }),
+      task({ id: 'later', title: 'Third', due: '2027-03-20' }),
+    ])
+    const html = render(list, { today: TODAY })
+    expect(months(html)).toEqual(['Past deadline', 'Ongoing', 'March 2027'])
+    expect(html.match(/class="tcard"/g)).toHaveLength(3)
+    // A start date that has not arrived leaves the row in its month.
+    const future = rows([task({ id: 'x', due: '2027-03-20', start: '2027-03-01' })])
+    expect(months(render(future, { today: TODAY }))).toEqual(['March 2027'])
+  })
+
+  it('leaves an undated row in the group that says so, whatever its start date', () => {
+    // Anybody can empty the cell by hand, and such a row has to sort last into its own group: under
+    // Ongoing it would read as progress while the one thing wrong with it — no date at all — is the
+    // reason it is there.
+    const list = rows([
+      task({ id: 'a', due: '', start: '2027-01-01' }),
+      task({ id: 'b', title: 'Second', due: '2027-03-20' }),
+    ])
+    const html = render(list, { today: TODAY })
+    expect(months(html)).toEqual(['March 2027', 'No date'])
+    expect(html).not.toContain('Ongoing')
+  })
+
+  it('draws an overdue row as overdue even when it has started', () => {
+    // Precedence, and the reason a row can only be in one place: both claims are true of a task
+    // that began and then ran out of time, and the louder one wins.
+    const list = rows([task({ id: 'a', due: '2026-12-10', start: '2026-12-01' })])
+    const html = render(list, { today: TODAY })
+    expect(months(html)).toEqual(['Past deadline'])
+    expect(html.match(/class="tcard"/g)).toHaveLength(1)
+  })
+
+  it('counts a month heading over the MONTH, not over the rows left under it', () => {
+    // Lifting a row out of April must not change what April is worth: the heading says April, and a
+    // figure at its edge that described the remainder would be true about a slice and false about the
+    // month — the exact defect the tally is withheld under a filter to avoid.
+    const list = rows([
+      task({ id: 'a', due: '2027-03-02', doneAt: '2027-02-01T00:00:00.000Z' }),
+      task({ id: 'b', title: 'Started', due: '2027-03-10', start: '2027-01-01' }),
+      task({ id: 'c', title: 'Started too', due: '2027-03-11', start: '2027-01-01' }),
+      task({ id: 'd', title: 'Plain', due: '2027-03-20' }),
+    ])
+    const html = render(list, { today: TODAY })
+    expect(months(html)).toEqual(['Ongoing', 'March 2027'])
+    expect(tallies(html)).toEqual(['2', '1/4'])
+    // Two rows are drawn under the heading, and the figure is `aria-hidden` precisely because it is
+    // not their arithmetic. Counted on the element, not the class: a finished row wears a modifier.
+    expect(html.match(/<article/g)).toHaveLength(4)
+  })
+
+  it('counts a lifted section rather than tallying it', () => {
+    // Every row in one is unfinished by definition, so `done/total` would read `0/2` for ever. The
+    // bare count says how much is on fire without anybody counting rows.
+    const list = rows([
+      task({ id: 'a', due: '2026-12-10' }),
+      task({ id: 'b', title: 'Second', due: '2026-12-11' }),
+      task({ id: 'c', title: 'Third', due: '2027-01-20' }),
+    ])
+    expect(tallies(render(list, { today: TODAY }))).toEqual(['2', '0/1'])
+  })
+
+  it('never puts the wedding plaque on a lifted section', () => {
+    // The tint says "this month is the wedding", which is a claim about a month. A section is not
+    // one, and the wedding's own tasks can be overdue like any others.
+    const list = rows([task({ id: 'a', title: 'Late one', due: '2026-12-02' })])
+    const html = render(list, { today: TODAY, weddingMonth: '2026-12' })
+    expect(months(html)).toEqual(['Past deadline'])
+    expect(html).not.toContain('plan__month--day')
+    expect(html).not.toContain('the day')
   })
 
   it('puts no plaque on an undated group, whatever the wedding month is', () => {
@@ -947,6 +1118,33 @@ describe('Japanese', () => {
     expect(html).not.toContain('View only')
   })
 
+  it('names both lifted sections and the Start fact in Japanese', () => {
+    // These four keys are reached through a data table rather than a literal `t('…')` call, so the
+    // catalog scan cannot see them: an English leak here would ship silently.
+    setLocale('ja')
+    const html = renderToStaticMarkup(
+      <Plan
+        tasks={rows([
+          task({ id: 'late', due: '2026-12-10' }),
+          task({ id: 'now', due: '2027-01-20', start: '2027-01-02' }),
+        ])}
+        canEdit
+        categories={CATEGORIES}
+        today={TODAY}
+        expanded={new Set(['now'])}
+        onExpand={noop}
+        {...CARD_HANDLERS}
+      />,
+    )
+    expect(html).toContain('期限切れ')
+    expect(html).toContain('進行中')
+    expect(html).toContain('開始日')
+    expect(html).toContain('2027年1月2日')
+    expect(html).not.toContain('Past deadline')
+    expect(html).not.toContain('Ongoing')
+    expect(html).not.toContain('>Start<')
+  })
+
   it('keeps a category the catalog has never heard of exactly as typed', () => {
     // The sheet is the source of truth and the catalog is a courtesy on top of it.
     setLocale('ja')
@@ -1015,6 +1213,21 @@ describe('the payload TaskEditor hands to onSave', () => {
     const legacy = task({ due: '2027-04-18T23:59' })
     expect(draftFrom(legacy).due).toBe('2027-04-18')
     expect(taskFromDraft(draftFrom(legacy), legacy).due).toBe('2027-04-18')
+  })
+
+  it('leaves a start cell the FIELD COULD NOT SHOW exactly as it is', () => {
+    // An editor reads FORMATTED_VALUE, so a start date somebody retyped in the Sheets UI arrives in
+    // the sheet's locale. `draftFrom` normalises that to blank, and nothing validates an optional day
+    // — so writing the blank back would destroy the cell on the first Done, silently. `due` is saved
+    // from this by `MISSING_DUE`, which refuses the write with a message instead.
+    const row = task({ start: '15/01/2027' })
+    expect(draftFrom(row).start).toBe('')
+    expect(taskFromDraft(draftFrom(row), row).start).toBe('15/01/2027')
+    // So the session reads as unchanged and sends nothing at all.
+    expect(taskToRow(taskFromDraft(draftFrom(row), row))).toEqual(taskToRow(row))
+    // A readable one still clears.
+    const dated = task({ start: '2027-01-15' })
+    expect(taskFromDraft({ ...draftFrom(dated), start: '' }, dated).start).toBe('')
   })
 
   it('stores no date at all when none was given, and lets the validator refuse it', () => {
@@ -1137,12 +1350,66 @@ describe('Markdown', () => {
 
   it('RENDERS MARKUP AS TEXT, which is why the parser returns data', () => {
     // The document is written by anybody holding the edit key and read by everybody, and this device
-    // keeps a write-capable bearer token in localStorage. Nothing here may become an element.
+    // keeps a write-capable bearer token in localStorage. Nothing here may become an element — and
+    // an `href` is the one attribute a reader controls, so a scheme outside the allowlist stays the
+    // characters that were typed rather than becoming a link.
     const html = doc('<img src=x onerror=alert(1)>\n- [click](javascript:alert(1))')
     expect(html).not.toContain('<img')
     expect(html).not.toContain('<a ')
     expect(html).toContain('&lt;img')
     expect(html).toContain('javascript:alert(1)')
+    for (const scheme of ['data:text/html;base64,x', 'file:///etc/passwd', 'mailto:a@b.c', '//x.example']) {
+      const refused = doc(`[click](${scheme})`)
+      expect(refused, scheme).not.toContain('<a ')
+      expect(refused, scheme).toContain(scheme.replace(/&/g, '&amp;'))
+    }
+  })
+
+  it('makes an http link, in the one shape that survives a standalone app', () => {
+    // Installed to the Home Screen there is no address bar and no Back, so a same-window navigation
+    // replaces the board with somebody's venue page and the app has to be killed to get back.
+    // `target=_blank` is what hands it to a Safari sheet instead; `rel` keeps the opener and the
+    // edit key out of it.
+    const html = doc('[the venue](https://venue.example/hall)')
+    expect(html).toContain('<a class="link" href="https://venue.example/hall"')
+    expect(html).toContain('target="_blank"')
+    expect(html).toContain('rel="noopener noreferrer"')
+    expect(html).toContain('>the venue<')
+    // It says where it goes: there is nowhere else on this surface to read that from.
+    expect(html).toContain('title="Opens in a new tab"')
+    expect(html).toContain('link__mark')
+  })
+
+  it('links a bare URL too, and hands the sentence back its punctuation', () => {
+    // People paste. A document where `[x](y)` works and a pasted URL does not teaches the syntax by
+    // failure.
+    const html = doc('See https://venue.example/a, then https://caterer.example.')
+    expect(html).toContain('href="https://venue.example/a"')
+    expect(html).toContain('href="https://caterer.example"')
+    expect(html).toMatch(/<\/a>,/)
+    expect(html).toMatch(/<\/a>\./)
+  })
+
+  it('renders ONE anchor per link, whatever the label holds', () => {
+    // `parseMarkdown` marks the label's runs individually, so a label with a mark inside it arrives
+    // as three spans carrying the same URL. Wrapped one at a time that is three anchors, three
+    // trailing glyphs and three tab stops for one link.
+    const html = doc('Quote: [the **pavilion** hall](https://venue.example) ok')
+    expect(html.match(/<a class="link"/g)).toHaveLength(1)
+    expect(html.match(/link__mark/g)).toHaveLength(1)
+    expect(html).toContain('<strong>pavilion</strong>')
+    expect(html).toMatch(/<a class="link"[^>]*>the <strong>pavilion<\/strong> hall/)
+    // Two links on one line stay two.
+    expect(doc('[a](https://a.example) [b](https://b.example)').match(/<a class="link"/g)).toHaveLength(2)
+    // And two adjacent bare URLs are two, not one run merged by a shared href.
+    expect(doc('https://a.example https://b.example').match(/<a class="link"/g)).toHaveLength(2)
+  })
+
+  it('nests the anchor outside the marks, so a bold link is one target', () => {
+    const html = doc('**[the venue](https://venue.example)**')
+    expect(html).toMatch(/<a class="link"[^>]*><strong>the venue<\/strong>/)
+    // And escapes what an href holds, `&` above all.
+    expect(doc('https://x.example/?a=1&b=2')).toContain('href="https://x.example/?a=1&amp;b=2"')
   })
 
   it('renders nothing at all for an empty document, leaving the empty state to its caller', () => {
@@ -1165,7 +1432,7 @@ describe('NotesView', () => {
     )
 
   it('OPENS READ-ONLY, showing the rendered document and no field', () => {
-    // Read mode is also the preview, and the Edit toggle is also the preview toggle: a split view
+    // Read mode is also the preview, and the Edit control is also the preview toggle: a split view
     // would halve a 361px column to ~180px, where a bulleted line wraps every three words.
     const html = notesWith({ notes: NOTES })
     expect(html).toContain('doc__h2')
@@ -1173,11 +1440,26 @@ describe('NotesView', () => {
     expect(html).not.toContain('<textarea')
   })
 
-  it('gives an editor the toggle and a viewer no bar at all', () => {
-    expect(notesWith({ notes: NOTES })).toContain('notes__bar')
-    expect(notesWith({ notes: NOTES })).toContain('aria-pressed="false"')
+  it('floats the way in and keeps the bar for the SESSION, not for the document', () => {
+    // A sticky bar above a document, carrying one button, was a row of chrome over every line of it
+    // and never scrolled away. The plan tab already floats its one action where a thumb is; this
+    // does the same, and the bar comes back with the four marks and Done.
+    const read = notesWith({ notes: NOTES })
+    expect(read).not.toContain('notes__bar')
+    expect(read).toContain('class="fab"')
+    expect(read).toContain('aria-label="Edit the notes"')
+
+    const editing = notesWith({ notes: NOTES, editing: true })
+    expect(editing).toContain('notes__bar')
+    // And not both at once: a second floating control over an open editor is one mis-tap from
+    // leaving it, which is why `App` withholds the tab bar over the same window.
+    expect(editing).not.toContain('class="fab"')
+  })
+
+  it('gives a viewer no control at all, on either mode', () => {
     const viewer = notesWith({ notes: NOTES, canEdit: false })
     expect(viewer).not.toContain('notes__bar')
+    expect(viewer).not.toContain('class="fab"')
     expect(viewer).not.toContain('aria-pressed')
     // The document itself is unchanged: a viewer reads exactly what an editor wrote.
     expect(viewer).toContain('Booked the pavilion.')
@@ -1192,8 +1474,11 @@ describe('NotesView', () => {
     expect(viewer).toContain('has not written anything here yet')
     expect(viewer).not.toContain('the venue, the caterer')
     // And nothing opens the editor by itself: an auto-focused field on a tab switch raises the keyboard
-    // over the bar that was just tapped.
+    // over the control that was just tapped.
     expect(editor).not.toContain('<textarea')
+    // The way in is there even with nothing written: it is what writes the first line.
+    expect(editor).toContain('class="fab"')
+    expect(viewer).not.toContain('class="fab"')
   })
 
   it('renders the field, four toggles and the warning once editing', () => {
@@ -1222,7 +1507,9 @@ describe('NotesView', () => {
     // The control this commit consolidated. Hand-rolling the button again leaves both call sites
     // working and every other assertion green, so the shape is what has to be pinned: one element,
     // and no `aria-pressed` of its own anywhere in either file.
-    expect(notesWith({ notes: NOTES })).toContain('class="btn btn--secondary btn--sm edit-toggle"')
+    expect(notesWith({ notes: NOTES, editing: true })).toContain(
+      'class="btn btn--secondary btn--sm edit-toggle"',
+    )
     for (const file of ['NotesView', 'TaskDetail']) {
       const text = readFileSync(`src/components/${file}.jsx`, 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -1296,6 +1583,20 @@ describe('App’s notes wiring', () => {
     // an open editor. `typing` is the same count both read.
     expect(source).toMatch(/canEdit && tab === TABS\.PLAN && !typing/)
     expect(source).toMatch(/typing \? null : <TabBar/)
+  })
+
+  it('floats ONE Fab, worn by both tabs, rather than two copies of the markup', () => {
+    // `.fab` is in the exactly-three list of things allowed a shadow, so a second hand-rolled
+    // button drifts on the elevation, the target and — the one that matters — whether it carries an
+    // `aria-label` at all, the glyph being its only content.
+    const files = ['App', 'components/NotesView']
+    for (const file of files) {
+      const text = readFileSync(`src/${file}.jsx`, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^[ \t]*\/\/.*\n/gm, '')
+      expect(text, file).toMatch(/<Fab\b/)
+      expect(text, `${file} hand-rolls the FAB`).not.toMatch(/className="fab"/)
+    }
   })
 
   it('keeps the header and the standing notices on both tabs', () => {

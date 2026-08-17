@@ -75,6 +75,13 @@ export default {
   'notes.italic': 'Italic',
   'notes.heading': 'Heading',
   'notes.bullets': 'Bullet list',
+  /* The floating control's name. It says what it opens, not what it is: "Edit" alone on a document is
+     what the button already looks like. */
+  'notes.edit': 'Edit the notes',
+
+  /* On every link, both here and in a checklist item: installed to the Home Screen there is no
+     address bar, so where a tap goes has to be said somewhere. */
+  'link.newTab': 'Opens in a new tab',
 
   'list.emptyFiltered': 'Nothing matches.',
   'list.showAll': 'Show everything',
@@ -86,6 +93,11 @@ export default {
   /* An aside on the wedding month's name, not a sentence: it sits in a 13px heading already holding
      a figure. */
   'plan.theDay': 'the day',
+  /* The two headings above the calendar. Both name a fact about the rows under them and neither
+     scolds: "Past deadline" is what the sheet says, where "Late" or "Overrun" is a verdict on the two
+     people reading it. */
+  'plan.past': 'Past deadline',
+  'plan.ongoing': 'Ongoing',
   'list.subtasks': {
     one: '{done} of {count} subtask',
     other: '{done} of {count} subtasks',
@@ -117,6 +129,10 @@ export default {
   'form.category': 'Category',
   'form.categoryNone': 'No category',
   'form.due': 'Due',
+  /* The optional day. "Start" rather than "From", which reads as a range and this is not one — there
+     is one deadline and one day work on it begins. */
+  'form.start': 'Start',
+  'form.startClear': 'Clear the start date',
   'form.deleteThis': 'Delete this task',
 
   'error.MISSING_TITLE': 'Give the task a name.',

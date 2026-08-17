@@ -1,11 +1,14 @@
 /**
- * What is behind an open row: the due date in words, the checklist, and the fields once Edit is on.
+ * What is behind an open row: the day it starts if it has one, the checklist, and the fields once
+ * Edit is on.
  *
  * An open row starts READ-ONLY — live fields behind the frequent gesture put a caret in a title one
- * stray blur from renaming a task — and the Edit toggle also gates every destructive control, the
- * task's delete and the per-item trash icons, while ticking and adding a subtask stay on the read
- * path. The mode lives here because this component unmounts when the row closes, resetting it with
- * no effect to synchronise; `draft === null` is read mode, so no second flag can disagree.
+ * stray blur from renaming a task — and the Edit toggle gates every destructive control, the task's
+ * delete and the per-item trash icons, as well as the add-a-subtask field, which is a text field and
+ * made every open row read as a form. TICKING is the one thing that stays on the read path: it is the
+ * commonest reason to open a row at all. The mode lives here because this component unmounts when the
+ * row closes, resetting it with no effect to synchronise; `draft === null` is read mode, so no second
+ * flag can disagree.
  *
  * ONE write per edit session, writes serialising at ~0.5s each. Consequences: unsaved text can
  * exist with nothing focused, so the whole session reports `typing` (per-field, a blur between two
@@ -17,13 +20,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { taskToRow } from '../schema.js'
-import { formatDayLong } from '../lib/time.js'
+import { formatDayLong, normalizeDay } from '../lib/time.js'
 import { useT } from '../i18n/index.js'
 import EditToggle from './EditToggle.jsx'
 import SubtaskList from './SubtaskList.jsx'
 import {
   CategoryField,
   DueField,
+  StartField,
   TitleField,
   codesFor,
   draftFrom,
@@ -132,8 +136,12 @@ export default function TaskDetail({
   const fieldId = (name) => `edit-${task.id}-${name}`
   const set = (patch) => setDraft((previous) => ({ ...previous, ...patch }))
   /** No date field for a subtask: `validateTask` returns early for anything with a `parentId`, so
-   *  one offered here would be stored unvalidated. */
+   *  one offered here would be stored unvalidated. Covers both days. */
   const dated = !task.parentId
+  /** Whether read mode has a fact to state. `normalizeDay` is `draftFrom`'s business; this asks the
+   *  same question of the stored row, and `progress.ongoing` cannot answer it — a start date in the
+   *  future is worth showing and is not ongoing. */
+  const started = Boolean(normalizeDay(task.start))
 
   return (
     <>
@@ -149,14 +157,24 @@ export default function TaskDetail({
             /* Return ends the session, not the field: there is one write. */
             onEnter={() => done()}
           />
+          {/* Both days or neither, and the required one first: the day a task must have comes before
+              the one most rows leave blank. */}
           {dated ? (
-            <DueField
-              id={fieldId('due')}
-              skin="editor"
-              value={draft.due}
-              error={errors.due}
-              onChange={(due) => set({ due })}
-            />
+            <>
+              <DueField
+                id={fieldId('due')}
+                skin="editor"
+                value={draft.due}
+                error={errors.due}
+                onChange={(due) => set({ due })}
+              />
+              <StartField
+                id={fieldId('start')}
+                skin="editor"
+                value={draft.start}
+                onChange={(start) => set({ start })}
+              />
+            </>
           ) : null}
           <CategoryField
             id={fieldId('category')}
@@ -166,24 +184,28 @@ export default function TaskDetail({
             onChange={(category) => set({ category })}
           />
         </div>
-      ) : (
+      ) : started ? (
+        /* The one fact an open row shows in read mode, and only when there is one: the day work
+           starts. The due date is NOT repeated here — the row's own day column and the words beside
+           it already carry it, and a line restating it was the largest thing in an open row for a
+           value nobody had to look up. A row with no start date shows nothing at all. */
         <p className="tcard__fact">
-          <span className="tcard__factLabel">{t('form.due')}</span>{' '}
-          {/* The space is for the accessibility tree: without it "Due" and "Wed" are read as one
+          <span className="tcard__factLabel">{t('form.start')}</span>{' '}
+          {/* The space is for the accessibility tree: without it "Start" and "Wed" are read as one
               word. */}
-          <span>
-            {task.progress.dated ? formatDayLong(task.due, { locale }) : t('state.nodate')}
-          </span>
+          <span>{formatDayLong(task.start, { locale })}</span>
         </p>
-      )}
+      ) : null}
 
-      {/* `promoted` withholds the add field: a child of a row the read could not place would be a
-          grandchild, promoted again on the next read. */}
-      {canEdit || subtasks.length > 0 ? (
+      {/* The list while there is one, the add field only inside an edit session: a text field behind
+          the commonest tap made every open row read as a form. `promoted` withholds the field
+          outright — a child of a row the read could not place would be a grandchild, promoted again
+          on the next read. */}
+      {subtasks.length > 0 || (canEdit && editing) ? (
         <SubtaskList
           subtasks={subtasks}
           canEdit={canEdit}
-          canAdd={!task.promoted}
+          canAdd={editing && !task.promoted}
           canRemove={editing}
           onToggle={onToggle}
           onDelete={onDelete}

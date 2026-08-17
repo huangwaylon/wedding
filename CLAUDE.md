@@ -21,21 +21,38 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
 
 - `src/schema.js` and `apps-script/Code.gs` both hold the column list and cannot import each other across a
   network hop; `test/schema.test.js` parses the `.gs` and fails on drift. Nothing else may name a column.
-- Columns are append-only: a rename leaves a stale deployment holding every other column.
-- A task is a title, a day and a tick — no start, clock time, all-day flag, owner or memo. Each costs a
-  control on a 393px screen, a column to understand, and a percentage advancing without a tick.
+- Columns are append-only: a rename leaves a stale deployment holding every other column. `start` is
+  the one column added since the first deployment, and it is last for that reason; there is no
+  migration code, `relayout()` widening a live sheet by name on the next editor write.
+- A task is a title, a day, a tick and an OPTIONAL day it starts — no clock time, all-day flag, owner
+  or memo. Each costs a control on a 393px screen, a column to understand, and a percentage advancing
+  without a tick. `start` is what the two lifted sections in **The plan** are built on and buys a
+  question nothing else answered: which of these is mine to be doing now.
 - Reads resolve columns by name, writes address them by position, on both sides of the wire, so `tasksFrom`
-  exists twice. `relayout()` repairs a moved header on the next write and must not clear past column I: a
-  stray column shifts no index, and wiping it deletes what a newer deployment appends.
+  exists twice. `relayout()` repairs a moved header on the next write and must not clear past the last
+  column it knows: a stray column shifts no index, and wiping it deletes what a newer deployment appends —
+  which is exactly what appending `start` looked like to the deployment before it.
 - **`update` rewrites the whole row from its payload.** That is the premise of this rule and of two in
-  **Client state**: so `taskToRow` must always send `parent_id`, omitting it blanking the cell and silently
-  promoting a subtask to a task.
+  **Client state**: so `taskToRow` must always send `parent_id` and `start`, omitting the first blanking
+  the cell and silently promoting a subtask to a task, and omitting the second making an optional date
+  settable but never clearable. `start` is in the fingerprint for the same reason — omitted, a session
+  that changed only the start date reads as unchanged and sends nothing.
 - Every write is `valueInputOption: RAW` and `schema.js` owns every A1 range; `ensureStructure` sets the `@`
   format per column so the Sheets ui cannot coerce a hand-typed date. A hardcoded `tasks!A2:I` is a second
-  place that knows the width.
+  place that knows the width, and the append moved that letter once already.
 - Only the anonymous read recovers a hand-reformatted date cell: the editor's `FORMATTED_VALUE` arrives in
-  the sheet's locale, `normalizeDay` reads no date, and the row shows under **No date**. Known, not fixed;
-  the only place a planner and an editor see different boards.
+  the sheet's locale, `normalizeDay` reads no date, and the row shows under **No date**. Known, not fixed.
+  `start` has the same exposure and one worse consequence, nothing validating an optional day: a blank
+  draft written back would DESTROY the cell, so `taskFromDraft` leaves a start value the field could not
+  show exactly as it is. `due` is saved from this by accident, `MISSING_DUE` refusing the save out loud.
+  The cost is that such a cell cannot be cleared from the ui either.
+- `ensureStructure` sets the `@` format over `TASK_COLUMNS`'s whole width, so a sheet BUILT since the
+  append is protected; `relayout` widens values only, so on a sheet built before it the new column keeps
+  Google's `Automatic` format. Deliberate — the repair path is the most delicate write there is, and the
+  symptom is the bullet above, which `due` already has on every board. README records it.
+- These are the two places a planner and an editor see different boards, and until `Code.gs` is
+  redeployed the whole **Ongoing** section is a third: the read drops a column it does not know rather
+  than shifting the rest.
 - The client stamps `created_at` and `updated_at`, so a wrong device clock can backdate a row — traded for a
   one-hop write, and neither is load-bearing. `created_at` is read off the existing row, so a replay cannot
   restamp it. `taskToRow` omits both, which makes it `TaskDetail`'s change fingerprint; writes use
@@ -76,12 +93,34 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
   change what the rest of the board is worth.
 - `SOON_DAYS` is part of the meaning of a state, not a component's constant — it is what "due soon" is, and
   the boundary past which a row prints no urgency.
+- `ongoing` is a boolean on `taskProgress`, never a sixth `STATE`. A state is what the chips slice by and
+  what the roll-up counts, and this is orthogonal to all five — an ongoing task is also soon or later. As
+  a state it would have made a task overdue OR ongoing and moved a row out of the overdue count.
+  Inclusive at its own end (`start <= today`, a task starting today being today's work), where overdue is
+  exclusive (`due < today`); the two are different questions and are allowed to disagree.
 
 ### The plan
 
-- A month heading carries its own tally, and every whole-month figure is withheld under a filter: `Plan`
-  gets the filtered list, so a tally over April's overdue slice would read `0/3` about a month nine tasks
-  long. The `Today` line goes with it — a list with holes cannot claim everything below it is ahead.
+- Two sections come before the calendar, in this precedence: **past deadline** (overdue and unfinished),
+  then **ongoing** (`progress.ongoing`). Both are hidden when empty, so a board on top of itself is a
+  plain calendar. A row is MOVED, never copied — the same task under two headings is two tasks to
+  anybody scanning, and both tallies would then lie — which is also why `taskProgress` decides the
+  precedence rather than `Plan` asking two questions.
+- A month heading's tally counts the WHOLE month, lifted rows included: the heading says April, so a
+  figure describing only the rows left under it is true about a slice and false about April — the same
+  defect the filter withholds it for — and lifting a row must not change what April is worth. It is
+  `aria-hidden` for that reason: the arithmetic is not the rows below. A lifted section carries a bare
+  COUNT instead, every row in one being unfinished by definition, so `done/total` there reads `0/4` for
+  ever. Every whole-group figure is still withheld under a filter: `Plan` gets the filtered list, so a
+  tally over April's overdue slice would read `0/3` about a month nine tasks long. The `Today` line goes
+  with it — a list with holes cannot claim everything below it is ahead.
+- The `Today` line is measured over the MONTHS alone, everything above them being already past or in
+  progress. Its past side is therefore a FINISHED task with a past date, an unfinished one having been
+  lifted out.
+- No lifted section takes the wedding plaque or a colour of its own: the tint is a claim about a month,
+  and the rows underneath already carry the state.
+- An UNDATED row is never lifted, whatever its start date: it sorts last into the group that says so,
+  and under **Ongoing** it would read as progress while the one thing wrong with it is why it is there.
 - The tally is `aria-hidden` and never coloured: the row and the header strip already state that
   arithmetic, and a month in `--good` would claim something about the month rather than its tasks.
 - The `Today` line is a boundary — only with rows on both sides, never in the undated group, and between
@@ -103,8 +142,18 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
   answer to "when was it finished". Nothing prompts for the tick: a 5/5 parent reads 100% and stays open.
 - A subtask is a title and a tick, no date; `validateTask` returns early for anything with a `parentId`,
   because a date wheel per item makes entering five unusable on a phone. No meter, no urgency label, the
-  whole row is the toggle, and the editor never writes its `due` cell — a date offered there would be
+  whole row is the toggle, and the editor never writes either date cell — a date offered there would be
   unvalidated.
+- The whole row is the toggle EXCEPT where the title holds a URL. HTML admits no interactive descendant
+  in a `<button>`, so the anchor is hoisted out by the parser and the row ends up with two overlapping
+  controls: `hasLink` decides, and a linked row is the 44px tick plus the link, which is what a pasted
+  URL is for. That 44px has to be STATED — an ordinary row's comes from `flex: 1` spanning it, so
+  `flex: none` alone left a 26px button — and the words then start 18px right of an unlinked row's, the
+  price of the tick keeping its target. `test/render.test.jsx` pins that the anchor is a SIBLING; `drive.mjs` pins it in a real
+  parser.
+- The add-a-subtask field is behind Edit, and ticking is not. A text field under the commonest tap made
+  every open row read as a form to fill in; ticking is why a row is opened at all. An editor reading a row
+  with no items therefore gets no list at all, an empty `<ul>` still painting its rail.
 - Deleting a parent cascades in one `values:batchUpdate`; N calls can half-fail, leaving some children
   tombstoned and some not. `restore` is its exact inverse.
 
@@ -121,8 +170,23 @@ The second tab: one free-form markdown document, shared, holding what has been d
 - `saveNotes` sends `{ notes }` alone, never `{ ...config, notes }`, and `saveConfig` does not widen it:
   `test/render.test.jsx` pins the call site and `test/board.test.js` the payload.
 - `parseMarkdown` returns data and `Markdown.jsx` maps it onto elements, so `innerHTML` may appear in no file
-  under `src/` — `test/ui.test.jsx` walks all of it, comments stripped. Links are refused for the same reason,
-  and task checkboxes because a second checklist no percentage counts is the worst outcome this app has.
+  under `src/` — `test/ui.test.jsx` walks all of it, comments stripped, case-insensitively, because
+  `dangerouslySetInnerHTML` does not contain the lowercase spelling. Task checkboxes are still refused: a
+  second checklist no percentage counts is the worst outcome this app has.
+- **A link is an allowlist, not a parser.** `links.js` owns what a URL is, answers `http`/`https` and
+  nothing else, and is the only thing that may build an `href`; a span may carry one, which is the one
+  widening of `{ text, bold, italic }` there has ever been, and `test/markdown.test.js` asserts over the
+  OUTPUT that no other scheme can reach one, counting the links it did produce so a version that made
+  none could not pass. `Markdown.jsx` coalesces consecutive spans sharing an href into ONE anchor: the
+  label's runs are marked individually, so `[the **pavilion** hall](url)` is three spans and would
+  otherwise be three anchors, three glyphs and three tab stops for one link. A refusal renders as the characters typed, like every marker
+  matching nothing. `ExternalLink` is the app's only anchor — `test/ui.test.jsx` pins that as an exact set
+  of one file — and its `target="_blank"` is load-bearing: installed, a same-window navigation replaces the
+  board with no address bar and no Back, so the app has to be killed to come back. `rel="noopener
+  noreferrer"` goes with it, the second half keeping a URL carrying the edit key out of a `Referer`.
+- A bare URL is linked as well as `[label](url)`: people paste, and a document where one works and the
+  other does not teaches the syntax by failure. The URL is consumed BEFORE the emphasis scan, or a `*` in a
+  query string opens an italic that swallows the line.
 - Nesting pairs delimiters only by equal run length, so `**a *b***` renders as typed: a full CommonMark
   delimiter stack is more machinery than this grammar is, and the failure has to be literal text rather than
   mangled text. `test/markdown.test.js` pins both sides of that trade.
@@ -134,6 +198,10 @@ The second tab: one free-form markdown document, shared, holding what has been d
   or switching to the read-only view mid-session strands the field with no control on screen.
 - No unmount flush and no Cancel, unlike `TaskDetail`. `NotesView` says why; `test/render.test.jsx` pins the
   absent flush by counting `onSave` call sites, no regex over the shape being able to.
+- `.notes__bar` belongs to the SESSION, not to the document: read mode is a document, and a sticky row of
+  chrome above every line of one, holding a single button, is what the floating pencil replaced. It keeps
+  the name and all four declarations (`sticky`, `top: var(--hero-height)`, `z-index: 1`, `--bg`), because
+  being sticky is the point once it carries Done.
 - Last-writer-wins covers the whole document, unlike a tick: the draft is buffered so a focus refresh cannot
   pull text out from under the caret, and README records the rest as a known limitation.
 
@@ -143,6 +211,10 @@ The second tab: one free-form markdown document, shared, holding what has been d
 - Required is not defaulted. Create opens blank and Save refuses until somebody picks a date; an invented
   one lands in the overdue count and the on-schedule mark, so anything typed in a hurry reads overdue
   tomorrow.
+- `start` is the opposite: optional, refused by nothing, and it carries its own clear button because iOS's
+  date wheel offers no way back to blank — without one a start date picked by mistake is permanent and the
+  row is in Ongoing for good. A start after the due date is left alone: it is somebody rescheduling, and
+  refusing the save would be a lecture.
 - `STATE.NODATE` must keep working: anybody can empty the cell by hand, and such a row sorts last into its
   own group and counts toward neither numerator. A row the client refuses to save must still be shown.
   Consequence: an undated task cannot be renamed until it is dated, the whole task going in one write.
@@ -256,8 +328,10 @@ that cost something to rediscover:
 - `withProgress` is memoised on today: the board is day-granular, and there is no millisecond clock to key
   it on.
 - An open row starts read-only, `TaskDetail` owning the mode: live fields behind the commonest tap put a
-  caret in a title one stray blur from a rename. Edit also gates every destructive control, while ticking
-  and adding a subtask stay on the read path. The mode lives there because the component unmounts on close,
+  caret in a title one stray blur from a rename. Edit gates every destructive control and the
+  add-a-subtask field; ticking stays on the read path. Read mode states ONE fact and only when it has one
+  — the day it starts. The due date is not restated there: the row's day column and the words beside it
+  carry it, and the line repeating it was the largest thing in an open row. The mode lives there because the component unmounts on close,
   so nothing has to reset it; `editing` is a prop, like `expanded`, so a static render sees the fields. The
   notes tab is the same shape, `NotesView` owning the mode and taking `editing` for the same reason.
 - Notices are rendered once, above the tab switch, so they reach both destinations: a refused edit link is why
@@ -269,7 +343,9 @@ that cost something to rediscover:
 - Refreshes on focus are throttled (30s floor); every read spends the owner's quota. The hash is stripped
   only when standalone, so *Add to Home Screen* records a URL still carrying the key, and
   `manifest.webmanifest` omits `start_url` for the same reason.
-- The snapshot's version is a drop marker, never a migration. The service worker never touches a
+- The snapshot's version is a drop marker, never a migration, and an APPENDED COLUMN bumps it: a task
+  cached without the new key reads as empty, and an edit session on a stale board rewrites the whole row,
+  so the first save would blank the cell. One cold launch showing "Loading" is the price. The service worker never touches a
   cross-origin request, as an explicit early `return` first in its `fetch` handler: scope decides which
   *clients* are controlled, not which *requests* are seen, so the token endpoint and the Sheets API both
   arrive there, and a worker answering either is an uncovered proxy in front of a bearer token.
@@ -286,11 +362,12 @@ JSX.
 | column names and every A1 range | `schema.js` |
 | `CATEGORIES` | `templates.js` |
 | every zone, and the layout of a day string — `monthOf`, `dayOfMonth`, `firstOfMonth` exist so nothing else indexes into `YYYY-MM-DD` | `time.js` |
+| what counts as a URL, and the only `href` gate (`safeHref`) | `links.js` |
 | `ICON_SIZE`, so a glyph size is a name rather than a pair of literals at every call site | `icons.jsx` |
 | `BG_HEX`, `ACCENT_HEX` | `theme.js` |
 | `run()`, the only mutation wrapper, and `fail()`, the only classifier | `useBoard.js` |
 | the markdown grammar AND the toolbar's text transforms, both pure | `markdown.js` |
-| the only done control / read-edit toggle / title-body-action block / wording of a date's nearness / task field markup / markdown → elements | `DoneToggle`, `EditToggle`, `Notice`, `DueLabel`, `TaskFields`, `Markdown` |
+| the only done control / read-edit toggle / title-body-action block / wording of a date's nearness / task field markup / markdown → elements / anchor and text → links / floating button | `DoneToggle`, `EditToggle`, `Notice`, `DueLabel`, `TaskFields`, `Markdown`, `ExternalLink`, `Fab` |
 
 No new npm dependencies without a clear reason — one is also a CSP decision, and `test/lockfile.test.js`
 pins the list. Add a host, update the CSP in `index.html`. Never put a real secret in a `VITE_` variable:
@@ -329,6 +406,10 @@ percentages, no library. Every rule carries its constraint as a comment.
   category gets a monochrome glyph from `CATEGORY_ICONS`, leading the word and never replacing it —
   fourteen shapes is more vocabulary than anyone learns cold, and an English and a Japanese reader do not
   learn the same ones. An unknown category renders as typed with no glyph.
+- A link is the one underlined text in the app and the only other thing wearing `--accent` as type:
+  `--accent` on `--surface` is the pair `check-contrast` already measures as white-on-accent (8.69:1 at
+  the worst preset), so it needs no figure of its own, and the underline is the second channel. It also
+  takes `overflow-wrap: anywhere` — a pasted URL is one unbroken word wider than a 361px column.
 - The overdue chip's count is `--critical`, the one count that is not `--ink-3` (everything else there is a
   statistic), and is withheld at zero (`.chip__count--empty`) so a clean board carries no red 0.
 
@@ -397,6 +478,12 @@ Measured, and `npm run contrast` re-checks every pair:
   thrash it forbids. The chevron carries the motion.
 - An unsettled row dims its HEAD, never its tick — a tick that fades on contact reads as a tap that missed.
   Same for a checklist item: the title recedes, the glyph does not.
+- `.tcard__check` is `align-self: center` against the grid's `align-items: start`, so the 44px box sits in
+  the middle of the head's grid row however tall the head has grown — a wrapped title plus a meta line is
+  ~70px, and start-aligned the circle floated to the top of a block the eye reads as one thing.
+  `align-items: center` on the grid instead would STRETCH the box, and a 44x70 hover square is not a 44px
+  control; `.tcard__head` may not go to `baseline` or `flex-start` to compensate, which is what put the
+  day's optical centre 16.7px out.
 
 **The header, the tab bar and the FAB**
 
@@ -453,9 +540,13 @@ Measured, and `npm run contrast` re-checks every pair:
   past a token nothing measures.
 - Never `role="tablist"` for the tabs: `<nav>` plus `aria-current`, which two thumb targets gain more from and
   which survives a static render. The selected tab carries three channels besides its accent ink.
-- The FAB is on the plan tab only, and both it and the bar are withheld while `typing`. `.views` reserves
-  their space regardless, CSS being unable to see the tab, so the notes tab ends with the FAB's clearance
-  unoccupied — the price of a button that never lands on a row's controls.
+- Both tabs float ONE `Fab`, and it is each tab's single most likely action: `+` on the plan, a pencil on
+  the notes, which is the way into an editing session there. `App` owns the first and `NotesView` the
+  second, so nothing has to lift the notes draft out of the component that owns it; the class is bare
+  `.fab` either way, being in the exactly-three list allowed a shadow. Both FABs and the tab bar are
+  withheld while `typing`, which on the notes tab is the whole session — a second floating control over an
+  open editor is one mis-tap from leaving it. `.views` reserves the clearance unconditionally, CSS being
+  unable to see which tab is up, and both tabs now occupy it.
 - `.view--bare` carries the top safe-area inset itself, the unconfigured screen rendering no header.
 - No `-webkit-overflow-scrolling: touch` anywhere: a no-op since iOS 13 that breaks `position: sticky`
   inside the same scroller, which the month heading depends on.

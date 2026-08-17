@@ -12,8 +12,13 @@ import { STORAGE_KEYS, readStored, writeStored } from '../config.js'
  * A drop marker, never a migration. An unrecognised version means the snapshot is ignored and
  * re-fetched, which is free — the sheet is the source of truth. Bump it whenever the stored shape
  * changes.
+ *
+ * 3 is the `start` column. Additive, so an older snapshot would still have RENDERED — but a task
+ * cached without the key is a task whose `start` reads as empty, and an edit session on a stale board
+ * writes the whole row, so the first save would have blanked a start date somebody had set. One cold
+ * launch showing "Loading" is the price, and the sheet is the source of truth.
  */
-const VERSION = 2
+const VERSION = 3
 
 /**
  * Roughly 3000 tasks. WebKit charges localStorage in UTF-16 code units, so the stored cost is about

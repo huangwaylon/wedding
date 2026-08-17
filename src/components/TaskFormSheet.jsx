@@ -15,6 +15,7 @@ import BottomSheet from './BottomSheet.jsx'
 import {
   CategoryField,
   DueField,
+  StartField,
   TitleField,
   codesFor,
   draftFrom,
@@ -74,6 +75,13 @@ export default function TaskFormSheet({ categories, onSave, onClose }) {
           value={draft.due}
           error={errors.due}
           onChange={(due) => set({ due })}
+        />
+        {/* After the required day: this is the field most tasks leave blank, and it opens blank
+            itself — nothing here may invent a date. */}
+        <StartField
+          id="task-start"
+          value={draft.start}
+          onChange={(start) => set({ start })}
         />
         <CategoryField
           id="task-category"

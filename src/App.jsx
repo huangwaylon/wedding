@@ -30,6 +30,7 @@ import { useToasts } from './state/useToasts.js'
 import { useT } from './i18n/index.js'
 import { ConfirmDeleteSheet } from './components/Deleted.jsx'
 import EmptyBoard from './components/EmptyBoard.jsx'
+import Fab from './components/Fab.jsx'
 import FilterChips, { FILTER_ALL } from './components/FilterChips.jsx'
 import Hero from './components/Hero.jsx'
 import Notice from './components/Notice.jsx'
@@ -428,16 +429,12 @@ export default function App() {
         </div>
       </div>
 
-      {/* Adding a task is a plan job. Hidden while a field has focus — see `typing`. */}
+      {/* Adding a task is a plan job; the notes tab floats its own control — see `NotesView`. Hidden
+          while a field has focus — see `typing`. */}
       {canEdit && tab === TABS.PLAN && !typing ? (
-        <button
-          type="button"
-          className="fab"
-          onClick={() => setAdding(true)}
-          aria-label={t('form.newTitle')}
-        >
+        <Fab label={t('form.newTitle')} onClick={() => setAdding(true)}>
           <PlusIcon style={ICON_SIZE.fab} />
-        </button>
+        </Fab>
       ) : null}
 
       {/* Withheld while anything holds unsaved text: `interactive-widget=resizes-content` re-anchors

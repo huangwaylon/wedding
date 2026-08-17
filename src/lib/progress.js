@@ -17,7 +17,7 @@
  */
 
 import { isDone, isLive } from '../schema.js'
-import { daysBetween, isValidDay } from './time.js'
+import { daysBetween, isValidDay, normalizeDay } from './time.js'
 
 /**
  * How near a due date has to be to count as soon. Two weeks: near enough to be this fortnight's
@@ -94,7 +94,7 @@ function clamp01(value) {
  * @param {object} task as returned by `rowToTask`
  * @param {string} today the board's current day, 'YYYY-MM-DD' (`time.todayIn`)
  * @param {object[]} [subtasks] this task's LIVE subtasks, if any
- * @returns {{percent:number, duePassed:boolean, state:string, dated:boolean,
+ * @returns {{percent:number, duePassed:boolean, state:string, dated:boolean, ongoing:boolean,
  *   days:number|null, tally:{done:number,total:number}|null}} `percent` is 0–1; `days` is signed
  *   calendar days until the due date
  */
@@ -125,6 +125,19 @@ export function taskProgress(task, today, subtasks = []) {
   else if (days <= SOON_DAYS) state = STATE.SOON
   else state = STATE.LATER
 
+  /**
+   * Whether work on this has been asked for yet. A DAY-STRING comparison, like overdue: the start
+   * day counts as started, so a task starting today is ongoing from the morning rather than at
+   * midnight, and `normalizeDay` covers a cell somebody typed a clock time into.
+   *
+   * Not a `STATE`. A state is what the filter chips slice by and what the roll-up counts, and this is
+   * orthogonal to all five: an ongoing task is also soon or later. It decides one thing — which
+   * section of the plan a row is drawn in — and adding a sixth state would have made a task overdue OR
+   * ongoing, never both, and moved a row out of the overdue count.
+   */
+  const start = normalizeDay(task?.start)
+  const started = Boolean(start) && start <= today
+
   return {
     percent,
     /**
@@ -134,6 +147,13 @@ export function taskProgress(task, today, subtasks = []) {
     duePassed: dated && days < 0,
     state,
     dated,
+    /**
+     * Started, unfinished, dated, and not already past its date. Overdue is the louder claim and a row
+     * may only be in one section; an UNDATED row is excluded because it belongs to the group that
+     * says so — anybody can empty the cell by hand, and such a row sorting anywhere but last would
+     * hide the one thing wrong with it behind a section that reads as progress.
+     */
+    ongoing: started && !done && state !== STATE.OVERDUE && state !== STATE.NODATE,
     days,
     tally,
   }

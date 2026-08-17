@@ -323,7 +323,7 @@ async function openGrid(spreadsheetId) {
  * values, not labels: each row's cells are re-read by the name its own header cell gives them and
  * written back in canonical order. A column `TASK_COLUMNS` does not name is dropped.
  *
- * It does not clear anything past column I and must not start. Every range derives from
+ * It does not clear anything past the last column it knows and must not start. Every range derives from
  * `TASK_COLUMNS`, so a stray column J cannot shift an index, and wiping it would delete the column
  * a newer deployment appends.
  *

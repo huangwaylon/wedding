@@ -133,6 +133,8 @@ const noop = () => {}
  * visible with real content behind it.
  */
 function Shell({ children, fab = false, tab = TABS.PLAN }) {
+  /* Both tabs float one: `+` on the plan, a pencil on the notes. `NotesView` renders its own, so
+     this only ever draws the plan's — hence the glyph is not a prop. */
   return (
     <div className="app">
       <div className="views">{children}</div>
@@ -198,19 +200,27 @@ function RowsView({ locale, canEdit = true, editing = false }) {
   const fixtures = [
     { id: 'r1', due: '2026-08-20', title: 'Mail the save-the-dates', category: 'Stationery' },
     { id: 'r2', due: '2026-10-01', title: 'Book the photographer and videographer', category: 'Photo' },
-    { id: 'r3', due: TODAY, title: 'Compare the two venue quotes', category: 'Venue' },
+    { id: 'r3', due: TODAY, title: 'Compare the two venue quotes', category: 'Venue', start: '2026-09-25' },
     { id: 'r4', due: '2026-10-03', title: 'Send the deposit', category: 'Budget' },
     { id: 'r5', due: '2026-10-09', title: 'Choose the invitation paper', category: 'Stationery' },
     { id: 'r6', due: '2027-02-01', title: 'Order signage, vow books and favours', category: 'Gifts' },
     { id: 'r7', due: '2026-09-01', title: 'Agree the budget and who is contributing', category: 'Budget', doneAt: '2026-08-01T00:00:00.000Z' },
     { id: 'r8', due: '', title: 'Decide about a live band', category: 'Music' },
   ]
-  const subs = ['Shortlist three venues', 'Visit the shortlist', 'Compare quotes in writing'].map(
+  /* The last item holds a URL, so the linked shape — the tick and the link as two targets — is in
+     the capture beside three ordinary rows. */
+  const subs = [
+    'Shortlist three venues',
+    'Visit the shortlist',
+    'Compare quotes in writing',
+    'Quote B: https://venue.example/quotes/2027-04-18',
+  ].map(
     (title, index) => ({
       id: `r3-s${index}`,
       title,
       category: '',
       due: '',
+      start: '',
       doneAt: index < 1 ? '2026-08-01T00:00:00.000Z' : '',
       createdAt: `2026-07-0${index + 1}T00:00:00.000Z`,
       updatedAt: '',
@@ -222,6 +232,7 @@ function RowsView({ locale, canEdit = true, editing = false }) {
     [
       ...fixtures.map((row) => ({
         category: '',
+        start: '',
         doneAt: '',
         createdAt: '',
         updatedAt: '',
@@ -257,24 +268,30 @@ function RowsView({ locale, canEdit = true, editing = false }) {
 }
 
 /**
- * The plan around TODAY, and the month the wedding falls in. The board fixtures start in May 2026
- * against an April 2027 wedding, so the month tally, the wedding plaque and the `Today` line are
- * eleven screens down; `to=` does not survive a headless capture, so a surface only reachable
- * mid-scroll needs a page of its own. This puts all three in the first 400px.
+ * The plan around TODAY: the two lifted sections, the month tally, the wedding plaque and the
+ * `Today` line. The board fixtures start in May 2026 against an April 2027 wedding, so all of those
+ * are eleven screens down; `to=` does not survive a headless capture, so a surface only reachable
+ * mid-scroll needs a page of its own. This puts them in the first 700px.
+ *
+ * Every case the sections have to get right is here: two rows past their date and unfinished, two
+ * that have started, one past its date and FINISHED (which stays in its month, and is what keeps the
+ * `Today` line's past side occupied), and one that starts in the future.
  */
 function SignView({ locale, unfiltered = true }) {
   const rows = [
-    { id: 's1', due: '2026-09-20', title: 'Mail the save-the-dates', category: 'Stationery', doneAt: '2026-09-02T00:00:00.000Z' },
-    { id: 's2', due: '2026-09-28', title: 'Book the band or DJ', category: 'Music' },
+    { id: 's1', due: '2026-09-20', title: 'Mail the save-the-dates', category: 'Stationery' },
+    { id: 's2', due: '2026-09-28', title: 'Book the band or DJ', category: 'Music', start: '2026-09-01' },
     { id: 's3', due: '2026-10-01', title: 'Book the photographer', category: 'Photo', doneAt: '2026-09-30T00:00:00.000Z' },
-    { id: 's4', due: TODAY, title: 'Compare the two venue quotes', category: 'Venue' },
-    { id: 's5', due: '2026-10-11', title: 'Choose the invitation paper', category: 'Stationery' },
-    { id: 's6', due: '2027-04-12', title: 'Final meeting with the planner', category: 'Vendors' },
-    { id: 's7', due: WEDDING_DAY, title: 'Wedding day', category: 'Other' },
+    { id: 's4', due: TODAY, title: 'Compare the two venue quotes', category: 'Venue', start: '2026-09-25' },
+    { id: 's5', due: '2026-10-11', title: 'Choose the invitation paper', category: 'Stationery', start: '2026-09-28' },
+    { id: 's6', due: '2026-10-14', title: 'Confirm the shuttle bus', category: 'Guests' },
+    { id: 's7', due: '2027-04-12', title: 'Final meeting with the planner', category: 'Vendors', start: '2027-04-01' },
+    { id: 's8', due: WEDDING_DAY, title: 'Wedding day', category: 'Other' },
   ]
   const tasks = withProgress(
     rows.map((row) => ({
       category: '',
+      start: '',
       doneAt: '',
       createdAt: '',
       updatedAt: '',
@@ -317,6 +334,7 @@ const NOTES = {
     '# Venue',
     'The garden pavilion, **confirmed** for the 18th.',
     'Rain plan is the orangery — no extra charge.',
+    'Quote: [the pavilion](https://venue.example/pavilion) and https://maps.example/q/pavilion',
     '',
     '## Still to confirm with them',
     '- Chair covers, ivory',
@@ -331,6 +349,7 @@ const NOTES = {
     '# 会場',
     'ガーデンパビリオン。18日で**確定**。',
     '雨天時はオランジェリー。追加料金なし。',
+    '見積: [パビリオン](https://venue.example/pavilion) と https://maps.example/q/pavilion',
     '',
     '## 会場に確認すること',
     '- 椅子カバーはアイボリー',

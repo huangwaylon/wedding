@@ -1,9 +1,16 @@
 /**
  * The notes tab: one shared markdown document, and the small editor that writes it.
  *
- * IT OPENS READ-ONLY, like a task row. Read mode is also the preview and the Edit toggle is also the
+ * IT OPENS READ-ONLY, like a task row. Read mode is also the preview and the Edit control is also the
  * preview toggle, which is why there is no third mode and no split view: a side-by-side preview
  * halves a 361px column to ~180px, where a bulleted line wraps every three words.
+ *
+ * THE WAY IN IS THE FAB, NOT A BAR. Read mode is a document, and a bar carrying one button was a row
+ * of chrome above every line of it — sticky, so it never even scrolled away. The plan tab already
+ * floats its one action in the bottom corner, which is where a thumb is, so this tab floats its own
+ * there and the document starts at the top of the page. The bar comes back for the SESSION, where it
+ * carries the four marks and Done and being sticky is the point: a long document must keep Done
+ * reachable without scrolling to the end of it.
  *
  * ONE WRITE PER SESSION, and THE SESSION WAITS FOR IT. `saveConfig` has no optimistic half, so
  * `notes` keeps its old value for the write plus the forced re-read; closing on the unawaited promise
@@ -27,6 +34,7 @@ import { NOTES_MAX_CHARS, notesError } from '../config.js'
 import { toggleBold, toggleBullets, toggleHeading, toggleItalic } from '../lib/markdown.js'
 import { useT } from '../i18n/index.js'
 import EditToggle from './EditToggle.jsx'
+import Fab from './Fab.jsx'
 import Markdown from './Markdown.jsx'
 import {
   BoldIcon,
@@ -35,6 +43,7 @@ import {
   ICON_SIZE,
   ItalicIcon,
   NotebookIcon,
+  PencilIcon,
 } from './icons.jsx'
 
 /**
@@ -161,33 +170,29 @@ export default function NotesView({
 
   return (
     <>
-      {canEdit ? (
+      {/* The session's own bar, and only the session's: four marks, then Done at the far end where a
+          task row keeps it. Sticky under the header, the recipe a month heading uses. */}
+      {editing ? (
         <div className="notes__bar">
-          {editing
-            ? TOOLS.map(({ id, label, Icon, apply }) => (
-                <button
-                  key={id}
-                  type="button"
-                  className="btn btn--icon"
-                  aria-label={t(label)}
-                  title={t(label)}
-                  /* Focus never leaves the field: without this the keyboard drops and the layout
-                     jumps ~340px on every formatting tap, and the selection the transform needs is
-                     gone by the time the click fires. */
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => run(apply)}
-                >
-                  <Icon />
-                </button>
-              ))
-            : null}
+          {TOOLS.map(({ id, label, Icon, apply }) => (
+            <button
+              key={id}
+              type="button"
+              className="btn btn--icon"
+              aria-label={t(label)}
+              title={t(label)}
+              /* Focus never leaves the field: without this the keyboard drops and the layout
+                 jumps ~340px on every formatting tap, and the selection the transform needs is
+                 gone by the time the click fires. */
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => run(apply)}
+            >
+              <Icon />
+            </button>
+          ))}
 
           {/* One control, shared with a task row — see `EditToggle`. */}
-          <EditToggle
-            editing={editing}
-            busy={saving}
-            onToggle={() => (editing ? done() : setDraft(stored))}
-          />
+          <EditToggle editing={editing} busy={saving} onToggle={done} />
         </div>
       ) : null}
 
@@ -228,6 +233,15 @@ export default function NotesView({
           <p className="empty__body">{t(canEdit ? 'notes.emptyEditor' : 'notes.emptyViewer')}</p>
         </section>
       )}
+
+      {/* The way in, in the corner the plan tab puts its own. Withheld for the whole session: Done is
+          in the bar by then, and a second floating control over an open editor is one mis-tap from
+          leaving it. `App` withholds the tab bar over the same window, for the same reason. */}
+      {canEdit && !editing ? (
+        <Fab label={t('notes.edit')} onClick={() => setDraft(stored)}>
+          <PencilIcon style={ICON_SIZE.fab} />
+        </Fab>
+      ) : null}
     </>
   )
 }

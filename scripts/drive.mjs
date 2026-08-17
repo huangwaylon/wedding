@@ -1,10 +1,11 @@
 /**
  * Drives the running app in a real browser over the Chrome DevTools Protocol: the accordion, the
- * read/edit toggle, commit-on-blur, the create sheet, whether `input[type=date]` stays inside its
- * row, that ticking under a filter keeps the row on screen, that deleting a just-edited task
- * sends no resurrecting `update`, and the whole notes tab — the tab switch, the field's JS-driven
- * height, whether a toolbar tap keeps the selection, and that the bar gets out of the keyboard's
- * way. A static render fires no blur and runs no effect, so none of it is reachable from
+ * read/edit toggle, commit-on-blur, the create sheet, whether BOTH `input[type=date]` controls stay
+ * inside their row, that the add-a-subtask field is behind Edit and ticking is not, that a checklist
+ * link is a sibling of its tick rather than an anchor inside a button, that ticking under a filter
+ * keeps the row on screen, that deleting a just-edited task sends no resurrecting `update`, and the
+ * whole notes tab — the tab switch, the pencil that opens a session, the field's JS-driven height,
+ * whether a toolbar tap keeps the selection, and that the bar gets out of the keyboard's way. A static render fires no blur and runs no effect, so none of it is reachable from
  * `scripts/preview.jsx`. The delete check is a POST count, the fixture replying with the
  * pre-write board: reverting `remove()` in TaskDetail.jsx to a bare `onDelete(task)` prints
  * `["delete:a5:", "update:a5:Edited, then deleted"]`.
@@ -102,7 +103,7 @@ await send('Emulation.setDeviceMetricsOverride', { width: 393, height: 900, devi
  * op, so the op is read off the range:
  *
  *   append                 a create
- *   tasks!A{r}:I{r}        a whole-row write — an update, or a create replayed in place
+ *   tasks!A{r}:J{r}        a whole-row write — an update, or a create replayed in place
  *   tasks!G{r}:H{r}        the updated_at/deleted_at span — a delete if the second cell is set,
  *                          a restore if it is blank
  *   config!B{r}            a settings write
@@ -194,9 +195,16 @@ report.readMode = await evaluate(`({
   trashIcons: document.querySelectorAll('.tcard--open .subtask .btn--icon').length,
   deleteTask: document.querySelectorAll('.tcard--open .btn--danger-quiet').length,
   toggle: document.querySelector('.tcard--open .edit-toggle')?.getAttribute('aria-pressed'),
-  // Ticking and adding stay on this path: both are doing the work, not editing the task.
+  // Ticking stays on this path: it is doing the work, not editing the task. The add field does NOT
+  // — a text input behind the commonest tap made every open row read as a form to fill in — so this
+  // must be 0 here and 1 in the block below.
   tickable: document.querySelectorAll('.tcard--open .subtask__toggle').length,
   addField: document.querySelectorAll('.tcard--open .subtask-add__field').length,
+  // The linked shape a static render cannot prove: the anchor is a SIBLING of the tick, so the row
+  // has two targets, and neither is inside the other.
+  links: document.querySelectorAll('.tcard--open .subtask a.link').length,
+  linkOutsideButton: [...document.querySelectorAll('.tcard--open .subtask a.link')].every(a => !a.closest('button')),
+  linkTarget: document.querySelector('.tcard--open .subtask a.link')?.target,
 })`)
 
 // The toggle both ways.
@@ -208,6 +216,7 @@ report.editMode = await evaluate(`({
   trashIcons: document.querySelectorAll('.tcard--open .subtask .btn--icon').length,
   deleteTask: document.querySelectorAll('.tcard--open .btn--danger-quiet').length,
   toggle: document.querySelector('.tcard--open .edit-toggle')?.getAttribute('aria-pressed'),
+  addField: document.querySelectorAll('.tcard--open .subtask-add__field').length,
 })`)
 report.editorFields = await evaluate(`[...document.querySelectorAll('.tcard--open .editor input, .tcard--open .editor select')].map(n=>n.type||n.tagName)`)
 
@@ -219,14 +228,14 @@ await wait(400)
 report.modeAfterReopen = await evaluate(`document.querySelector('.tcard--open .edit-toggle')?.getAttribute('aria-pressed')`)
 await evaluate(`document.querySelector('.tcard--open .edit-toggle').click()`)
 await wait(400)
-// Does the date control fit inside its card?
+/* Do BOTH date controls fit inside the card? The platform's intrinsic width is a floor, and the
+   optional one shares its row with a 44px clear button — the narrower case of the two. */
 report.dateFits = await evaluate(`
-  (() => {
-    const input = document.querySelector('.tcard--open input[type=date]')
+  [...document.querySelectorAll('.tcard--open input[type=date]')].map((input) => {
     const card = input.closest('.tcard')
     const a = input.getBoundingClientRect(), b = card.getBoundingClientRect()
-    return { input: Math.round(a.right), card: Math.round(b.right), overflow: Math.round(a.right - b.right), width: Math.round(a.width), height: Math.round(a.height) }
-  })()
+    return { id: input.id, input: Math.round(a.right), card: Math.round(b.right), overflow: Math.round(a.right - b.right), width: Math.round(a.width), height: Math.round(a.height) }
+  })
 `)
 report.subtasks = await evaluate(`document.querySelectorAll('.tcard--open .subtask').length`)
 report.deleteIsLast = await evaluate(`
@@ -262,11 +271,16 @@ const setField = async (selector, value) => {
 
 const postsBeforeEdit = posts.length
 await setField('.tcard--open .editor input:not([type=date])', 'Compare the venue quotes CAREFULLY')
-await setField('.tcard--open .editor input[type=date]', '2026-12-24')
+/* By ID, never by ordinal: there are TWO date controls in the editor now, and
+   `querySelector('input[type=date]')` would silently drive the optional one while every assertion
+   below still read as being about the deadline. */
+await setField('.tcard--open .editor input[id$="-due"]', '2026-12-24')
+await setField('.tcard--open .editor input[id$="-start"]', '2026-12-01')
 await setField('.tcard--open .editor select', 'Budget')
 report.draftOnScreen = await evaluate(`({
   title: document.querySelector('.tcard--open .editor input:not([type=date])').value,
-  due: document.querySelector('.tcard--open .editor input[type=date]').value,
+  due: document.querySelector('.tcard--open .editor input[id$="-due"]').value,
+  start: document.querySelector('.tcard--open .editor input[id$="-start"]').value,
   category: document.querySelector('.tcard--open .editor select').value,
 })`)
 // Nothing may have gone out yet: the session has not ended.
@@ -282,6 +296,10 @@ report.modeAfterDone = await evaluate(`document.querySelector('.tcard--open .edi
 await wait(1800)
 report.rowAfterReply = await evaluate(`document.querySelector('.tcard--open .tcard__title')?.textContent`)
 report.dayAfterReply = await evaluate(`document.querySelector('.tcard--open .tcard__day')?.textContent`)
+/* The optional day round-trips through the same one write, and the row it landed on is the one the
+   section grouping then reads. */
+report.startAfterReply = await evaluate(`document.querySelector('.tcard--open .tcard__fact')?.textContent`)
+report.sections = await evaluate(`[...document.querySelectorAll('.plan__month')].map(n => n.textContent)`)
 report.toast = await evaluate(`[...document.querySelectorAll('.toast')].map(n=>n.textContent)`)
 await shot('03-saved')
 
@@ -307,8 +325,11 @@ await evaluate(`
 await wait(400)
 const undatedRow = await evaluate(`
   (() => {
+    /* The group whose rows print a dash for a day. NOT simply the last one any more: Past deadline
+       and Ongoing are groups too, and if either sorted last this would date the wrong task and every
+       figure below would be about it while still reading as a pass. */
     const groups = [...document.querySelectorAll('.plan__group')]
-    const last = groups[groups.length - 1]
+    const last = groups.find((g) => g.querySelector('.tcard__day')?.textContent === '\u2013')
     const heading = last.querySelector('.plan__month').textContent
     const row = last.querySelector('.tcard')
     row.querySelector('.tcard__head').click()
@@ -318,7 +339,7 @@ const undatedRow = await evaluate(`
 await wait(500)
 await evaluate(`document.querySelector('.tcard--open .edit-toggle').click()`)
 await wait(400)
-await setField('.tcard--open .editor input[type=date]', '2027-03-09')
+await setField('.tcard--open .editor input[id$="-due"]', '2027-03-09')
 const postsBeforeDating = posts.length
 await evaluate(`document.querySelector('.tcard--open .edit-toggle').click()`)
 await wait(2200)
@@ -356,13 +377,18 @@ await evaluate(`document.querySelector('.fab').click()`)
 await wait(700)
 report.sheetFields = await evaluate(`[...document.querySelectorAll('.sheet input, .sheet select')].map(n=>n.type||n.tagName)`)
 report.sheetDateFits = await evaluate(`
-  (() => {
-    const input = document.querySelector('.sheet input[type=date]')
+  [...document.querySelectorAll('.sheet input[type=date]')].map((input) => {
     const panel = input.closest('.sheet__panel')
     const a = input.getBoundingClientRect(), b = panel.getBoundingClientRect()
-    return { overflow: Math.round(a.right - b.right), width: Math.round(a.width) }
-  })()
+    return { id: input.id, overflow: Math.round(a.right - b.right), width: Math.round(a.width) }
+  })
 `)
+/* The optional field opens BLANK and offers no way to clear what is not there: one control on an
+   unused field, and a `✕` beside an empty date wheel is a button that does nothing. */
+report.sheetStart = await evaluate(`({
+  value: document.querySelector('.sheet input[id="task-start"]')?.value,
+  clear: document.querySelectorAll('.sheet .field__pair .btn--icon').length,
+})`)
 await shot('04-sheet')
 await evaluate(`document.querySelector('.sheet .btn--secondary').click()`)
 await wait(400)
@@ -580,19 +606,29 @@ report.notes = {
   current: await evaluate(`[...document.querySelectorAll('.tabbtn')].map(b => b.getAttribute('aria-current'))`),
   // The header spans both tabs: the countdown and the tracker are facts about the board.
   hero: await evaluate(`Boolean(document.querySelector('.hero__percent'))`),
-  // The FAB is a plan control; a "+" on a document means nothing, and it would sit over the second
-  // tab's centre.
+  /* This tab floats one too, and it is the way IN: a pencil, where the plan has its `+`. Read mode
+     is a document, so there is no bar above it at all — that row of chrome, holding one button and
+     sticky so it never scrolled away, is what this replaced. */
   fab: await evaluate(`Boolean(document.querySelector('.fab'))`),
+  fabLabel: await evaluate(`document.querySelector('.fab')?.getAttribute('aria-label')`),
+  barInReadMode: await evaluate(`Boolean(document.querySelector('.notes__bar'))`),
   rendered: await evaluate(`document.querySelector('.doc')?.textContent`),
   blocks: await evaluate(`[...document.querySelectorAll('.doc > *')].map(n => n.tagName)`),
   emphasis: await evaluate(`document.querySelector('.doc strong')?.textContent`),
-  // Sticky, so Done stays reachable down a long document.
-  barSticky: await evaluate(`getComputedStyle(document.querySelector('.notes__bar')).position`),
+  /* The links, which are the reason this document has an anchor at all. Two shapes and one refusal
+     in the stub's text: `target=_blank` is load-bearing — installed, a same-window navigation
+     replaces the board with no way back — and `javascript:` must have stayed characters. */
+  links: await evaluate(`[...document.querySelectorAll('.doc a')].map(a => ({ href: a.getAttribute('href'), target: a.target, rel: a.rel }))`),
+  refusedLink: await evaluate(`document.querySelector('.doc')?.textContent.includes('javascript:alert(1)')`),
 }
 await shot('08-notes')
 
-await evaluate(`document.querySelector('.notes__bar .edit-toggle').click()`)
+await evaluate(`document.querySelector('.fab').click()`)
 await wait(500)
+/* Sticky, so Done stays reachable down a long document — and only measurable now, the bar being the
+   session's rather than the document's. */
+report.notes.barSticky = await evaluate(`getComputedStyle(document.querySelector('.notes__bar')).position`)
+report.notes.fabInSession = await evaluate(`Boolean(document.querySelector('.fab'))`)
 report.notes.editing = {
   field: await evaluate(`Boolean(document.querySelector('.textarea'))`),
   tools: await evaluate(`[...document.querySelectorAll('.notes__bar .btn--icon')].map(b => b.getAttribute('aria-label'))`),
@@ -683,7 +719,9 @@ await wait(2500)
 report.notes.saved = {
   writes: posts.slice(beforeNotes),
   toast: await evaluate(`[...document.querySelectorAll('.toast')].map(n => n.textContent)`),
-  mode: await evaluate(`document.querySelector('.notes__bar .edit-toggle')?.getAttribute('aria-pressed')`),
+  /* Back to read mode, which is now the ABSENCE of the bar and the return of the pencil. */
+  barGone: await evaluate(`Boolean(document.querySelector('.notes__bar')) === false`),
+  fabBack: await evaluate(`document.querySelector('.fab')?.getAttribute('aria-label')`),
   tabbarBack: await evaluate(`Boolean(document.querySelector('.tabbar'))`),
   rendered: await evaluate(`[...document.querySelectorAll('.doc > *')].map(n => n.tagName)`),
   bullets: await evaluate(`document.querySelectorAll('.doc__list--bullets .doc__item').length`),
@@ -691,7 +729,7 @@ report.notes.saved = {
 
 /** Opening and closing the session unchanged must send nothing at all. */
 const beforeNoop = posts.length
-await evaluate(`document.querySelector('.notes__bar .edit-toggle').click()`)
+await evaluate(`document.querySelector('.fab').click()`)
 await wait(400)
 await evaluate(`document.querySelector('.notes__bar .edit-toggle').click()`)
 await wait(1500)

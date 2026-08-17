@@ -72,16 +72,20 @@ describe('snapshot', () => {
 
   it('ignores an unrecognised version rather than migrating it', () => {
     // A drop marker, never a migration: re-fetching is free, because the sheet is the
-    // source of truth and this is only a cache.
+    // source of truth and this is only a cache. The version moves when a COLUMN is appended, not
+    // only when the envelope changes: a task cached without the new key reads as empty, and an edit
+    // session on a stale board rewrites the whole row — so the first save would blank the cell.
     store.set(STORAGE_KEYS.snapshot, JSON.stringify({ v: 999, tasks: [], config: {} }))
+    expect(readSnapshot()).toBeNull()
+    store.set(STORAGE_KEYS.snapshot, JSON.stringify({ v: 2, tasks: [], config: {} }))
     expect(readSnapshot()).toBeNull()
   })
 
   it('ignores a corrupt or structurally wrong payload', () => {
     for (const bad of [
       'not json',
-      JSON.stringify({ v: 2, tasks: 'nope', config: {} }),
-      JSON.stringify({ v: 2, tasks: [], config: null }),
+      JSON.stringify({ v: 3, tasks: 'nope', config: {} }),
+      JSON.stringify({ v: 3, tasks: [], config: null }),
     ]) {
       store.set(STORAGE_KEYS.snapshot, bad)
       expect(readSnapshot()).toBeNull()

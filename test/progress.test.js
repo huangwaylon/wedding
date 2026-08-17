@@ -27,6 +27,7 @@ function task(overrides = {}) {
     title: overrides.title ?? 'Book the venue',
     category: '',
     due: '2027-01-11',
+    start: '',
     doneAt: '',
     createdAt: '',
     updatedAt: '',
@@ -132,6 +133,52 @@ describe('taskProgress: duePassed', () => {
 
   it('is false for an undated task, which asks nothing of anybody', () => {
     expect(taskProgress(task({ due: '' }), TODAY).duePassed).toBe(false)
+  })
+})
+
+describe('taskProgress: ongoing', () => {
+  const ongoing = (overrides) => taskProgress(task(overrides), TODAY).ongoing
+
+  it('is false without a start date, which is most tasks', () => {
+    // The field is optional and the plan must look exactly as it did for a board that never uses
+    // it: no start date, no section, nothing lifted out of its month.
+    expect(ongoing({})).toBe(false)
+    expect(ongoing({ start: '' })).toBe(false)
+  })
+
+  it('starts ON the start day, not the morning after it', () => {
+    // A day-string comparison, like overdue, and inclusive at this end: a task starting today is
+    // today's work. The other boundary is `due < today`, which is exclusive — the two are different
+    // questions and are allowed to disagree.
+    expect(ongoing({ start: TODAY })).toBe(true)
+    expect(ongoing({ start: '2027-01-05' })).toBe(true)
+    expect(ongoing({ start: '2027-01-07' })).toBe(false)
+  })
+
+  it('is false once the task is done, and false once it is late', () => {
+    // Both louder claims. A finished task is not in progress, and a task past its date is drawn as
+    // past its date — a row may only be in one section, or the same task reads as two.
+    expect(ongoing({ start: '2027-01-01', doneAt: DONE_AT })).toBe(false)
+    expect(ongoing({ start: '2027-01-01', due: '2027-01-05' })).toBe(false)
+    expect(ongoing({ start: '2027-01-01', due: '2027-01-11' })).toBe(true)
+    // Due today is not late, so it is still ongoing.
+    expect(ongoing({ start: '2027-01-01', due: TODAY })).toBe(true)
+  })
+
+  it('reads a start cell somebody typed a clock time into, and ignores an impossible one', () => {
+    // `readCell` hands the anonymous read '2027-01-01T00:00', and a hand-edited cell can hold
+    // anything at all. One means that day; the other means no start date, never a crash.
+    expect(ongoing({ start: '2027-01-01T00:00' })).toBe(true)
+    expect(ongoing({ start: '2027-02-31' })).toBe(false)
+    expect(ongoing({ start: 'next week' })).toBe(false)
+  })
+
+  it('is not a state, so the five states and their counts are untouched', () => {
+    // A sixth state would have made a task overdue OR ongoing and moved a row out of the overdue
+    // count; `ongoing` is orthogonal to all five and is only ever asked which section to draw in.
+    const started = taskProgress(task({ start: '2027-01-01' }), TODAY)
+    expect(started.state).toBe(STATE.SOON)
+    expect(Object.values(STATE)).not.toContain('ongoing')
   })
 })
 

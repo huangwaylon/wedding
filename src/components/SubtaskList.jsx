@@ -4,22 +4,45 @@
  * dateless item has nothing for a bar to measure, and the parent's meter is where subtask progress
  * shows up — and no state badge. The add row never unmounts and never moves, new rows inserting
  * BEFORE it, which keeps the iOS keyboard up while somebody enters five in a row.
+ *
+ * A TITLE HOLDING A URL SPLITS THE ROW. Normally the whole row is the toggle, because an item is
+ * tapped by aiming at its text and with only the 44px circle live that tap did nothing. A link cannot
+ * live inside that button — HTML admits no interactive descendant in a `<button>`, and the parser
+ * hoists the anchor out — and a URL somebody pasted is there to be followed. So a linked row is the
+ * circle plus the link: the tick keeps its full 44px target, the words become the second target, and
+ * `hasLink` is what chooses. Everything else keeps the whole row.
  */
 
 import { useEffect, useRef, useState } from 'react'
 import { isDone } from '../schema.js'
+import { hasLink } from '../lib/links.js'
 import { useT } from '../i18n/index.js'
 import DoneToggle from './DoneToggle.jsx'
+import { LinkedText } from './ExternalLink.jsx'
 import { PlusIcon, TrashIcon } from './icons.jsx'
 
 function SubtaskRow({ subtask, canEdit, canRemove, onToggle, onDelete }) {
   const { t } = useT()
   const done = isDone(subtask)
+  const linked = hasLink(subtask.title)
+
+  /** The same element either way, so the type, the ink and the strikethrough are one rule whether the
+      words sit inside the toggle or beside it. */
+  const title = (
+    <span className="subtask__title">
+      {linked ? <LinkedText text={subtask.title} /> : subtask.title}
+    </span>
+  )
 
   return (
-    <li className={`subtask${done ? ' subtask--done' : ''}${subtask.pending ? ' subtask--pending' : ''}`}>
+    <li
+      className={`subtask${linked ? ' subtask--linked' : ''}${done ? ' subtask--done' : ''}${
+        subtask.pending ? ' subtask--pending' : ''
+      }`}
+    >
       {/* The whole row is the toggle, not the circle alone: an item is tapped by aiming at its
-          text, and with only the 44px glyph live that tap did nothing. */}
+          text, and with only the 44px glyph live that tap did nothing. A linked row is the one
+          exception — see the header. */}
       <DoneToggle
         done={done}
         title={subtask.title}
@@ -27,8 +50,9 @@ function SubtaskRow({ subtask, canEdit, canRemove, onToggle, onDelete }) {
         onToggle={() => onToggle(subtask)}
         className="subtask__toggle"
       >
-        <span className="subtask__title">{subtask.title}</span>
+        {linked ? null : title}
       </DoneToggle>
+      {linked ? title : null}
       {canEdit && canRemove ? (
         <button
           type="button"
@@ -117,11 +141,13 @@ function AddSubtask({ onAdd, onFocusChange }) {
 }
 
 /**
- * @param {boolean} [props.canAdd] false for a PROMOTED row, whose `parent_id` named something
- *   the read could not place: its items stay live, but a new child would be a grandchild,
- *   promoted again on the next read.
- * @param {boolean} [props.canRemove] false on the read path — ticking and adding are doing the
- *   work, while removing is destructive and sits with the task's delete behind the Edit toggle.
+ * @param {boolean} [props.canAdd] whether a new item may be typed here: false on the READ path, so
+ *   the field only appears once somebody has said they are editing the task — an always-present input
+ *   made every open row look like a form, and the commonest reason to open one is to tick something.
+ *   False too for a PROMOTED row, whose `parent_id` named something the read could not place: its
+ *   items stay live, but a new child would be a grandchild, promoted again on the next read.
+ * @param {boolean} [props.canRemove] false on the read path — ticking is doing the work, while
+ *   removing is destructive and sits with the task's delete behind the Edit toggle.
  */
 export default function SubtaskList({
   subtasks,

@@ -39,13 +39,16 @@ var TASK_COLUMNS = [
   'title',
   'category',
   // The calendar day it is due, 'YYYY-MM-DD'. Not an instant: no clock time, no window, no flags.
-  // A task is a title, a day and a tick.
   'due',
   'done_at',
   'created_at',
   'updated_at',
   'deleted_at',
   'parent_id',
+  // The calendar day work on it starts, or empty. Optional, and last: appending is the one change
+  // that shifts no index, so a deployment predating this one drops the column rather than serving
+  // every later cell one place to the left.
+  'start',
 ]
 
 var TASKS_SHEET = 'tasks'

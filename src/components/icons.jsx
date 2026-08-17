@@ -100,6 +100,18 @@ export function UndoIcon(props) {
   )
 }
 
+/** A page with an arrow leaving it: the one glyph that means "this goes somewhere else". Beside the
+    words of a link, never instead of them — see `ExternalLink`. */
+export function ExternalLinkIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M13.5 5.5h5v5" />
+      <path d="M18.5 5.5 11 13" />
+      <path d="M17 14.5v3.5a1.5 1.5 0 0 1-1.5 1.5H6a1.5 1.5 0 0 1-1.5-1.5V8.5A1.5 1.5 0 0 1 6 7h3.5" />
+    </svg>
+  )
+}
+
 /** The unchecked box and the checked one, so the control never changes size. */
 export function CircleIcon(props) {
   return (

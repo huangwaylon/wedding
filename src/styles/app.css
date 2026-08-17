@@ -17,9 +17,9 @@
   margin: 0 auto;
   padding-top: var(--hero-height);
   /* --tabbar-height already contains --safe-bottom; adding the inset again leaves a dead strip below
-     the last row. The FAB's term is unconditional because CSS cannot see which tab is up, so the notes
-     tab ends with its clearance unoccupied — 80px of trailing space, against a button landing on a
-     row's controls. */
+     the last row. The FAB's term is unconditional because CSS cannot see which tab is up — and it no
+     longer has to: both destinations float one, `+` on the plan and a pencil on the notes, so the
+     clearance is occupied either way. */
   padding-bottom: calc(var(--tabbar-height) + var(--fab-size) + var(--space-6));
 }
 
@@ -354,9 +354,18 @@
 /* ---- The check --------------------------------------------------------
    The app's primary interaction, at the full target and in the icon buttons' ink. --radius-sm, not
    --radius-md: an inner radius is at most the outer minus the padding between, and this sits in a
-   --radius-lg (16px) card padded by --space-2 (8px). At 12px the corner cut into the card's own. */
+   --radius-lg (16px) card padded by --space-2 (8px). At 12px the corner cut into the card's own.
+
+   `align-self: center` against the grid's `align-items: start`, so the 44px box sits in the middle of
+   the row's FIRST grid row — the head — however tall the head has grown. Two lines of title plus a
+   meta line make that ~70px, and start-aligned the circle floated to the top of it while the eye
+   weighs it against the whole block; `center` on the grid itself would instead stretch the box, and a
+   44x70 hover square is not a 44px control. It centres on the HEAD and not on the card, the open
+   content being a grid row of its own — a check level with a row's fields would have stopped naming
+   the title beside it. */
 .tcard__check {
   grid-column: 1;
+  align-self: center;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -566,6 +575,21 @@
   cursor: default;
 }
 
+/* The exception, and the only one: a title holding a URL keeps the tick at 44px and hands the words
+   to the link beside it, an anchor being illegal inside a button. A modifier on the ROW rather than a
+   second base class, so the tick keeps every rule above including its `--on` colour.
+
+   --tap-target is a MIN-WIDTH here and not a consequence: the 44px of an ordinary row comes from
+   `flex: 1` spanning it, so `flex: none` on its own left a 26px button — the app's primary
+   interaction, under the one target size there is. The trailing padding goes so the GLYPH stays in the
+   column every other row's glyph is in; the words then start 18px right of an unlinked row's, which is
+   the price of the tick keeping its target, and a linked row already reads as its own kind of row. */
+.subtask--linked .subtask__toggle {
+  flex: none;
+  min-width: var(--tap-target);
+  padding-inline-end: 0;
+}
+
 /* 16px and weight 400 against the parent title's 16px and 500: subordination comes from weight, ink,
    glyph size and indent, never from going under the 13px floor. --ink-2 is 7.90:1. */
 .subtask__title {
@@ -689,8 +713,9 @@
   margin-bottom: var(--space-1);
 }
 
-/* The one fact an open row shows in read mode: the due date, spelled out. `space-between`, so the
-   value sits at the right edge under the Edit toggle. */
+/* The one fact an open row shows in read mode, and only when it has one: the day it starts. The due
+   date is not repeated here — the row's own day column carries it. `space-between`, so the value sits
+   at the right edge under the Edit toggle. */
 .tcard__fact {
   display: flex;
   align-items: baseline;
@@ -943,11 +968,12 @@
 }
 
 /* ---- The notes bar ----------------------------------------------------
-   The document's own controls: the Edit/Done toggle, and while editing the four formatting buttons
-   beside it. Sticky rather than fixed, and at the TOP — `top: var(--hero-height)`, the recipe
-   `.plan__month` uses, because a long document must keep Done reachable without scrolling back up,
-   while a bottom-sticky bar would land on iOS's keyboard accessory row. Opaque, because the card
-   scrolls underneath it. */
+   The SESSION's controls: the four formatting buttons and Done. It exists only while the document is
+   being edited — read mode is a document, and a row of chrome above every line of one, holding a
+   single button, is what the floating pencil replaced. Sticky rather than fixed, and at the TOP —
+   `top: var(--hero-height)`, the recipe `.plan__month` uses, because a long document must keep Done
+   reachable without scrolling back up, while a bottom-sticky bar would land on iOS's keyboard
+   accessory row. Opaque, because the card scrolls underneath it. */
 .notes__bar {
   position: sticky;
   top: var(--hero-height);

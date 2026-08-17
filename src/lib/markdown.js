@@ -7,15 +7,21 @@
  * anybody holding the edit key and read by everybody, which is a shared credential in front of an
  * injection surface the moment markup is concatenated.
  *
- * FOUR BLOCKS AND TWO MARKS, and the omissions are the design. No links (a user-controlled `href` is
- * the one injection route left once markup is out, and `javascript:` is a URL), no images (the sheet
- * holds no assets), no tables, no code fences, no block quotes, no rules: each is a shape somebody
- * has to learn and, for most of them, a type size the four-step scale does not have. What is left is
- * what people write down after a decision — a title, a line, a list.
+ * FOUR BLOCKS, TWO MARKS AND A LINK, and the omissions are the design. No images (the sheet holds no
+ * assets), no tables, no code fences, no block quotes, no rules: each is a shape somebody has to learn
+ * and, for most of them, a type size the four-step scale does not have. What is left is what people
+ * write down after a decision — a title, a line, a list, and the page a decision was made on.
+ *
+ * A LINK IS AN ALLOWLIST, NOT A PARSER. `links.js` owns what a URL is and refuses everything but
+ * `http`/`https`, because a user-controlled `href` is the one injection route left once markup is out
+ * and `javascript:` is a URL. A refused scheme renders as the characters that were typed, exactly like
+ * an unmatched `**`.
  *
  * A MARKER THAT MATCHES NOTHING RENDERS AS TYPED. Half-finished emphasis is what a document looks
  * like mid-sentence, so a `**` with no partner is two asterisks rather than a swallowed paragraph.
  */
+
+import { safeHref, urlAt } from './links.js'
 
 /** Heading depth this renders. `###` and deeper map onto 2 — see `parseMarkdown`. */
 const MAX_HEADING = 2
@@ -73,13 +79,43 @@ function closingRun(text, from, length) {
 }
 
 /**
- * One line's runs: `{ text }`, with `bold` and `italic` where they apply.
+ * `[label](url)`, sticky so an inline scanner can ask "here?" without slicing. The label takes no
+ * newline and the URL no whitespace or `)`, which is what makes an unclosed bracket fall through to
+ * literal text rather than swallowing the rest of the line.
+ */
+const LINK = /\[([^\]\n]*)\]\(([^)\s]+)\)/y
+
+/**
+ * A link starting at `at`: either `[label](url)` or a bare URL, or null.
+ *
+ * Bare URLs are linked because people paste them — a document where `[x](y)` works and a pasted URL
+ * does not teaches the syntax by failure. The label is parsed for marks by recursion, so
+ * `[**venue**](url)` is a bold link; an empty label and a refused scheme both return null, and the
+ * caller then prints the brackets.
+ *
+ * @returns {{spans: object[], href: string, length: number}|null}
+ */
+function linkAt(line, at) {
+  if (line[at] === '[') {
+    LINK.lastIndex = at
+    const match = LINK.exec(line)
+    if (!match || !match[1].trim()) return null
+    const href = safeHref(match[2])
+    return href ? { spans: spansOf(match[1]), href, length: match[0].length } : null
+  }
+
+  const url = urlAt(line, at)
+  return url ? { spans: [{ text: url }], href: url, length: url.length } : null
+}
+
+/**
+ * One line's runs: `{ text }`, with `bold`, `italic` and `href` where they apply.
  *
  * One asterisk is italic, two are bold, three are both, and anything longer is read as three: past
  * that it is somebody's decoration, and the alternative is printing it. Nesting works by recursion,
  * so `**a *b* c**` is bold throughout with `b` also italic.
  *
- * @returns {{text: string, bold?: true, italic?: true}[]}
+ * @returns {{text: string, bold?: true, italic?: true, href?: string}[]}
  */
 function spansOf(line) {
   const spans = []
@@ -92,6 +128,16 @@ function spansOf(line) {
   }
 
   while (at < line.length) {
+    /* Links first: the URL is consumed whole, so an asterisk inside a query string is part of the
+       address rather than an unmatched italic. */
+    const link = linkAt(line, at)
+    if (link) {
+      flush()
+      for (const span of link.spans) spans.push({ ...span, href: link.href })
+      at += link.length
+      continue
+    }
+
     const length = runAt(line, at)
     const from = at + length
     const close = length ? closingRun(line, from, length) : -1

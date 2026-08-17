@@ -1,9 +1,9 @@
 # Wedding
 
 A static React app for planning a wedding, with a single Google Sheet as the database. Two tabs: a
-**Plan** — a task is a title, a day it is due, and a tick, and a task can hold a one-level checklist,
-with one figure rolling the whole thing up — and **Notes**, one shared markdown document for what has
-been decided.
+**Plan** — a task is a title, a day it is due, a tick and optionally the day it starts, and a task can
+hold a one-level checklist, with one figure rolling the whole thing up — and **Notes**, one shared
+markdown document for what has been decided.
 
 Anyone with the URL gets a read-only board — no sign-in, no prompt. The two people planning open the
 same URL with a secret in the fragment (`#k=…`), captured once into `localStorage`, and get editing.
@@ -39,21 +39,31 @@ read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization
   checklist is the share of its items ticked, otherwise 0%. The header percentage is the mean over
   top-level tasks, each counting equally; the mark on the meter is the share of due dates that have
   passed. There is no pace figure — the overdue count stands alone, as a button that jumps to those rows.
-- **Notes** is one document everybody sees, opening rendered and read-only behind the same **Edit**
-  toggle a task row uses. Its editor is a plain field plus four buttons — heading, bullet list, bold,
-  italic — and markdown is deliberately small: headings, bullet and numbered lists, `**bold**`,
-  `*italic*`, a newline being a line break. No links, no images, no tables, no HTML; anything else is
-  shown as the characters that were typed. One write per editing session, on Done. The document lives in
+- **Notes** is one document everybody sees, opening rendered and read-only; the pencil button in the
+  corner starts an editing session, which is a plain field plus four buttons — heading, bullet list,
+  bold, italic — and Done. Markdown is deliberately small: headings, bullet and numbered lists,
+  `**bold**`, `*italic*`, `[label](https://…)`, a pasted URL, a newline being a line break. No images,
+  no tables, no HTML, and no scheme but `http`/`https` — anything else is shown as the characters that
+  were typed. A link opens in a new tab, which is also how an installed app avoids replacing the board
+  with a page it has no Back button from. One write per editing session, on Done. The document lives in
   one `config` cell, so [the access model](#security-model) applies to it unchanged.
 - **Subtasks** are one level deep, carry no date, and do not enter the overall percentage; their
-  parent's `3/5` tally does. A row whose `parent_id` cannot be placed one level under a live task is
-  shown as a top-level task, never hidden. All-subtasks-done does not mark a parent done.
+  parent's `3/5` tally does. Tapping one ticks it — unless its text holds a URL, where the tick is the
+  circle and the words are a link. Adding one is behind the row's **Edit**. A row whose `parent_id`
+  cannot be placed one level under a live task is shown as a top-level task, never hidden.
+  All-subtasks-done does not mark a parent done.
 - **A task needs a day.** Create opens with the date blank and Save refuses without one. A row already
   in the sheet with an empty `due` still renders, in a **No date** group.
-- **An open row is read-only** behind an **Edit** toggle, which also gates the destructive controls;
-  ticking and adding a checklist item do not. One edit session sends one write, on Done or on close.
-- **Tasks are grouped by month**; whole-month tallies and the `Today` line are withheld while a filter
-  is on.
+- **A start date is optional**, and the one thing that can say a task is already yours to be doing: a
+  task whose start day has arrived and which is not finished appears under **Ongoing**. It has a clear
+  button, because a date wheel on a phone offers no way back to blank.
+- **An open row is read-only** behind an **Edit** toggle, which also gates the destructive controls and
+  the add-a-checklist-item field; ticking does not. Read mode states one thing, the day it starts, and
+  only when it has one. One edit session sends one write, on Done or on close.
+- **Two sections come before the calendar:** **Past deadline** — anything overdue and unfinished — then
+  **Ongoing**. Both disappear when empty, and a task is in one place only, the first that claims it.
+  Below them, **tasks are grouped by month**; whole-group tallies and the `Today` line are withheld
+  while a filter is on.
 - **Per-device, in `localStorage`, never in the sheet:** language (English/Japanese), accent (`tarn`
   default, `pine`, `rosehip`), the state filter, the read-only view toggle.
 - **A cold launch does no network work:** `scripts/build-sw.js` emits a service worker precaching
@@ -80,13 +90,16 @@ an editor's first write builds both tabs.
 | G | `updated_at` | `2026-08-07T…Z` | Stamped by the browser on every write |
 | H | `deleted_at` | *(empty)* | A timestamp here soft-deletes the row |
 | I | `parent_id` | *(empty)* | Empty for a task, the parent's `id` for a subtask |
+| J | `start` | `2027-01-15` | Optional calendar day work on it begins. Empty on a subtask, and on any task that does not need one |
 
 - **Reads resolve columns by name** in row 1, on both sides of the wire, so a header reordered in the
   Sheets UI still reads correctly; the read never writes. An editor's next write restores the order
   above, carrying each value across by name, and touches nothing past the last column.
 - **Appending a column is a Pages deploy, not an Apps Script one:** the browser holds the column list
   and does every write, so a stale script serves only a slightly older read, resolved by name.
-  `appsscript.json`'s scope is the exception — see [Operations](#operations).
+  `appsscript.json`'s scope is the exception — see [Operations](#operations). `start` was appended this
+  way: a sheet built before it is widened by the next editor write, with the column empty on every
+  existing row, and until `Code.gs` is redeployed a reader simply does not see it.
 - **Writes use `valueInputOption: RAW`** and both tabs are built with the plain-text number format, so
   `=SUM(A:A)` stays literal and a date is never reformatted to the sheet's locale.
 - **`due` is a calendar day**, no zone and no time; whether it has passed is decided against the
@@ -139,6 +152,11 @@ preference reaches the sheet.
   other site published from the same Pages account can read the key: publish nothing untrusted there.
 - **The board is world-readable.** The read endpoint is anonymous by design and the `/exec` URL ships
   in a public bundle. Treat the guest list and the venue as public.
+- **A link in the notes or a checklist item is `http`/`https` only.** The document is written by
+  whoever holds the edit key and read by everybody, and an `href` is the one attribute a reader
+  controls, so the scheme is allowlisted in one place (`src/lib/links.js`) and everything else — a
+  `javascript:` URL above all — is shown as text. Every link carries `rel="noopener noreferrer"`, so
+  the page it opens can neither reach back into the board nor be told the URL it came from.
 - **No third-party JavaScript and no sign-in.** `script-src 'self'`, `frame-src 'none'`, and
   `connect-src` naming three hosts: `script.google.com`, `script.googleusercontent.com` (the 302 target
   of `/exec`) and `sheets.googleapis.com`. `accounts.google.com` must never appear there.
@@ -370,7 +388,10 @@ whose rect ends exactly on the image edge produces no crop at all.
 - Any other site on the same GitHub Pages origin can read the stored edit key.
 - Changing the `due` column's number format away from plain text in the Sheets UI can leave a date
   unreadable to editors, who then see the row in the **No date** group while readers still see the
-  date. Leave the `tasks` tab formatted as plain text.
+  date. Leave the `tasks` tab formatted as plain text. On a board created before the `start` column
+  existed, that column is the one the app never formatted — the repair that widens an old sheet writes
+  values only — so if you type a start date into the sheet by hand there, set the column to **Format ›
+  Number › Plain text** first. A start date typed in the app is always safe.
 - Nothing in the sheet is private, and nothing private should go in it.
 - Two people editing the Notes document at once is last-writer-wins over the whole document: there is no
   lock and no push channel, and a refresh happens on focus at most once every 30s. Ticking two different
@@ -386,10 +407,10 @@ whose rect ends exactly on the image edge produces no crop at all.
 | `src/schema.js` | the sheet contract: columns, row ↔ task mapping, every A1 range, validation |
 | `src/config.js` | build-time values, storage keys, the `config` tab's field list and defaults |
 | `src/App.jsx` | the shell: access, the clock, which tab is up, the filter, every mutation's toast |
-| `src/lib/` | `api` (dispatch, failure taxonomy), `connection` (token cache), `sheets` (every Sheets API call), `access` (the capability URL), `time`, `progress`, `markdown` (the notes grammar and its toolbar transforms), `templates`, `snapshot`, `serviceWorker`, `theme` |
+| `src/lib/` | `api` (dispatch, failure taxonomy), `connection` (token cache), `sheets` (every Sheets API call), `access` (the capability URL), `time`, `progress`, `markdown` (the notes grammar and its toolbar transforms), `links` (what counts as a URL, and the only `href` gate), `templates`, `snapshot`, `serviceWorker`, `theme` |
 | `src/state/` | `useBoard` (optimistic CRUD, the folding write queue, throttled refresh), `useToday`, `useToasts` |
 | `src/components/` | one file per view, with inline-SVG icons in `icons.jsx` |
 | `src/i18n/` | the engine, the `en`/`ja` catalogs, the registry |
 | `src/styles/` | `tokens`, `base`, `primitives`, `app`, loaded in that order |
-| `test/` | vitest specs. `schema.test.js` pins the two column lists against each other, `script.test.js` executes `Code.gs`, `sheets.test.js` drives the REST client against a fake that parses A1 ranges, `connection.test.js` covers the mint, `markdown.test.js` the notes grammar |
+| `test/` | vitest specs. `schema.test.js` pins the two column lists against each other, `script.test.js` executes `Code.gs`, `sheets.test.js` drives the REST client against a fake that parses A1 ranges, `connection.test.js` covers the mint, `markdown.test.js` the notes grammar, `links.test.js` every scheme that may not reach an `href` |
 | `scripts/` | `preview.jsx` + `harness.html` (static visual harness), `drive.mjs` + `stub-endpoint.mjs` (drive the app against both backends), `check-contrast.js`, `build-sw.js`, `make-icons.js` |

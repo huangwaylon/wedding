@@ -117,30 +117,40 @@ function seed() {
     date.setUTCDate(date.getUTCDate() + offset)
     return date.toISOString().slice(0, 10)
   }
+  /* `[id, title, category, due, done_at, start]`. Two rows carry a start date that has passed, so
+     the Ongoing section renders; a1 and a2 are past their date and unfinished, so Past deadline
+     does. a7 has both and is finished, which is the case that must land in neither. */
   const rows = [
-    ['a1', 'Mail the save-the-dates', 'Stationery', day(-43), ''],
-    ['a2', 'Book the photographer and videographer', 'Photo', day(-1), ''],
-    ['a3', 'Compare the two venue quotes', 'Venue', day(0), ''],
-    ['a4', 'Send the deposit', 'Budget', day(1), ''],
-    ['a5', 'Choose the invitation paper', 'Stationery', day(7), ''],
-    ['a6', 'Order signage, vow books and favours', 'Gifts', day(120), ''],
-    ['a7', 'Agree the budget and who is contributing', 'Budget', day(-60), '2026-07-01T00:00:00.000Z'],
+    ['a1', 'Mail the save-the-dates', 'Stationery', day(-43), '', ''],
+    ['a2', 'Book the photographer and videographer', 'Photo', day(-1), '', day(-30)],
+    ['a3', 'Compare the two venue quotes', 'Venue', day(0), '', day(-7)],
+    ['a4', 'Send the deposit', 'Budget', day(1), '', ''],
+    ['a5', 'Choose the invitation paper', 'Stationery', day(7), '', day(-2)],
+    ['a6', 'Order signage, vow books and favours', 'Gifts', day(120), '', day(60)],
+    ['a7', 'Agree the budget and who is contributing', 'Budget', day(-60), '2026-07-01T00:00:00.000Z', day(-90)],
     // The three with no date at all: `nodate` sorts last, into its own group.
-    ['a8', 'Decide about a live band', 'Music', '', ''],
-    ['a9', 'Ask about corkage', 'Food', '', ''],
-    ['a10', 'Find a calligrapher', 'Stationery', '', ''],
+    ['a8', 'Decide about a live band', 'Music', '', '', ''],
+    ['a9', 'Ask about corkage', 'Food', '', '', ''],
+    ['a10', 'Find a calligrapher', 'Stationery', '', '', ''],
   ]
-  const subs = ['Shortlist three venues', 'Visit the shortlist', 'Compare quotes in writing']
+  /* The last one holds a URL, so the checklist's linked shape is on screen: the row splits into the
+     tick and the link, which no static render can prove is tappable. */
+  const subs = [
+    'Shortlist three venues',
+    'Visit the shortlist',
+    'Compare quotes in writing',
+    'Quote B: https://venue.example/quotes/2027-04-18',
+  ]
 
   const grid = [
-    ['id', 'title', 'category', 'due', 'done_at', 'created_at', 'updated_at', 'deleted_at', 'parent_id'],
-    ...rows.map(([id, title, category, due, doneAt]) => [
-      id, title, category, due, doneAt, '2026-01-01T00:00:00.000Z', '', '', '',
+    ['id', 'title', 'category', 'due', 'done_at', 'created_at', 'updated_at', 'deleted_at', 'parent_id', 'start'],
+    ...rows.map(([id, title, category, due, doneAt, start]) => [
+      id, title, category, due, doneAt, '2026-01-01T00:00:00.000Z', '', '', '', start,
     ]),
     ...subs.map((title, index) => [
       `a3-s${index}`, title, '', '',
       index < 1 ? '2026-07-01T00:00:00.000Z' : '',
-      `2026-07-0${index + 1}T00:00:00.000Z`, '', '', 'a3',
+      `2026-07-0${index + 1}T00:00:00.000Z`, '', '', 'a3', '',
     ]),
   ]
 
@@ -168,6 +178,13 @@ function seed() {
         '- Chair covers, ivory',
         '- Access from 9am for the florist',
         '- Who signs for the delivery',
+        '',
+        /* One of each link shape, and one refusal: `drive.mjs` counts the anchors and checks that the
+           third stayed text. Keep them on their own lines — the toolbar assertions above index into
+           the paragraphs by phrase. */
+        'Quote: [the pavilion](https://venue.example/pavilion)',
+        'Directions: https://maps.example/q/pavilion',
+        'Refused: [tap](javascript:alert(1))',
         '',
         '# Food',
         '1. Tasting menu, five courses',
