@@ -171,15 +171,31 @@ report.headline = await evaluate(`document.querySelector('.hero__percent')?.text
 report.count = await evaluate(`document.querySelector('.hero__tally')?.textContent`)
 report.fab = await evaluate(`Boolean(document.querySelector('.fab'))`)
 report.months = await evaluate(`[...document.querySelectorAll('.plan__month')].map(n=>n.textContent)`)
-/* A lifted row names its own month, the heading above it naming a state: the day column alone would
-   be a bare `20` under "Past deadline". Reported as pairs, so a row drawn in a month group having one
-   too is as visible as a lifted row missing one. */
-report.liftedDates = await evaluate(`
+/* Every dated row states its own month above its own day, in every group, lifted or not — a date must
+   not need the heading above it to be read. Reported as pairs so a row missing a month is as visible
+   as a group of them missing one, with the years beside it: those appear only where the year is not
+   the board's, so on a one-year fixture the list is empty and that is the assertion. */
+report.rowDates = await evaluate(`
   [...document.querySelectorAll('.plan__group')].map((group) => ({
     heading: group.querySelector('.plan__month').textContent,
     rows: group.querySelectorAll('.tcard').length,
-    months: [...group.querySelectorAll('.tcard__month')].map((n) => n.textContent),
+    dates: [...group.querySelectorAll('.tcard__date')].map((n) => n.textContent),
+    years: [...group.querySelectorAll('.tcard__year')].map((n) => n.textContent),
   }))
+`)
+/* The month is why the column could not hold the year: 2rem takes 'Oct' and '12月' and neither
+   'Oct 2026' nor '2026年10月'. Measured here rather than assumed, in whatever locale the fixture is. */
+report.dateColumn = await evaluate(`
+  (() => {
+    const box = document.querySelector('.tcard__date')
+    const month = document.querySelector('.tcard__month')
+    return {
+      box: Math.round(box.getBoundingClientRect().width * 10) / 10,
+      month: month.textContent,
+      monthWidth: Math.round(month.getBoundingClientRect().width * 10) / 10,
+      lines: Math.round(box.getBoundingClientRect().height),
+    }
+  })()
 `)
 report.stickyMonth = await evaluate(`getComputedStyle(document.querySelector('.plan__month')).position`)
 await shot('01-top')

@@ -136,23 +136,26 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
   and the rows underneath already carry the state.
 - An UNDATED row is never lifted, whatever its start date: it sorts last into the group that says so,
   and under **Ongoing** it would read as progress while the one thing wrong with it is why it is there.
-- A ROW STATES ITS OWN MONTH in one of THREE ways, and `headingMonth` — the month the heading above it
-  names, `''` for a section, `null` for no heading at all — is the only input:
-
-  | the heading names | the row prints |
-  | --- | --- |
-  | this row's month | nothing; the day number plus the heading is the date |
-  | no month | the bare month and year (`Sep 2026`), the day column's other half |
-  | ANOTHER month | the same behind the due label (`Due Mar 2027`, `期限 2027年3月`) |
-
-  The third is the only case a reader can be actively MISLED by: the day column is a bare number, so a
-  `20` under "This month · January 2027" reads as the 20th of January when the row is due in March. The
-  label is also the answer to why that row is in the section at all. One comparison in `TaskCard`, not a
-  flag per section, so a month group cannot start restating its own month and the label cannot appear
-  where a heading is merely silent.
-- Not a stacked tile in the day column, which is the obvious design and was measured: `2026年10月` is
-  76px at 13px against a 72px column, so the column had to go to 5rem and every title in the two
-  sections that matter most wrapped. The meta line was already there and already wraps.
+- **EVERY ROW STATES ITS OWN DATE, in one column, month over day** (`.tcard__date` — `Oct` at 13px over
+  `12` at 24px). It is the same shape under a section as under a month heading, so no date has to be
+  read against its context: a bare `20` under "This month · January 2027" read as the 20th of January
+  on a row due in March, and the caption that fixed it — `Due Mar 2027` on the meta line — was a second
+  way of stating a date on the rows that matter most. `formatMonth` is what the column prints and
+  `test/render.test.jsx` pins that every dated row carries one.
+- **The column holds no year, and 2rem is why.** Measured over CDP: `Sep` is 24px and `12月` 31px inside
+  a 32px box, where `Sep 2026` is 60px and `2026年9月` 67px — a year in the column takes it to 5rem and
+  wraps every title in the two sections that matter most. So the day column costs exactly what the bare
+  day number cost, and nothing was taken from the title.
+- A ROW STATES ITS YEAR only where nothing else on screen gives it one, which is two clauses and one
+  idea: the heading above does not name this row's month — a calendar heading says "April 2027" over
+  rows that are all April 2027's — and the year is not the board's own, a date inside the year the
+  reader is living in needing none. What is left is a row a lifted section pulled out of another year,
+  and there the year is the answer to how far away it is. `TaskCard` takes `today` and `headingMonth`
+  for that one question and nothing else, `Boolean(headingMonth)` covering `''` and `null` alike; the
+  year goes through `plan.rowYear`, as a STRING, `interpolate` running a number through
+  `Intl.NumberFormat` and rendering `2,026`.
+- An UNDATED row prints the dash alone, with no month line above it: there is no month, and an empty
+  line would push the dash out of the column every other day shares.
 - The tally is `aria-hidden` and never coloured: the row and the header strip already state that
   arithmetic, and a month in `--good` would claim something about the month rather than its tasks.
 
@@ -361,7 +364,7 @@ that cost something to rediscover:
 - An open row starts read-only, `TaskDetail` owning the mode: live fields behind the commonest tap put a
   caret in a title one stray blur from a rename. Edit gates every destructive control and the
   add-a-subtask field; ticking stays on the read path. Read mode states ONE fact and only when it has one
-  — the day it starts. The due date is not restated there: the row's day column and the words beside it
+  — the day it starts. The due date is not restated there: the row's date column and the words beside it
   carry it, and the line repeating it was the largest thing in an open row. The mode lives there because the component unmounts on close,
   so nothing has to reset it; `editing` is a prop, like `expanded`, so a static render sees the fields. The
   notes tab is the same shape, `NotesView` owning the mode and taking `editing` for the same reason.
@@ -392,7 +395,7 @@ JSX.
 | every `localStorage` touch (`readStored`/`writeStored`) | `config.js` |
 | column names and every A1 range | `schema.js` |
 | `CATEGORIES` | `templates.js` |
-| every zone, and the layout of a day string — `monthOf`, `dayOfMonth`, `firstOfMonth` exist so nothing else indexes into `YYYY-MM-DD` | `time.js` |
+| every zone, and the layout of a day string — `monthOf`, `dayOfMonth`, `yearOf`, `firstOfMonth` exist so nothing else indexes into `YYYY-MM-DD` | `time.js` |
 | what counts as a URL, and the only `href` gate (`safeHref`) | `links.js` |
 | `ICON_SIZE`, so a glyph size is a name rather than a pair of literals at every call site | `icons.jsx` |
 | `BG_HEX`, `ACCENT_HEX` | `theme.js` |

@@ -216,8 +216,8 @@ export function formatDay(day, { locale, year = false } = {}) {
 
 /**
  * 'Sat, 18 April 2027' / '2027年4月18日(土)' — for an open row. The weekday is why this exists rather
- * than reusing `formatDay`: a collapsed row prints a bare day number, and "is that a Saturday" is
- * answered nowhere else on screen.
+ * than reusing `formatDay`: a collapsed row prints a month and a day and no weekday, so "is that a
+ * Saturday" is answered nowhere else on screen.
  */
 export function formatDayLong(day, { locale } = {}) {
   const date = asUtcDate(day)
@@ -231,14 +231,24 @@ export function formatDayLong(day, { locale } = {}) {
 }
 
 /**
- * 'Oct 2026' / '2026年10月' — for a row that has to name its own month, because the heading above it
- * is a SECTION rather than a month. Short, unlike `formatDayMonth`'s heading: it sits at 13px in a
- * column beside the day, where 'October' would not fit either alphabet.
+ * 'Oct' / '10月' — the month line of a row's date column, and the one thing there that is NOT the
+ * year: '2026年10月' measures 67px at 13px against that 2rem box, where '10月' is 24px and '12月'
+ * 31px (both measured over CDP). A row states its year on the meta line, and only when it is not
+ * the board's own — see `TaskCard`.
  */
-export function formatMonthYear(day, { locale } = {}) {
+export function formatMonth(day, { locale } = {}) {
   const date = asUtcDate(day)
   if (!date) return ''
-  return displayFormatter(locale, { year: 'numeric', month: 'short' }).format(date)
+  return displayFormatter(locale, { month: 'short' }).format(date)
+}
+
+/**
+ * The calendar year, as a number, so nothing outside this module compares years by slicing. null
+ * for anything unusable, which is what stops an undated row claiming to be in year zero.
+ */
+export function yearOf(day) {
+  const parts = parseDay(normalizeDay(day))
+  return parts ? parts.year : null
 }
 
 /** 'April 2027' / '2027年4月' — the list's group headings. */

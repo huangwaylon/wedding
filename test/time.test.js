@@ -15,12 +15,11 @@ import {
   FALLBACK_TIME_ZONE,
   addDays,
   daysBetween,
-
   dayOfMonth,
   firstOfMonth,
   formatDay,
   formatDayMonth,
-  formatMonthYear,
+  formatMonth,
   monthOf,
   isValidDay,
   isValidTimeZone,
@@ -28,6 +27,7 @@ import {
   parseDay,
   resolveTimeZone,
   todayIn,
+  yearOf,
 } from '../src/lib/time.js'
 
 const TOKYO = 'Asia/Tokyo'
@@ -202,17 +202,28 @@ describe('formatting', () => {
     expect(formatDayMonth('2027-04-01', { locale: 'en' })).toBe('April 2027')
   })
 
-  it('shortens a month for a row that has to name its own, in both alphabets', () => {
-    // A lifted row states this beside its day number, on a 13px meta line at 320pt, so the long form
-    // is not available: 'September 2026' does not fit where 'Sep 2026' does. Japanese has one form,
-    // and it is the one that fits — 76px against the 72px column a stacked tile would have had.
-    expect(formatMonthYear('2026-09-20', { locale: 'en' })).toBe('Sep 2026')
-    expect(formatMonthYear('2026-10-02', { locale: 'en' })).toBe('Oct 2026')
-    expect(formatMonthYear('2026-09-20', { locale: 'ja' })).toBe('2026年9月')
-    // The year is always there: a date that sometimes shows one cannot be trusted at a glance.
-    expect(formatMonthYear('2027-04-18', { locale: 'en' })).toBe('Apr 2027')
+  it('shortens a month for the column a row prints it in, in both alphabets', () => {
+    // Every row states its own month above its day number, in a 2rem box, so the long form is not
+    // available and neither is the year: 'Sep 2026' measures 60px there and '2026年9月' 67px, against
+    // 'Sep' at 24px and '12月' at 31px. Japanese has one short form and it is the one that fits.
+    expect(formatMonth('2026-09-20', { locale: 'en' })).toBe('Sep')
+    expect(formatMonth('2026-10-02', { locale: 'en' })).toBe('Oct')
+    expect(formatMonth('2026-09-20', { locale: 'ja' })).toBe('9月')
+    expect(formatMonth('2026-12-02', { locale: 'ja' })).toBe('12月')
+    // No year, ever: it is the meta line's, and only where it is not the board's own.
+    expect(formatMonth('2027-04-18', { locale: 'en' })).not.toContain('2027')
     // And a clock time on the cell does not stop it.
-    expect(formatMonthYear('2026-09-20T23:59', { locale: 'en' })).toBe('Sep 2026')
+    expect(formatMonth('2026-09-20T23:59', { locale: 'en' })).toBe('Sep')
+  })
+
+  it('reads a year off a day without anybody slicing the string', () => {
+    // One comparison depends on this: whether a row states its year, which it does only where that
+    // year is not the board's. null rather than 0 for an unusable day, so an undated row compares
+    // equal to nothing rather than to year zero.
+    expect(yearOf('2026-09-20')).toBe(2026)
+    expect(yearOf('2027-01-01T09:30')).toBe(2027)
+    expect(yearOf('')).toBeNull()
+    expect(yearOf('2027-02-31')).toBeNull()
   })
 
   it('accepts a clock time, so a row carrying one still renders', () => {
@@ -223,8 +234,8 @@ describe('formatting', () => {
     expect(formatDay('', { locale: 'en' })).toBe('')
     expect(formatDay('2027-02-31', { locale: 'en' })).toBe('')
     expect(formatDayMonth('', { locale: 'en' })).toBe('')
-    expect(formatMonthYear('', { locale: 'en' })).toBe('')
-    expect(formatMonthYear('2027-02-31', { locale: 'en' })).toBe('')
+    expect(formatMonth('', { locale: 'en' })).toBe('')
+    expect(formatMonth('2027-02-31', { locale: 'en' })).toBe('')
   })
 })
 

@@ -5,15 +5,22 @@
  * descendant, so a control inside the head is dropped by the parser. The check is a sibling with
  * its own 44px target, which is also why it LEADS — the head cannot be split around it.
  *
- * The day is a column and is never coloured: a column a third of whose entries are red stops being
- * a column. State lives in exactly one mark — the dot beside `DueLabel`'s words — plus the tick and
- * the strikethrough on a finished task, so nothing here has colour as its only channel. The `3/5`
- * tally a checklist contributes is never coloured either: `5/5` in the done colour would claim a
- * `done_at` the sheet does not have.
+ * THE DATE IS ONE COLUMN, month over day, on every dated row and wherever the row is drawn. It does
+ * not depend on the heading above it — the two lifted sections name a state rather than a month, so
+ * a heading-shaped rule left the rows that matter most as a bare number needing a caption on the
+ * meta line, and the same date then read two ways on one screen. The only thing the column omits is
+ * the year, which is 67px of a 2rem box in Japanese; it goes on the meta line, and only on the rows
+ * nothing else on screen gives one to.
+ *
+ * The date is never coloured: a column a third of whose entries are red stops being a column. State
+ * lives in exactly one mark — the dot beside `DueLabel`'s words — plus the tick and the
+ * strikethrough on a finished task, so nothing here has colour as its only channel. The `3/5` tally
+ * a checklist contributes is never coloured either: `5/5` in the done colour would claim a `done_at`
+ * the sheet does not have.
  */
 
 import { STATE } from '../lib/progress.js'
-import { dayOfMonth, formatDay, formatMonthYear, monthOf } from '../lib/time.js'
+import { dayOfMonth, formatDay, formatMonth, monthOf, yearOf } from '../lib/time.js'
 import { useCategoryLabel, useT } from '../i18n/index.js'
 import DoneToggle from './DoneToggle.jsx'
 import DueLabel from './DueLabel.jsx'
@@ -32,17 +39,15 @@ export default function TaskCard({
   onFieldFocus,
   categories,
   /**
-   * The month the heading above this row names, `''` where it names none (a section, the undated
-   * group) and `null` where there is no heading at all — a static render, or a caller with no groups.
-   * It decides whether this row states its own date and HOW, which is three cases and not two:
-   *
-   *   the heading names this month     nothing: the day number plus the heading is the date
-   *   the heading names no month       the bare month and year, the other half of the date
-   *   the heading names ANOTHER month  the same, behind the DUE label — this is the only case a
-   *                                    reader can be actively misled by, a big `10` under
-   *                                    "This month · August 2026" reading as the 10th of August
-   *                                    when the row is due in December
+   * The board's day, 'YYYY-MM-DD', and the month the heading above this row names — '' or `null`
+   * where it names none. Together they answer ONE question: whether this row has to state its YEAR,
+   * which it does only where nothing else on screen can. A calendar heading says "April 2027" over
+   * rows that are all April 2027's, and inside the current year a date needs no year at all — so
+   * four digits are worth printing on exactly the rows a section lifted out of another year. Absent
+   * — a static render, a caller with no clock — nothing is stated: silence is recoverable, an
+   * invented year is not.
    */
+  today = '',
   headingMonth = null,
   /** The open row's INITIAL mode. A harness prop; see `TaskDetail`. */
   editing,
@@ -71,17 +76,20 @@ export default function TaskCard({
     : t('plan.cardLabel', { title: task.title, when, state: t(`state.${state}`) })
 
   /**
-   * Whether this row states its own month, and whether it has to say that the month is its DEADLINE.
-   * Both fall out of one comparison, so a month group can never start restating its own month and the
-   * label can only appear where a heading actually contradicts the row.
+   * The year, stated only where the reader has it from nowhere else: not from the heading, which
+   * names one for every row the calendar still holds, and not from the year they are living in. Both
+   * clauses are one idea — print the year nothing else can supply — and `Boolean(headingMonth)`
+   * covers '' and null alike, a heading naming no month telling a row nothing either way.
    */
-  const ownMonth = dated && headingMonth !== null && headingMonth !== monthOf(task.due)
-  const dueElsewhere = ownMonth && Boolean(headingMonth)
+  const headingNamesThisMonth = Boolean(headingMonth) && headingMonth === monthOf(task.due)
+  const boardYear = yearOf(today)
+  const statesYear =
+    dated && !headingNamesThisMonth && boardYear !== null && yearOf(task.due) !== boardYear
 
-  /* Nothing at all on a row months out with no checklist and no category — but a row stating its own
-     month always has that to state. */
+  /* Nothing at all on a row months out with no checklist and no category — but a row lifted out of
+     another year always has that to state. */
   const hasMeta =
-    ownMonth || state === STATE.OVERDUE || state === STATE.SOON || tally || task.category
+    statesYear || state === STATE.OVERDUE || state === STATE.SOON || tally || task.category
 
   return (
     <article
@@ -105,27 +113,35 @@ export default function TaskCard({
         aria-label={label}
         onClick={() => onOpen(task.id)}
       >
-        {/* The dash keeps the slot occupied, so titles down a month stay in one column. */}
-        <span className="tcard__day tnum">
-          {dated ? dayOfMonth(task.due) : t('common.dash')}
+        {/* Month over day, one box, so every title in a group starts in the same column and a date
+            reads the same way in a section as under a month heading. A plain `<span>` and not a
+            `<time>`: the head's `aria-label` spells the date out in full for the one reader who
+            cannot see this, and an element that is only sometimes a `<time>` — an undated row holds
+            a dash — is two shapes for the one thing this column exists to make consistent. The dash
+            keeps the box occupied, with no month line above it: there is no month to print, and an
+            empty line would push the dash out of the column it shares with every other day. */}
+        <span className="tcard__date">
+          {dated ? (
+            <span className="tcard__month">{formatMonth(task.due, { locale })}</span>
+          ) : null}
+          <span className="tcard__day tnum">
+            {dated ? dayOfMonth(task.due) : t('common.dash')}
+          </span>
         </span>
 
         <span className="tcard__body">
           <span className="tcard__title">{task.title}</span>
           {hasMeta ? (
             <span className="tcard__meta">
-              {/* The month and year the heading above does not name. It leads the line, being the
-                  calendar fact the sticky heading carries everywhere else, and it is the day column's
-                  other half rather than a second copy of it: `20` up there, `Sep 2026` here. A tile
-                  stacking both in the column instead needed 5rem for `2026年10月` and wrapped every
-                  title in the two sections that matter most. Under a heading naming a DIFFERENT month
-                  it says which date it is: nothing else on the row can, and the label is also the
-                  answer to why the row is in that section at all. */}
-              {ownMonth ? (
-                <span className="tcard__month">
-                  {dueElsewhere
-                    ? t('plan.dueMonth', { month: formatMonthYear(task.due, { locale }) })
-                    : formatMonthYear(task.due, { locale })}
+              {/* The year, leading the line: the column beside it has the month and the day, so this
+                  is the missing third of the date rather than a second copy of any of it. It renders
+                  where nothing above the row supplies it — a section lifted this row out of another
+                  year — which is what keeps four digits off four hundred rows. */}
+              {statesYear ? (
+                <span className="tcard__year">
+                  {/* A STRING, not the number: `interpolate` runs a number through
+                      `Intl.NumberFormat`, which groups it — the year would read '2,026'. */}
+                  {t('plan.rowYear', { year: String(yearOf(task.due)) })}
                 </span>
               ) : null}
               <DueLabel state={state} days={days} />

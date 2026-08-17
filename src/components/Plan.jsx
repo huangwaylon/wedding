@@ -9,11 +9,11 @@
  *
  * Below them, MONTHS, not states: a state grouping reshuffles the board on every tick and loses the
  * reader's place, and state slicing lives in the filter chips. The sticky month heading names the
- * month, which lets a row print a bare day number, and carries the month's OWN TALLY — `3/9` answers
- * "am I done with April", which neither the board's percentage nor any row can, and it counts the
- * WHOLE month including whatever was lifted out of it: April's heading says April. A lifted section
- * carries a bare COUNT instead: every row in one is unfinished by definition, so `done/total` there
- * would read `0/4` forever.
+ * month in full, where a row's own date column abbreviates it, and carries the month's OWN TALLY —
+ * `3/9` answers "am I done with April", which neither the board's percentage nor any row can, and it
+ * counts the WHOLE month including whatever was lifted out of it: April's heading says April. A
+ * lifted section carries a bare COUNT instead: every row in one is unfinished by definition, so
+ * `done/total` there would read `0/4` forever.
  *
  * There is no "you are here" line any more, and there is no room for one: the two sections ARE where
  * you are, and with the current month hoisted every calendar group below holds either finished months
@@ -37,10 +37,12 @@ import TaskCard from './TaskCard.jsx'
  * takes it. Data rather than two `if`s, so the order, the wording and the test that a row lands in
  * one place are all one list.
  *
- * `month` is the month a section's heading NAMES, and it is what decides two other things: whether the
- * wedding plaque belongs on it, and which of its rows have to name their own month. **Past deadline**
- * names none, so every row in it does; **This month** names the current one, so only the strays it
- * holds — work begun early and due later — say anything.
+ * `month` is the month a section's heading NAMES, and it decides three things: whether the wedding
+ * plaque belongs on it, what the heading says beside the state, and whether the rows under it have to
+ * state their year — a heading naming a month names its year with it. **Past deadline** names none,
+ * its rows spanning whatever months are behind; **This month** names the current one. It decides
+ * nothing about a row's month and day: those are the row's own, in the row's own column, so a section
+ * is not a context a date has to be read against.
  */
 const LIFTED = [
   { key: 'past', label: 'plan.past', month: () => '', holds: (task) => task.progress.state === STATE.OVERDUE },
@@ -156,8 +158,11 @@ export default function Plan({
                 task={task}
                 open={Boolean(expanded?.has(task.id))}
                 onOpen={onExpand}
-                /* What this heading names, which is all a row needs to decide whether — and how — to
-                   state its own month. See `TaskCard`. */
+                /* Neither decides how the row draws its DATE — month and day are its own, in its own
+                   column, whatever is above it. Between them they decide one thing: whether the row
+                   also states its year, which it does only where neither this heading nor the
+                   calendar the reader is living in supplies one. See `TaskCard`. */
+                today={today}
                 headingMonth={group.month}
                 {...cardProps}
               />

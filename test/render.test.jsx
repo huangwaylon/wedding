@@ -162,14 +162,16 @@ describe('TaskCard', () => {
       />,
     )
 
-  it('prints a bare day, no month, and no percentage', () => {
-    // The month is in the sticky group heading and was always identical to it. The percentage
-    // went with the per-row meter: it is 0 or 100 for a task with no checklist, which the tick
-    // beside it already says.
+  it('prints the month over the day, and no percentage', () => {
+    // The month is the day's other half and sits above it in the same column, on every dated row: the
+    // sticky heading names one only for the rows the calendar still holds, and the two sections above
+    // it name a state. The percentage went with the per-row meter: it is 0 or 100 for a task with no
+    // checklist, which the tick beside it already says.
     const html = render(row)
     expect(html).toContain('Book the venue')
+    expect(html).toMatch(/class="tcard__date">.*?<\/span>/)
+    expect(html).toContain('<span class="tcard__month">Jan</span>')
     expect(html).toMatch(/class="tcard__day tnum">11</)
-    expect(html).not.toContain('tcard__mon')
     expect(html).not.toContain('tcard__percent')
     expect(html).not.toContain('role="progressbar"')
   })
@@ -228,11 +230,13 @@ describe('TaskCard', () => {
     expect(html).not.toContain('chip__icon')
   })
 
-  it('keeps the day slot occupied for an undated task', () => {
+  it('keeps the day slot occupied for an undated task, with no month above it', () => {
     // A dash rather than an invented date, and the slot stays so the titles down a month stay
-    // in one column.
+    // in one column. No month line: there is no month, and an empty one would push the dash out of
+    // the column it shares with every other day.
     const [none] = rows([task({ due: '' })])
     expect(render(none)).toMatch(/class="tcard__day tnum">–</)
+    expect(render(none)).not.toContain('tcard__month')
   })
 
   it('hides every control from a viewer but keeps the row aligned', () => {
@@ -760,52 +764,79 @@ describe('Plan', () => {
     expect(html.match(/<article/g)).toHaveLength(4)
   })
 
-  it('states a row’s own month in one of THREE ways, decided by what the heading names', () => {
-    // The day column carries a bare number, so what it means depends entirely on the heading above it.
-    // Three cases, and the third is the one a reader can be actively misled by: under "This month ·
-    // January 2027" a big `20` reads as the 20th of January when the row is due in March.
+  it('states month and day in one column on EVERY row, whatever the heading above says', () => {
+    // The rule the three-way caption replaced: a date reads the same way in a section as under a
+    // month heading, so nothing has to be read against its context. Under "This month · January
+    // 2027" a bare `20` used to mean the 20th of January on a row due in March — the one case a
+    // reader could be actively misled by, and it is gone by construction rather than by a label.
     const list = rows([
       task({ id: 'late', title: 'Late one', due: '2026-12-10' }),
       task({ id: 'now', title: 'Started', due: '2027-03-20', start: '2027-01-02' }),
       task({ id: 'plain', title: 'Plain', due: '2027-03-20' }),
     ])
     const html = render(list, { today: TODAY })
-    // Past deadline names no month: the bare month and year, the other half of the date.
-    expect(html).toContain('<span class="tcard__month">Dec 2026</span>')
-    // This month names January, and this row is due in March: the month says it is the DEADLINE, which
-    // is also the answer to why the row is in that section at all.
-    expect(html).toContain('<span class="tcard__month">Due Mar 2027</span>')
-    // The March group names the row's own month: nothing, or the heading would be restated per row.
-    expect(html.match(/tcard__month/g)).toHaveLength(2)
-    // The day column is untouched in every case, so the number is stated once.
-    expect(html).toMatch(/class="tcard__day tnum">10</)
+    expect(html.match(/class="tcard__month">/g)).toHaveLength(3)
+    expect(html).toContain('<span class="tcard__month">Dec</span>')
+    // Twice: the lifted stray and the plain row are the same date and print it identically.
+    expect(html.match(/<span class="tcard__month">Mar<\/span>/g)).toHaveLength(2)
+    // The month never carries the year — that is 67px of a 2rem box in Japanese — and never a word.
+    expect(html).not.toContain('Dec 2026')
+    expect(html).not.toContain('Due')
   })
 
-  it('labels the month only where a heading CONTRADICTS the row, never merely where it is silent', () => {
-    // The word is the fix for a specific confusion, not decoration: Past deadline names no month, so
-    // there is nothing to be misled by and nothing to correct.
-    const late = rows([task({ id: 'a', due: '2026-12-10' })])
-    expect(render(late, { today: TODAY })).not.toContain('Due Dec 2026')
-    // A row due inside the month its heading names says nothing at all, label or otherwise.
-    const inside = rows([task({ id: 'b', due: '2027-01-20' })])
-    expect(render(inside, { today: TODAY })).not.toContain('tcard__month')
+  it('states a row’s year only where nothing else on screen gives it one', () => {
+    // Two clauses, one idea: a calendar heading says "March 2027" over rows that are all March 2027's,
+    // and inside the year the reader is living in a date needs no year at all. What is left is a row a
+    // section lifted out of another year — the only place four digits are worth a row's width. TODAY
+    // is January 2027.
+    const list = rows([
+      task({ id: 'late', due: '2026-12-10' }),
+      task({ id: 'soon', due: '2027-01-20' }),
+      task({ id: 'far', due: '2027-03-20' }),
+    ])
+    const html = render(list, { today: TODAY })
+    // Past deadline names no month, and December was last year.
+    expect(html).toContain('<span class="tcard__year">2026</span>')
+    // Never grouped: `interpolate` runs a NUMBER through `Intl.NumberFormat`, so a year passed as one
+    // renders as '2,026' — in every locale, and only ever on the rows that state a year at all.
+    expect(html).not.toContain('2,026')
+    // Once, and nowhere else: This month is this year, and the March heading names March 2027 itself.
+    expect(html.match(/tcard__year/g)).toHaveLength(1)
+    // It leads the meta line, ahead of the nearness the dot marks.
+    expect(/tcard__year">2026<\/span><span class="due"/.test(html)).toBe(true)
   })
 
-  it('renders no month at all when nothing above the row names one', () => {
-    // `TaskCard` alone — a static render, or any caller with no groups — must not start captioning
-    // itself: `headingMonth` is null there, which is a third thing from '' and has to stay one.
+  it('states the year of a row a section lifted out of another year', () => {
+    // The case the old "Due Mar 2027" label was for, minus the label: the heading says January and the
+    // row is due in April, which its own column now says. The year is what the column cannot hold —
+    // 67px of a 2rem box in Japanese — and what nothing above the row supplies.
+    const list = rows([task({ id: 'stray', due: '2028-04-12', start: '2027-01-02' })])
+    const html = render(list, { today: TODAY })
+    expect(html).toContain('This month')
+    expect(html).toContain('<span class="tcard__month">Apr</span>')
+    expect(html).toContain('<span class="tcard__year">2028</span>')
+    // And no word in front of it: the month is on the row, so nothing has to be corrected.
+    expect(html).not.toContain('Due')
+  })
+
+  it('states no year at all when nothing tells the row what year it is', () => {
+    // `TaskCard` alone — a static render, or any caller with no clock and no heading. Silence is
+    // recoverable; an invented year is not. The month and the day are unconditional and still there.
     const [row] = rows([task({ due: '2026-12-10' })])
     const bare = renderToStaticMarkup(
       <TaskCard task={row} canEdit open={false} categories={CATEGORIES} {...CARD_HANDLERS} />,
     )
-    expect(bare).not.toContain('tcard__month')
+    expect(bare).not.toContain('tcard__year')
+    expect(bare).toContain('<span class="tcard__month">Dec</span>')
   })
 
-  it('says nothing about a month on an undated lifted row, there being none to say', () => {
+  it('says nothing about a month or a year on an undated row, there being none to say', () => {
     // The dash holds the column and the meta line stays as it was: a row with no date has no month,
-    // and `formatMonthYear` would return '' into a span nobody can read.
+    // and `formatMonth` would return '' into a span nobody can read.
     const list = rows([task({ id: 'a', due: '', start: '2027-01-01' })])
-    expect(render(list, { today: TODAY })).not.toContain('tcard__month')
+    const html = render(list, { today: TODAY })
+    expect(html).not.toContain('tcard__month')
+    expect(html).not.toContain('tcard__year')
   })
 
   it('counts a lifted section rather than tallying it', () => {
@@ -1214,8 +1245,11 @@ describe('Japanese', () => {
     )
     expect(html).toContain('期限切れ')
     expect(html).toContain('今月')
-    // The label on a contradicted row orders itself: 期限 before the date, not "Due" bolted on.
-    expect(html).toContain('期限 2027年3月')
+    // The date column in Japanese: the short month is the only form that fits a 2rem box, and the
+    // year takes 年 rather than standing alone as four digits.
+    expect(html).toContain('<span class="tcard__month">12月</span>')
+    expect(html).toContain('<span class="tcard__month">3月</span>')
+    expect(html).toContain('<span class="tcard__year">2026年</span>')
     // The aside naming which month it is, which the heading cannot say on its own.
     expect(html).toContain('<span class="plan__aside">2027年1月</span>')
     expect(html).toContain('開始日')

@@ -367,10 +367,10 @@
 
 /* ---- The head --------------------------------------------------------
    One target for the whole collapsed row, so a row costs two controls instead of five. Centred,
-   because the eye weighs the day against the whole right-hand block: `baseline` locks it to the
+   because the eye weighs the date against the whole right-hand block: `baseline` locks it to the
    title's first line, which on a row with a meta line puts the day's optical centre 16.7px above the
-   block's (measured over CDP). What lines up down a month is the column, and that is `width: 2rem`
-   plus `text-align: center`, which alignment does not touch. */
+   block's (measured over CDP). What lines up down a month is the column, and that is `.tcard__date`'s
+   `width: 2rem` plus `text-align: center`, which alignment does not touch. */
 .tcard__head {
   grid-column: 2;
   display: flex;
@@ -381,43 +381,66 @@
   text-align: start;
 }
 
-/* ---- The day ----------------------------------------------------------
-   Day only, one line, fixed width so every title in a group starts in the same column; the month is
-   in the sticky heading. `flex: none`, or a long title squeezes the one thing a month of rows is
-   scanned for. Never state-coloured — see the state table in primitives.css. */
-.tcard__day {
+/* ---- The date ---------------------------------------------------------
+   Month over day, in one fixed box, on every dated row: a date must read the same way wherever the
+   row is drawn, and the sticky heading names a month only for the rows the calendar still holds — the
+   two lifted sections above it name a STATE, so a heading-shaped rule left the rows that matter most
+   as a bare number captioned on the meta line, and the same date then read two ways on one screen.
+
+   2rem holds both lines, which is what makes this affordable: the year is what did not fit —
+   'Sep 2026' measures 60px and '2026年9月' 67px, against 'Sep' at 24px and '12月' at 31px (measured
+   over CDP) — so the year sits on the meta line, on the rows nothing else gives one to. `flex: none`,
+   or a long title squeezes the one thing a month of rows is scanned for; the box owns the width so a
+   one- and a two-digit day share a centre. Never state-coloured — see primitives.css. */
+.tcard__date {
   flex: none;
-  display: block;
-  /* 2rem, with `nowrap` as the guard rather than the width: two tabular digits at --fs-xl measure
-     ~29px, so a 1.75rem box breaks "18" over two lines. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   width: 2rem;
-  white-space: nowrap;
-  /* Centred in the box, not against an edge: the box repeats down a month, so its centre is the one
-     x every row shares whether the day is one digit or two. */
   text-align: center;
+}
+
+/* The month, above the day and at the caption step, so the two lines read as one date rather than as
+   two figures. The size is stated and cannot be inherited: this sits inside the head, which is 16px,
+   and 13px is the scale's floor. --ink-2, not the meta line's --ink-3 — it is half of a date somebody
+   is reading, not a statistic. Never wraps mid-month, and never `text-transform`: a short month is
+   Japanese here, where uppercase is a no-op that would fire on the Latin half alone. */
+.tcard__month {
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  line-height: var(--lh-tight);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* ---- The day ----------------------------------------------------------
+   One line, in the box above. `nowrap` is the guard rather than a width of its own: two tabular
+   digits at --fs-xl measure ~29px, so the 2rem box holds them and nothing breaks '18' over two
+   lines. Centred by the box, whose centre is the one x every row in a group shares. */
+.tcard__day {
+  display: block;
+  white-space: nowrap;
   font-size: var(--fs-xl);
   font-weight: 600;
   line-height: var(--lh-tight);
   color: var(--ink);
 }
 
-/* The month and year a lifted row names for itself, first on the meta line: the day column has the
-   number and the heading above says "Past deadline", so this is the missing half of the date rather
-   than a second copy of it. --ink-2 like `.due` beside it, not the meta line's --ink-3: it is a fact
-   somebody is reading, not a statistic. Never wraps mid-date, and never `text-transform` — a short
-   month can be Japanese, where uppercase is a no-op that fires on the Latin half alone.
-
-   It sits here rather than in the column because a tile stacking the month over the day needs 5rem to
-   hold '2026年10月' at 13px, which wrapped every title in the two sections that matter most; measured
-   at 76px against a 72px column, where it crowded the tick. */
-.tcard__month {
+/* The year, on the meta line and only on the rows nothing else on screen gives one to — not the
+   heading above, which names a year for every month it heads, and not the calendar the reader is
+   living in (see `TaskCard`). The column beside it states the month and the day, so this is the
+   missing third of a date rather than a second copy of either. --ink-2 like `.due` beside it, being a
+   fact somebody is reading rather than a statistic. */
+.tcard__year {
   font-weight: 500;
   color: var(--ink-2);
-  white-space: nowrap;
 }
 
-/* A finished row recedes whole: at full ink the day is the loudest thing on it. */
-.tcard--done .tcard__day {
+/* A finished row recedes whole, date and all: at full ink the day is the loudest thing on it. Both
+   lines, or the month stays at the ink of a live row's. */
+.tcard--done .tcard__day,
+.tcard--done .tcard__month {
   color: var(--ink-3);
 }
 

@@ -277,9 +277,9 @@ function RowsView({ locale, canEdit = true, editing = false }) {
  * puts them in the first 700px.
  *
  * Every case the sections have to get right is here: rows past their date and unfinished, rows dated
- * inside the current month, a stray begun early and due later — the one row under This month that names
- * its own month — one past its date and FINISHED, which stays in its own month, and one that starts in
- * the future.
+ * inside the current month, a stray begun early and due later — the one row here in another YEAR, so
+ * the only one stating one — one past its date and FINISHED, which stays in its own month, and one
+ * that starts in the future.
  */
 function SignView({ locale, unfiltered = true }) {
   const rows = [
@@ -289,8 +289,8 @@ function SignView({ locale, unfiltered = true }) {
     { id: 's4', due: TODAY, title: 'Compare the two venue quotes', category: 'Venue', start: '2026-09-25' },
     { id: 's5', due: '2026-10-11', title: 'Choose the invitation paper', category: 'Stationery', start: '2026-09-28' },
     { id: 's6', due: '2026-10-14', title: 'Confirm the shuttle bus', category: 'Guests' },
-    /* The stray: begun months ago, due in April. It is lifted into This month and is the one row there
-       that names its own month, the heading saying October. */
+    /* The stray: begun months ago, due in April. It is lifted into This month and is the one row on
+       this page in another year, so the only one whose meta line carries one. */
     { id: 's7', due: '2027-04-12', title: 'Final meeting with the planner', category: 'Vendors', start: '2026-09-15' },
     { id: 's8', due: WEDDING_DAY, title: 'Wedding day', category: 'Other' },
   ]

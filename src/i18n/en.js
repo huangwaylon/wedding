@@ -86,8 +86,9 @@ export default {
   'list.emptyFiltered': 'Nothing matches.',
   'list.showAll': 'Show everything',
   /* The collapsed row's accessible name, and the one place the date is spelled out in full: the
-     visible row leans on a bare day number plus the sticky heading, and neither reaches a screen
-     reader. It states the state in WORDS, so the dot's colour is never the only channel. */
+     visible row splits it between a month, a day and — in another year only — a year, and none of
+     that reaches a screen reader as one date. It states the state in WORDS, so the dot's colour is
+     never the only channel. */
   'plan.cardLabel': '{title}: {when}, {state}',
   'plan.cardLabelSubs': '{title}: {when}, {state}, {subs}',
   /* An aside on the wedding month's name, not a sentence: it sits in a 13px heading already holding
@@ -97,9 +98,10 @@ export default {
      scolds: "Past deadline" is what the sheet says, where "Late" or "Overrun" is a verdict on the two
      people reading it. */
   'plan.past': 'Past deadline',
-  /* On a row sitting under a heading that names a DIFFERENT month: the section says August and the
-     row's big day number says 10, so without the word the date reads as the 10th of August. */
-  'plan.dueMonth': 'Due {month}',
+  /* A row's year, on the meta line beside the month and day in its date column, and only where that
+     year is not the board's own. A key rather than the bare number, the two languages putting it
+     differently: `2027` reads as a year in English and wants 年 to be one in Japanese. */
+  'plan.rowYear': '{year}',
   'plan.thisMonth': 'This month',
   'list.subtasks': {
     one: '{done} of {count} subtask',

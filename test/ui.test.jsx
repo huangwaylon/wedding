@@ -535,19 +535,25 @@ describe('touch ergonomics', () => {
     expect(ruleFor(app, '.tcard__head')).toMatch(/min-height: var\(--tap-target\)/)
   })
 
-  it('centres the day against the whole row, not against the title’s baseline', () => {
+  it('centres the date against the whole row, not against the title’s baseline', () => {
     // Measured over CDP: with `align-items: baseline` the day's optical centre sits 16.7px above
     // the centre of the block beside it on any row carrying a meta line, because the baseline
-    // locks it to the TITLE's first line — and what the eye weighs the day against is the whole
+    // locks it to the TITLE's first line — and what the eye weighs the date against is the whole
     // right-hand column.
     const head = ruleFor(app, '.tcard__head')
     expect(head).toMatch(/align-items: center/)
     expect(head).not.toMatch(/align-items: (baseline|flex-start)/)
-    // The day column lines up as a fixed-width BOX, which is what alignment must not be asked to
-    // do: `width: 2rem` plus `text-align: center`, so a one- and a two-digit day share a centre.
-    const day = ruleFor(app, '.tcard__day')
-    expect(day).toMatch(/width: 2rem/)
-    expect(day).toMatch(/text-align: center/)
+    // The date column lines up as a fixed-width BOX, which is what alignment must not be asked to
+    // do: `width: 2rem` plus `text-align: center`, so a one- and a two-digit day share a centre and
+    // the month above sits on the same one. 2rem is what the month costs WITHOUT its year — the
+    // whole reason the year is on the meta line.
+    const date = ruleFor(app, '.tcard__date')
+    expect(date, '.tcard__date rule missing').toBeTruthy()
+    expect(date).toMatch(/width: 2rem/)
+    expect(date).toMatch(/text-align: center/)
+    expect(date).toMatch(/flex-direction: column/)
+    // The day itself owns no width: two boxes for one column is two things to keep in step.
+    expect(ruleFor(app, '.tcard__day')).not.toMatch(/width:/)
     // And the chevron carries no correction of its own; a centred head leaves nothing to correct.
     expect(ruleFor(app, '.tcard__chev')).not.toMatch(/margin-top|align-self/)
   })
@@ -1180,17 +1186,28 @@ describe('the checklist and the tally', () => {
     expect(toggle).toMatch(/min-height: var\(--tap-target\)/)
   })
 
-  it('gives a lifted row’s month the ink of a fact, not of a statistic', () => {
-    // It sits on the meta line, whose own colour is --ink-3 — the label tier. This is the date
-    // somebody is reading, so it takes --ink-2 like `.due` beside it, and it may not break mid-date.
+  it('gives a row’s month the ink of a fact and the year the same, in one column and one line', () => {
+    // The month sits above the day in the date column, at the caption step against the day's 24px —
+    // 13px is the floor, and a size of its own is required there, the column inheriting the head's
+    // 16px. --ink-2, not the meta line's --ink-3: it is half of the date somebody is reading.
     const month = ruleFor(app, '.tcard__month')
     expect(month, '.tcard__month rule missing').toBeTruthy()
+    expect(month).toMatch(/font-size: var\(--fs-caption\)/)
     expect(month).toMatch(/color: var\(--ink-2\)/)
     expect(month).toMatch(/white-space: nowrap/)
-    // No size of its own: it inherits the meta line's 13px, which is the floor.
-    expect(month).not.toMatch(/font-size/)
     // And no uppercase: a short month can be Japanese, where the transform fires on Latin alone.
     expect(month).not.toMatch(/text-transform/)
+    // The year is the meta line's third of the date, at the same ink and with no size of its own:
+    // it inherits the meta line's 13px.
+    const year = ruleFor(app, '.tcard__year')
+    expect(year, '.tcard__year rule missing').toBeTruthy()
+    expect(year).toMatch(/color: var\(--ink-2\)/)
+    expect(year).not.toMatch(/font-size/)
+    // A finished row recedes whole, both lines of the date with it: the month may not keep a live
+    // row's ink while the day beside it drops. One rule over both, so they cannot drift.
+    expect(code(app), 'both lines of a done row’s date must fade together').toMatch(
+      /\.tcard--done \.tcard__day,\s*\.tcard--done \.tcard__month \{[^}]*color: var\(--ink-3\)/,
+    )
   })
 
   it('gives a linked row two targets instead of one, and only a linked row', () => {

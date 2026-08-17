@@ -64,11 +64,12 @@ read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization
   **This month**, which holds everything dated inside the current month plus anything already begun
   whose date is still to come. Both disappear when empty, and a task is in one place only, the first
   that claims it; the heading says which month it is about. Below them, **tasks are grouped by month**,
-  where a row prints a bare day number and the sticky heading carries the rest — so the current month
-  is never listed twice, every one of its rows being in a section above. A row spells out its own month
-  and year wherever the heading over it does not — and says **Due** in front of it where the heading
-  names a different month, which is the one place a bare day number could be read as the wrong date. Whole-group tallies are withheld while a filter is
-  on.
+  and the current month is never listed twice, every one of its rows being in a section above.
+  **Every row carries its own date, month over day, in one column** — the same shape in a section as
+  under a month heading, so nothing has to be read against the heading above it. The year is the one
+  part it leaves out, and a row adds it wherever nothing else on screen supplies one: not the heading,
+  which names a year for every month it heads, and not the calendar the reader is living in. Whole-group
+  tallies are withheld while a filter is on.
 - **Per-device, in `localStorage`, never in the sheet:** language (English/Japanese), accent (`tarn`
   default, `pine`, `rosehip`), the state filter, the read-only view toggle.
 - **A cold launch does no network work:** `scripts/build-sw.js` emits a service worker precaching
