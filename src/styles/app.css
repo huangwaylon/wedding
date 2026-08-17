@@ -428,6 +428,21 @@
   color: var(--ink);
 }
 
+/* The month and year a lifted row names for itself, first on the meta line: the day column has the
+   number and the heading above says "Past deadline", so this is the missing half of the date rather
+   than a second copy of it. --ink-2 like `.due` beside it, not the meta line's --ink-3: it is a fact
+   somebody is reading, not a statistic. Never wraps mid-date, and never `text-transform` — a short
+   month can be Japanese, where uppercase is a no-op that fires on the Latin half alone.
+
+   It sits here rather than in the column because a tile stacking the month over the day needs 5rem to
+   hold '2026年10月' at 13px, which wrapped every title in the two sections that matter most; measured
+   at 76px against a 72px column, where it crowded the tick. */
+.tcard__month {
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
 /* A finished row recedes whole: at full ink the day is the loudest thing on it. */
 .tcard--done .tcard__day {
   color: var(--ink-3);

@@ -121,6 +121,13 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
   and the rows underneath already carry the state.
 - An UNDATED row is never lifted, whatever its start date: it sorts last into the group that says so,
   and under **Ongoing** it would read as progress while the one thing wrong with it is why it is there.
+- A LIFTED ROW NAMES ITS OWN MONTH AND YEAR, first on the meta line (`.tcard__month`), because the
+  heading above it names a state and the day column's bare `20` then names nothing. The two halves make
+  one date and neither repeats the other: `20` in the column, `Sep 2026` on the line below. It is the
+  one place a row states a month, and `withMonth` is false everywhere a heading already does.
+- Not a stacked tile in the day column, which is the obvious design and was measured: `2026年10月` is
+  76px at 13px against a 72px column, so the column had to go to 5rem and every title in the two
+  sections that matter most wrapped. The meta line was already there and already wraps.
 - The tally is `aria-hidden` and never coloured: the row and the header strip already state that
   arithmetic, and a month in `--good` would claim something about the month rather than its tasks.
 - The `Today` line is a boundary — only with rows on both sides, never in the undated group, and between

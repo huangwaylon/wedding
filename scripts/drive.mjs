@@ -171,6 +171,16 @@ report.headline = await evaluate(`document.querySelector('.hero__percent')?.text
 report.count = await evaluate(`document.querySelector('.hero__tally')?.textContent`)
 report.fab = await evaluate(`Boolean(document.querySelector('.fab'))`)
 report.months = await evaluate(`[...document.querySelectorAll('.plan__month')].map(n=>n.textContent)`)
+/* A lifted row names its own month, the heading above it naming a state: the day column alone would
+   be a bare `20` under "Past deadline". Reported as pairs, so a row drawn in a month group having one
+   too is as visible as a lifted row missing one. */
+report.liftedDates = await evaluate(`
+  [...document.querySelectorAll('.plan__group')].map((group) => ({
+    heading: group.querySelector('.plan__month').textContent,
+    rows: group.querySelectorAll('.tcard').length,
+    months: [...group.querySelectorAll('.tcard__month')].map((n) => n.textContent),
+  }))
+`)
 report.stickyMonth = await evaluate(`getComputedStyle(document.querySelector('.plan__month')).position`)
 await shot('01-top')
 

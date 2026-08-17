@@ -1169,6 +1169,19 @@ describe('the checklist and the tally', () => {
     expect(toggle).toMatch(/min-height: var\(--tap-target\)/)
   })
 
+  it('gives a lifted row’s month the ink of a fact, not of a statistic', () => {
+    // It sits on the meta line, whose own colour is --ink-3 — the label tier. This is the date
+    // somebody is reading, so it takes --ink-2 like `.due` beside it, and it may not break mid-date.
+    const month = ruleFor(app, '.tcard__month')
+    expect(month, '.tcard__month rule missing').toBeTruthy()
+    expect(month).toMatch(/color: var\(--ink-2\)/)
+    expect(month).toMatch(/white-space: nowrap/)
+    // No size of its own: it inherits the meta line's 13px, which is the floor.
+    expect(month).not.toMatch(/font-size/)
+    // And no uppercase: a short month can be Japanese, where the transform fires on Latin alone.
+    expect(month).not.toMatch(/text-transform/)
+  })
+
   it('gives a linked row two targets instead of one, and only a linked row', () => {
     // The one exception to the rule above, and it is forced: an anchor cannot live inside a
     // `<button>`, so a title holding a URL hands the words to the link and the circle keeps its own

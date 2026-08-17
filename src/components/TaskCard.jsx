@@ -13,7 +13,7 @@
  */
 
 import { STATE } from '../lib/progress.js'
-import { dayOfMonth, formatDay } from '../lib/time.js'
+import { dayOfMonth, formatDay, formatMonthYear } from '../lib/time.js'
 import { useCategoryLabel, useT } from '../i18n/index.js'
 import DoneToggle from './DoneToggle.jsx'
 import DueLabel from './DueLabel.jsx'
@@ -31,6 +31,11 @@ export default function TaskCard({
   onAddSubtask,
   onFieldFocus,
   categories,
+  /**
+   * Whether the row has to name its own month: true under a section heading, which names a state
+   * rather than a month, and false under one that already says "April 2027".
+   */
+  withMonth = false,
   /** The open row's INITIAL mode. A harness prop; see `TaskDetail`. */
   editing,
 }) {
@@ -57,8 +62,10 @@ export default function TaskCard({
       })
     : t('plan.cardLabel', { title: task.title, when, state: t(`state.${state}`) })
 
-  // Nothing at all on a row months out with no checklist and no category.
-  const hasMeta = state === STATE.OVERDUE || state === STATE.SOON || tally || task.category
+  /* Nothing at all on a row months out with no checklist and no category — but a lifted row always
+     has the date to state, its heading naming a state rather than a month. */
+  const hasMeta =
+    (withMonth && dated) || state === STATE.OVERDUE || state === STATE.SOON || tally || task.category
 
   return (
     <article
@@ -91,6 +98,14 @@ export default function TaskCard({
           <span className="tcard__title">{task.title}</span>
           {hasMeta ? (
             <span className="tcard__meta">
+              {/* The month and year the heading above does not name. It leads the line, being the
+                  calendar fact the sticky heading carries everywhere else, and it is the day column's
+                  other half rather than a second copy of it: `20` up there, `Sep 2026` here. A tile
+                  stacking both in the column instead needed 5rem for `2026年10月` and wrapped every
+                  title in the two sections that matter most. */}
+              {withMonth && dated ? (
+                <span className="tcard__month">{formatMonthYear(task.due, { locale })}</span>
+              ) : null}
               <DueLabel state={state} days={days} />
               {tally ? (
                 <span className="tcard__tally tnum">

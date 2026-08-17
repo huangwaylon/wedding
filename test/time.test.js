@@ -20,6 +20,7 @@ import {
   firstOfMonth,
   formatDay,
   formatDayMonth,
+  formatMonthYear,
   monthOf,
   isValidDay,
   isValidTimeZone,
@@ -201,6 +202,19 @@ describe('formatting', () => {
     expect(formatDayMonth('2027-04-01', { locale: 'en' })).toBe('April 2027')
   })
 
+  it('shortens a month for a row that has to name its own, in both alphabets', () => {
+    // A lifted row states this beside its day number, on a 13px meta line at 320pt, so the long form
+    // is not available: 'September 2026' does not fit where 'Sep 2026' does. Japanese has one form,
+    // and it is the one that fits — 76px against the 72px column a stacked tile would have had.
+    expect(formatMonthYear('2026-09-20', { locale: 'en' })).toBe('Sep 2026')
+    expect(formatMonthYear('2026-10-02', { locale: 'en' })).toBe('Oct 2026')
+    expect(formatMonthYear('2026-09-20', { locale: 'ja' })).toBe('2026年9月')
+    // The year is always there: a date that sometimes shows one cannot be trusted at a glance.
+    expect(formatMonthYear('2027-04-18', { locale: 'en' })).toBe('Apr 2027')
+    // And a clock time on the cell does not stop it.
+    expect(formatMonthYear('2026-09-20T23:59', { locale: 'en' })).toBe('Sep 2026')
+  })
+
   it('accepts a clock time, so a row carrying one still renders', () => {
     expect(formatDay('2027-01-01T00:00', { locale: 'en' })).toBe('Jan 1')
   })
@@ -209,6 +223,8 @@ describe('formatting', () => {
     expect(formatDay('', { locale: 'en' })).toBe('')
     expect(formatDay('2027-02-31', { locale: 'en' })).toBe('')
     expect(formatDayMonth('', { locale: 'en' })).toBe('')
+    expect(formatMonthYear('', { locale: 'en' })).toBe('')
+    expect(formatMonthYear('2027-02-31', { locale: 'en' })).toBe('')
   })
 })
 

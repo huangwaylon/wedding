@@ -62,8 +62,10 @@ read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization
   only when it has one. One edit session sends one write, on Done or on close.
 - **Two sections come before the calendar:** **Past deadline** — anything overdue and unfinished — then
   **Ongoing**. Both disappear when empty, and a task is in one place only, the first that claims it.
-  Below them, **tasks are grouped by month**; whole-group tallies and the `Today` line are withheld
-  while a filter is on.
+  Rows in them spell out their month and year, since the heading above names a state rather than a
+  month. Below them, **tasks are grouped by month**, where a row prints a bare day number and the
+  sticky heading carries the rest; whole-group tallies and the `Today` line are withheld while a filter
+  is on.
 - **Per-device, in `localStorage`, never in the sheet:** language (English/Japanese), accent (`tarn`
   default, `pine`, `rosehip`), the state filter, the read-only view toggle.
 - **A cold launch does no network work:** `scripts/build-sw.js` emits a service worker precaching

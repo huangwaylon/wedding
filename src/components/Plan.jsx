@@ -156,6 +156,9 @@ export default function Plan({
                   task={task}
                   open={Boolean(expanded?.has(task.id))}
                   onOpen={onExpand}
+                  /* A lifted section's heading names a state, so the row has to name its own
+                     month — see `TaskCard`. */
+                  withMonth={Boolean(group.label)}
                   {...cardProps}
                 />
               </React.Fragment>

@@ -230,6 +230,17 @@ export function formatDayLong(day, { locale } = {}) {
   }).format(date)
 }
 
+/**
+ * 'Oct 2026' / '2026年10月' — for a row that has to name its own month, because the heading above it
+ * is a SECTION rather than a month. Short, unlike `formatDayMonth`'s heading: it sits at 13px in a
+ * column beside the day, where 'October' would not fit either alphabet.
+ */
+export function formatMonthYear(day, { locale } = {}) {
+  const date = asUtcDate(day)
+  if (!date) return ''
+  return displayFormatter(locale, { year: 'numeric', month: 'short' }).format(date)
+}
+
 /** 'April 2027' / '2027年4月' — the list's group headings. */
 export function formatDayMonth(day, { locale } = {}) {
   const date = asUtcDate(day)

@@ -763,6 +763,32 @@ describe('Plan', () => {
     expect(html.match(/<article/g)).toHaveLength(4)
   })
 
+  it('makes a lifted row name its own month and year, the heading above naming neither', () => {
+    // A section heading says "Past deadline", so the day column's bare `20` names no month — and a row
+    // lifted out of the calendar is exactly the row somebody needs the whole date of. The month sits
+    // first on the meta line, the day column's other half rather than a second copy of it.
+    const list = rows([
+      task({ id: 'late', title: 'Late one', due: '2026-12-10' }),
+      task({ id: 'now', title: 'Started', due: '2027-01-20', start: '2027-01-02' }),
+      task({ id: 'plain', title: 'Plain', due: '2027-03-20' }),
+    ])
+    const html = render(list, { today: TODAY })
+    expect(html).toContain('<span class="tcard__month">Dec 2026</span>')
+    expect(html).toContain('<span class="tcard__month">Jan 2027</span>')
+    // Twice, not three times: the March row sits under a heading that already says March 2027.
+    expect(html.match(/tcard__month/g)).toHaveLength(2)
+    expect(html).not.toContain('Mar 2027<')
+    // The day column is untouched, so the number is stated once and the two halves make one date.
+    expect(html).toMatch(/class="tcard__day tnum">10</)
+  })
+
+  it('says nothing about a month on an undated lifted row, there being none to say', () => {
+    // The dash holds the column and the meta line stays as it was: a row with no date has no month,
+    // and `formatMonthYear` would return '' into a span nobody can read.
+    const list = rows([task({ id: 'a', due: '', start: '2027-01-01' })])
+    expect(render(list, { today: TODAY })).not.toContain('tcard__month')
+  })
+
   it('counts a lifted section rather than tallying it', () => {
     // Every row in one is unfinished by definition, so `done/total` would read `0/2` for ever. The
     // bare count says how much is on fire without anybody counting rows.
