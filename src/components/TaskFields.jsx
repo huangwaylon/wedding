@@ -180,7 +180,7 @@ export function DueField({ id, skin, value, error, onChange }) {
 /**
  * The optional one, and the only field in the app that can be emptied again. It carries its own clear
  * button because the platform does not: iOS's date wheel offers no way back to blank, so without one
- * a start date picked by mistake is permanent and the row is stuck in Ongoing for good. The button
+ * a start date picked by mistake is permanent and the row is stuck in This month for good. The button
  * renders only when there is something to clear, so an unused field is still one control.
  *
  * No validation of its own — the control yields a real day or nothing, and `taskFromDraft` normalises

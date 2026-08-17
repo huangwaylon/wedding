@@ -97,7 +97,7 @@ export default {
      scolds: "Past deadline" is what the sheet says, where "Late" or "Overrun" is a verdict on the two
      people reading it. */
   'plan.past': 'Past deadline',
-  'plan.ongoing': 'Ongoing',
+  'plan.thisMonth': 'This month',
   'list.subtasks': {
     one: '{done} of {count} subtask',
     other: '{done} of {count} subtasks',

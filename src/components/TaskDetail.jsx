@@ -139,8 +139,8 @@ export default function TaskDetail({
    *  one offered here would be stored unvalidated. Covers both days. */
   const dated = !task.parentId
   /** Whether read mode has a fact to state. `normalizeDay` is `draftFrom`'s business; this asks the
-   *  same question of the stored row, and `progress.ongoing` cannot answer it — a start date in the
-   *  future is worth showing and is not ongoing. */
+   *  same question of the stored row, and `progress.thisMonth` cannot answer it — a start date in the
+   *  future is worth showing and puts the row in no section. */
   const started = Boolean(normalizeDay(task.start))
 
   return (

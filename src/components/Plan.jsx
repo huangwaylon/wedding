@@ -1,7 +1,7 @@
 /**
  * The plan: every task as a row. Two sections that answer "what now", then the calendar.
  *
- * PAST DEADLINE and ONGOING come first and are lifted out of their months. Both are hidden when
+ * PAST DEADLINE and THIS MONTH come first and are lifted out of the calendar. Both are hidden when
  * empty, so a board that is on top of itself is a plain calendar and the sections appear only when
  * they have something to say. Precedence is order: a row past its date is drawn as past its date
  * whatever its start says, and a row is in exactly ONE place — the same task under two headings is
@@ -15,19 +15,20 @@
  * carries a bare COUNT instead: every row in one is unfinished by definition, so `done/total` there
  * would read `0/4` forever.
  *
- * The `Today` line is a BOUNDARY: one line between two rows, where what has passed meets what has
- * not. It is measured over the months alone — everything above them is already past or in progress —
- * and both figures are withheld while a filter is on, a slice of a month not being a month and a list
- * with holes being unable to claim that everything below a line is still ahead.
+ * There is no "you are here" line any more, and there is no room for one: the two sections ARE where
+ * you are, and with the current month hoisted every calendar group below holds either finished months
+ * or future ones — so the boundary between past and future always fell exactly at a group heading,
+ * which is not "between two rows" and was a line of chrome about chrome. Every whole-group figure is
+ * still withheld while a filter is on, a slice of a month not being a month.
  *
  * An accordion suits a phone, opening in place keeping the neighbouring rows and the heading
  * visible while a date is changed. Nothing here draws a subtask — no date means no position in a
  * sequence of dates, so a checklist reaches its parent as a `3/5` tally.
  */
 
-import React from 'react'
 import { STATE } from '../lib/progress.js'
 import { firstOfMonth, formatDayMonth, monthOf } from '../lib/time.js'
+
 import { useT } from '../i18n/index.js'
 import TaskCard from './TaskCard.jsx'
 
@@ -35,10 +36,20 @@ import TaskCard from './TaskCard.jsx'
  * The sections drawn ahead of the calendar, in precedence order: the first one that holds a task
  * takes it. Data rather than two `if`s, so the order, the wording and the test that a row lands in
  * one place are all one list.
+ *
+ * `month` is the month a section's heading NAMES, and it is what decides two other things: whether the
+ * wedding plaque belongs on it, and which of its rows have to name their own month. **Past deadline**
+ * names none, so every row in it does; **This month** names the current one, so only the strays it
+ * holds — work begun early and due later — say anything.
  */
 const LIFTED = [
-  { key: 'past', label: 'plan.past', holds: (task) => task.progress.state === STATE.OVERDUE },
-  { key: 'ongoing', label: 'plan.ongoing', holds: (task) => task.progress.ongoing },
+  { key: 'past', label: 'plan.past', month: () => '', holds: (task) => task.progress.state === STATE.OVERDUE },
+  {
+    key: 'thisMonth',
+    label: 'plan.thisMonth',
+    month: (today) => monthOf(today),
+    holds: (task) => task.progress.thisMonth,
+  },
 ]
 
 /** `withProgress` has already sorted, so grouping is one pass and the groups come out in order: no
@@ -50,8 +61,8 @@ const LIFTED = [
     `1/2` a true statement about a slice and a false one about the month, which is the exact defect the
     figure is withheld under a filter to avoid — and it would have meant lifting a row changed what
     April was worth. It is `aria-hidden` for the same reason: the arithmetic is not the rows below. */
-function groupTasks(tasks) {
-  const lifted = LIFTED.map((section) => ({ ...section, tasks: [] }))
+function groupTasks(tasks, today) {
+  const lifted = LIFTED.map((section) => ({ ...section, month: section.month(today), tasks: [] }))
   const months = []
   const tallies = new Map()
   let current = null
@@ -69,27 +80,13 @@ function groupTasks(tasks) {
       continue
     }
     if (!current || current.key !== key) {
-      current = { key, tasks: [], tally }
+      current = { key, month: key, tasks: [], tally }
       months.push(current)
     }
     current.tasks.push(task)
   }
 
   return { lifted: lifted.filter((section) => section.tasks.length), months }
-}
-
-/** The id of the row the `Today` line goes above: the first dated task due today or later. `null`
-    unless there are tasks on BOTH sides, which is what makes it a boundary — above the first row of
-    an all-future board it states nothing, and an all-past board has nothing for it to sit above. */
-function todayMarker(tasks, today) {
-  let past = false
-  let next = null
-  for (const task of tasks) {
-    if (!task.progress.dated) continue
-    if (task.due < today) past = true
-    else if (!next) next = task.id
-  }
-  return past ? next : null
 }
 
 /**
@@ -109,8 +106,7 @@ export default function Plan({
   ...cardProps
 }) {
   const { t, locale } = useT()
-  const { lifted, months } = groupTasks(tasks)
-  const marker = unfiltered ? todayMarker(months.flatMap((group) => group.tasks), today) : null
+  const { lifted, months } = groupTasks(tasks, today)
 
   // Nothing rather than an empty shell: the caller owns what an empty board says.
   if (!lifted.length && !months.length) return null
@@ -118,7 +114,10 @@ export default function Plan({
   return (
     <div className="plan">
       {[...lifted, ...months].map((group) => {
-        const isWeddingMonth = !group.label && group.key && group.key === weddingMonth
+        /* The plaque follows the MONTH a heading names, not the kind of section it is: on the wedding
+           month itself every one of its rows is hoisted into This month, so hanging this off the
+           calendar's groups alone would have lost the one mark the whole plan counts down to. */
+        const isWeddingMonth = Boolean(group.month) && group.month === weddingMonth
         return (
           <section className="plan__group" key={group.key || 'nodate'}>
             {/* The rule beneath is what makes this read as a sign rather than a floating label. A
@@ -130,7 +129,15 @@ export default function Plan({
                 : group.key
                   ? formatDayMonth(firstOfMonth(group.key), { locale })
                   : t('state.nodate')}
-              {isWeddingMonth ? <span className="plan__day">{t('plan.theDay')}</span> : null}
+              {/* A section names a state, so it says which month that is beside it — otherwise the
+                  only date on screen would be the one on each row. A month group needs no aside: its
+                  heading IS the month. */}
+              {group.label && group.month ? (
+                <span className="plan__aside">
+                  {formatDayMonth(firstOfMonth(group.month), { locale })}
+                </span>
+              ) : null}
+              {isWeddingMonth ? <span className="plan__aside">{t('plan.theDay')}</span> : null}
               {/* `aria-hidden`, and never coloured: every row states its own state and the header
                   strip the same arithmetic, so "3 slash 9" inside a heading is worse than silence. A
                   lifted section carries a bare count — every row in one is unfinished by definition,
@@ -144,24 +151,17 @@ export default function Plan({
               ) : null}
             </h2>
             {group.tasks.map((task) => (
-              <React.Fragment key={task.id}>
-                {/* One per board, BETWEEN rows rather than on one, so the one-coloured-mark-per-row
-                    rule is untouched. */}
-                {task.id === marker ? (
-                  <p className="plan__now">
-                    <span className="plan__nowLabel">{t('due.today')}</span>
-                  </p>
-                ) : null}
-                <TaskCard
-                  task={task}
-                  open={Boolean(expanded?.has(task.id))}
-                  onOpen={onExpand}
-                  /* A lifted section's heading names a state, so the row has to name its own
-                     month — see `TaskCard`. */
-                  withMonth={Boolean(group.label)}
-                  {...cardProps}
-                />
-              </React.Fragment>
+              <TaskCard
+                key={task.id}
+                task={task}
+                open={Boolean(expanded?.has(task.id))}
+                onOpen={onExpand}
+                /* A row names its own month only where the heading above it does not already name THAT
+                   month: every row under Past deadline, and under This month the strays alone — work
+                   begun early, due in a month the heading does not mention. See `TaskCard`. */
+                withMonth={group.month !== monthOf(task.due)}
+                {...cardProps}
+              />
             ))}
           </section>
         )

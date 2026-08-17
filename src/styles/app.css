@@ -275,9 +275,10 @@
   background-color: var(--accent-wash);
 }
 
-/* "The day": weight 400 against the month's 600, an aside on the heading. --ink-2 is 6.7:1 or
-   better on every preset's wash. */
-.plan__day {
+/* An aside on a heading: "the day" on the wedding's month, and the month a lifted section is about.
+   Weight 400 against the heading's 600, so it reads as a note on it rather than a second heading, and
+   --ink-2, which is 6.7:1 or better on every preset's wash. One rule, because it is one idea. */
+.plan__aside {
   font-weight: 400;
   color: var(--ink-2);
 }
@@ -292,34 +293,6 @@
   margin-inline-start: auto;
   font-weight: 500;
   color: var(--ink-2);
-}
-
-/* One line per board, between two rows, at the boundary between what has passed and what has not.
-   Drawn on the line rather than as a border on a row, so it stays outside the
-   one-coloured-mark-per-row budget: it belongs to the list, not to a task. --accent, as
-   `.dot--soon` does: "now" is emphasis, not a warning. */
-.plan__now {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-block: var(--space-1);
-  font-size: var(--fs-caption);
-  line-height: var(--lh-tight);
-  color: var(--ink-2);
-}
-
-.plan__nowLabel {
-  flex: none;
-  font-weight: 600;
-}
-
-/* A pseudo-element rather than a `border-top`, so the word sits on the line; the flex-basis fills
-   whatever the word leaves. */
-.plan__now::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background-color: var(--accent);
 }
 
 /* ---- A task row -------------------------------------------------------

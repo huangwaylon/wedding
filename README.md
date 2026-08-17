@@ -60,12 +60,14 @@ read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization
 - **An open row is read-only** behind an **Edit** toggle, which also gates the destructive controls and
   the add-a-checklist-item field; ticking does not. Read mode states one thing, the day it starts, and
   only when it has one. One edit session sends one write, on Done or on close.
-- **Two sections come before the calendar:** **Past deadline** — anything overdue and unfinished — then
-  **Ongoing**. Both disappear when empty, and a task is in one place only, the first that claims it.
-  Rows in them spell out their month and year, since the heading above names a state rather than a
-  month. Below them, **tasks are grouped by month**, where a row prints a bare day number and the
-  sticky heading carries the rest; whole-group tallies and the `Today` line are withheld while a filter
-  is on.
+- **Two sections come before the calendar:** **Past deadline** — anything overdue and unfinished — and
+  **This month**, which holds everything dated inside the current month plus anything already begun
+  whose date is still to come. Both disappear when empty, and a task is in one place only, the first
+  that claims it; the heading says which month it is about. Below them, **tasks are grouped by month**,
+  where a row prints a bare day number and the sticky heading carries the rest — so the current month
+  is never listed twice, every one of its rows being in a section above. A row spells out its own month
+  and year wherever the heading over it does not. Whole-group tallies are withheld while a filter is
+  on.
 - **Per-device, in `localStorage`, never in the sheet:** language (English/Japanese), accent (`tarn`
   default, `pine`, `rosehip`), the state filter, the read-only view toggle.
 - **A cold launch does no network work:** `scripts/build-sw.js` emits a service worker precaching

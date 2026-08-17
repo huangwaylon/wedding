@@ -102,36 +102,51 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
 ### The plan
 
 - Two sections come before the calendar, in this precedence: **past deadline** (overdue and unfinished),
-  then **ongoing** (`progress.ongoing`). Both are hidden when empty, so a board on top of itself is a
-  plain calendar. A row is MOVED, never copied — the same task under two headings is two tasks to
+  then **this month** (`progress.thisMonth`). Both are hidden when empty, so a board on top of itself is
+  a plain calendar. A row is MOVED, never copied — the same task under two headings is two tasks to
   anybody scanning, and both tallies would then lie — which is also why `taskProgress` decides the
   precedence rather than `Plan` asking two questions.
+- **This month is two claims**: a row dated inside the board's current month, finished or not, and a row
+  that is RUNNING — started, unfinished, and its date still to come, whatever month that is in. The
+  first is the current month's group hoisted, so a month has one heading and it is the one above the
+  rows being worked through; the second is the whole reason `start` is a column. Finished is excluded
+  from the second only: a completed row belongs to its own month, as the calendar draws it, but a
+  completed row from December is not running now.
+- Consequence, and it is load-bearing for two other rules: **the current month never appears in the
+  calendar**, every one of its rows being lifted into one section or the other. So a month group holds
+  either a finished month or a future one, and `plan.thisMonth`'s heading is the only place the current
+  month is named.
+- A section heading names a state, so it carries the month it is about as an ASIDE (`.plan__aside`,
+  shared with the wedding month's "the day" — one idea, one rule). The wedding plaque follows the month
+  a heading NAMES, not the kind of section it is: on the wedding month every row of it is hoisted, so
+  hanging the tint off the calendar's groups alone would lose the one mark the plan counts down to.
 - A month heading's tally counts the WHOLE month, lifted rows included: the heading says April, so a
   figure describing only the rows left under it is true about a slice and false about April — the same
   defect the filter withholds it for — and lifting a row must not change what April is worth. It is
   `aria-hidden` for that reason: the arithmetic is not the rows below. A lifted section carries a bare
   COUNT instead, every row in one being unfinished by definition, so `done/total` there reads `0/4` for
   ever. Every whole-group figure is still withheld under a filter: `Plan` gets the filtered list, so a
-  tally over April's overdue slice would read `0/3` about a month nine tasks long. The `Today` line goes
-  with it — a list with holes cannot claim everything below it is ahead.
-- The `Today` line is measured over the MONTHS alone, everything above them being already past or in
-  progress. Its past side is therefore a FINISHED task with a past date, an unfinished one having been
-  lifted out.
+  tally over April's overdue slice would read `0/3` about a month nine tasks long.
+- **There is no "you are here" line, and there is no room for one.** The sections are where you are, and
+  with the current month hoisted every calendar group below holds either a finished month or a future
+  one — so the boundary between past and future always fell exactly at a month heading, which is not
+  "between two rows", the rule the line was built on. `test/ui.test.jsx` pins that `.plan__now` and its
+  two siblings are gone from the stylesheet, or 20 unreachable lines stay in it.
 - No lifted section takes the wedding plaque or a colour of its own: the tint is a claim about a month,
   and the rows underneath already carry the state.
 - An UNDATED row is never lifted, whatever its start date: it sorts last into the group that says so,
   and under **Ongoing** it would read as progress while the one thing wrong with it is why it is there.
-- A LIFTED ROW NAMES ITS OWN MONTH AND YEAR, first on the meta line (`.tcard__month`), because the
-  heading above it names a state and the day column's bare `20` then names nothing. The two halves make
-  one date and neither repeats the other: `20` in the column, `Sep 2026` on the line below. It is the
-  one place a row states a month, and `withMonth` is false everywhere a heading already does.
+- A ROW NAMES ITS OWN MONTH AND YEAR wherever the heading above does not already name THAT month
+  (`withMonth`, `.tcard__month`, first on the meta line): every row under Past deadline, and under This
+  month the strays alone — work begun early, dated outside the month the heading names. The two halves
+  make one date and neither repeats the other: `20` in the column, `Sep 2026` on the line below. One
+  expression, `group.month !== monthOf(task.due)`, rather than a per-section flag, so a month group
+  cannot start restating its own month.
 - Not a stacked tile in the day column, which is the obvious design and was measured: `2026年10月` is
   76px at 13px against a 72px column, so the column had to go to 5rem and every title in the two
   sections that matter most wrapped. The meta line was already there and already wraps.
 - The tally is `aria-hidden` and never coloured: the row and the header strip already state that
   arithmetic, and a month in `--good` would claim something about the month rather than its tasks.
-- The `Today` line is a boundary — only with rows on both sides, never in the undated group, and between
-  rows, which keeps it outside the one-coloured-mark-per-row budget.
 
 ### Subtasks
 

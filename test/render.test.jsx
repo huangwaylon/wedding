@@ -293,7 +293,7 @@ describe('TaskCard', () => {
 
   it('states the day it STARTS, spelled out, and only when it has one', () => {
     // The one fact worth a line of its own: a start date is the only thing that can say a task is
-    // already somebody's to do, and it is the reason the row appears under Ongoing.
+    // already somebody's to do, and it is one of the two reasons a row appears under This month.
     const [started] = rows([task({ start: '2027-01-04' })])
     const html = render(started, { open: true })
     expect(html).toContain('tcard__fact')
@@ -346,7 +346,7 @@ describe('TaskCard', () => {
     const html = render(
       {
         ...child,
-        progress: { state: STATE.NODATE, days: null, dated: false, ongoing: false, tally: null },
+        progress: { state: STATE.NODATE, days: null, dated: false, thisMonth: false, tally: null },
         subtasks: [],
       },
       { open: true, editing: true },
@@ -570,13 +570,16 @@ describe('Plan', () => {
   const tallies = (html) =>
     [...html.matchAll(/class="plan__tally tnum" aria-hidden="true">([^<]*)</g)].map((m) => m[1])
 
+  /* Every fixture here is dated OFF the current month (2027-01): a row due in it is lifted into This
+     month by design, so a month-grouping assertion written against January would be testing the
+     section instead. */
   it('groups by the month it is DUE in, and keeps every task', () => {
     const list = rows([
-      task({ id: 'a', due: '2027-01-31' }),
+      task({ id: 'a', due: '2027-02-28' }),
       task({ id: 'b', title: 'Order invitations', due: '2027-03-31' }),
     ])
     const html = render(list)
-    expect(months(html)).toEqual(['January 2027', 'March 2027'])
+    expect(months(html)).toEqual(['February 2027', 'March 2027'])
     expect(html.match(/class="plan__group"/g)).toHaveLength(2)
     expect(html).toContain('Book the venue')
     expect(html).toContain('Order invitations')
@@ -584,8 +587,11 @@ describe('Plan', () => {
 
   it('collects undated tasks in their own group, last', () => {
     // They sort last, so putting the group anywhere else would bury the month in progress.
-    const list = rows([task({ id: 'a' }), task({ id: 'b', title: 'Someday', due: '' })])
-    expect(months(render(list, { canEdit: false }))).toEqual(['January 2027', 'No date'])
+    const list = rows([
+      task({ id: 'a', due: '2027-02-11' }),
+      task({ id: 'b', title: 'Someday', due: '' }),
+    ])
+    expect(months(render(list, { canEdit: false }))).toEqual(['February 2027', 'No date'])
   })
 
   it('draws one row per task and no spine', () => {
@@ -620,8 +626,8 @@ describe('Plan', () => {
     // state; "am I finished with January" had no answer anywhere. Checkable by counting the
     // rows underneath it, which is the whole reason it is allowed on screen.
     const list = rows([
-      task({ id: 'a', due: '2027-01-10', doneAt: '2027-01-02T00:00:00.000Z' }),
-      task({ id: 'b', title: 'Second', due: '2027-01-20' }),
+      task({ id: 'a', due: '2027-02-10', doneAt: '2027-01-02T00:00:00.000Z' }),
+      task({ id: 'b', title: 'Second', due: '2027-02-20' }),
       task({ id: 'c', title: 'Third', due: '2027-03-02' }),
     ])
     const html = render(list)
@@ -642,38 +648,21 @@ describe('Plan', () => {
     expect(html).not.toContain('plan__now')
   })
 
-  it('marks where today falls, once, and only between two rows', () => {
-    // The hero counts down and the tracker carries an on-schedule mark; the list — the screen
-    // people live in — had no "you are here" at all. The past side is a FINISHED task: an
-    // unfinished one past its date is lifted into Past deadline and leaves its month.
-    const list = rows([
+  it('draws no "you are here" line, the sections BEING where you are', () => {
+    // It used to sit between the last row that had passed and the first that had not. With the current
+    // month hoisted into This month, every group in the calendar below holds either a finished month or
+    // a future one — so that boundary always fell exactly at a month heading, which is not "between two
+    // rows" and is a line of chrome about chrome. Both halves of the old case, and neither draws one.
+    const mixed = rows([
       task({ id: 'past', due: '2026-12-10', doneAt: '2026-12-09T00:00:00.000Z' }),
       task({ id: 'future', title: 'Second', due: '2027-03-20' }),
     ])
-    const html = render(list, { today: TODAY })
-    expect(html.match(/class="plan__now"/g)).toHaveLength(1)
-    // Above the first row that has NOT passed, never above one that has.
-    expect(html.indexOf('plan__now')).toBeGreaterThan(html.indexOf('Book the venue'))
-    expect(html.indexOf('plan__now')).toBeLessThan(html.indexOf('Second'))
-  })
-
-  it('draws no today line when the boundary has nothing on one side of it', () => {
-    // A line above the very first row of a board entirely in the future states nothing, and a
-    // board entirely in the past has no row for it to sit above.
-    const future = rows([task({ id: 'a', due: '2027-03-20' })])
-    expect(render(future, { today: TODAY })).not.toContain('plan__now')
-    const past = rows([task({ id: 'a', due: '2026-12-20', doneAt: '2026-12-19T00:00:00.000Z' })])
-    expect(render(past, { today: TODAY })).not.toContain('plan__now')
-  })
-
-  it('measures the boundary over the MONTHS alone, never the lifted sections', () => {
-    // Everything above the calendar is already past or in progress, so counting those rows as the
-    // line's past side would put a "Today" line above the first month of an all-future board.
-    const list = rows([
+    expect(render(mixed, { today: TODAY })).not.toContain('plan__now')
+    const lifted = rows([
       task({ id: 'late', due: '2026-12-10' }),
       task({ id: 'future', title: 'Second', due: '2027-03-20' }),
     ])
-    const html = render(list, { today: TODAY })
+    const html = render(lifted, { today: TODAY })
     expect(html).toContain('Past deadline')
     expect(html).not.toContain('plan__now')
   })
@@ -681,7 +670,7 @@ describe('Plan', () => {
   it('names the wedding’s own month, once, and leaves the others alone', () => {
     // A plan that runs to one fixed day should say which sign is the last one.
     const list = rows([
-      task({ id: 'a', due: '2027-01-10' }),
+      task({ id: 'a', due: '2027-02-10' }),
       task({ id: 'b', title: 'Second', due: '2027-04-12' }),
     ])
     const html = render(list, { weddingMonth: '2027-04' })
@@ -700,24 +689,32 @@ describe('Plan', () => {
 
     const list = rows([
       task({ id: 'late', title: 'Late one', due: '2026-12-10' }),
-      task({ id: 'soon', title: 'Second', due: '2027-01-20' }),
+      task({ id: 'soon', title: 'Second', due: '2027-02-20' }),
     ])
     const html = render(list, { today: TODAY })
-    expect(months(html)).toEqual(['Past deadline', 'January 2027'])
-    expect(html.indexOf('Past deadline')).toBeLessThan(html.indexOf('January 2027'))
+    expect(months(html)).toEqual(['Past deadline', 'February 2027'])
+    expect(html.indexOf('Past deadline')).toBeLessThan(html.indexOf('February 2027'))
     expect(html.match(/class="tcard"/g)).toHaveLength(2)
     expect(html.match(/class="tcard__title">Late one</g)).toHaveLength(1)
   })
 
-  it('lifts what has started into Ongoing, under the overdue and above the calendar', () => {
+  it('gathers this month AND what is running into one section, under the overdue', () => {
+    // Two claims, one section: the month somebody is in, plus work begun early whose date is still to
+    // come. The heading names the month and says so beside it, because the strays it holds are dated
+    // outside it.
     const list = rows([
       task({ id: 'late', title: 'Late one', due: '2026-12-10' }),
-      task({ id: 'now', title: 'Started one', due: '2027-01-20', start: '2027-01-02' }),
+      task({ id: 'due', title: 'Due this month', due: '2027-01-20' }),
+      task({ id: 'now', title: 'Started one', due: '2027-03-20', start: '2027-01-02' }),
       task({ id: 'later', title: 'Third', due: '2027-03-20' }),
     ])
     const html = render(list, { today: TODAY })
-    expect(months(html)).toEqual(['Past deadline', 'Ongoing', 'March 2027'])
-    expect(html.match(/class="tcard"/g)).toHaveLength(3)
+    expect(months(html)).toEqual(['Past deadline', 'This month', 'March 2027'])
+    expect(html.match(/class="tcard"/g)).toHaveLength(4)
+    // The section says WHICH month it is, the heading naming a state on its own.
+    expect(html).toMatch(/This month<span class="plan__aside">January 2027</)
+    // The current month never renders twice: every January row is above, in one section or the other.
+    expect(months(html)).not.toContain('January 2027')
     // A start date that has not arrived leaves the row in its month.
     const future = rows([task({ id: 'x', due: '2027-03-20', start: '2027-03-01' })])
     expect(months(render(future, { today: TODAY }))).toEqual(['March 2027'])
@@ -756,7 +753,7 @@ describe('Plan', () => {
       task({ id: 'd', title: 'Plain', due: '2027-03-20' }),
     ])
     const html = render(list, { today: TODAY })
-    expect(months(html)).toEqual(['Ongoing', 'March 2027'])
+    expect(months(html)).toEqual(['This month', 'March 2027'])
     expect(tallies(html)).toEqual(['2', '1/4'])
     // Two rows are drawn under the heading, and the figure is `aria-hidden` precisely because it is
     // not their arithmetic. Counted on the element, not the class: a finished row wears a modifier.
@@ -769,15 +766,15 @@ describe('Plan', () => {
     // first on the meta line, the day column's other half rather than a second copy of it.
     const list = rows([
       task({ id: 'late', title: 'Late one', due: '2026-12-10' }),
-      task({ id: 'now', title: 'Started', due: '2027-01-20', start: '2027-01-02' }),
+      task({ id: 'now', title: 'Started', due: '2027-03-20', start: '2027-01-02' }),
       task({ id: 'plain', title: 'Plain', due: '2027-03-20' }),
     ])
     const html = render(list, { today: TODAY })
     expect(html).toContain('<span class="tcard__month">Dec 2026</span>')
-    expect(html).toContain('<span class="tcard__month">Jan 2027</span>')
-    // Twice, not three times: the March row sits under a heading that already says March 2027.
+    expect(html).toContain('<span class="tcard__month">Mar 2027</span>')
+    /* Twice, not three times: the row under This month is dated OUTSIDE the month that heading names,
+       so it says which — and the row in the March group needs nothing, its heading being March. */
     expect(html.match(/tcard__month/g)).toHaveLength(2)
-    expect(html).not.toContain('Mar 2027<')
     // The day column is untouched, so the number is stated once and the two halves make one date.
     expect(html).toMatch(/class="tcard__day tnum">10</)
   })
@@ -795,12 +792,27 @@ describe('Plan', () => {
     const list = rows([
       task({ id: 'a', due: '2026-12-10' }),
       task({ id: 'b', title: 'Second', due: '2026-12-11' }),
-      task({ id: 'c', title: 'Third', due: '2027-01-20' }),
+      task({ id: 'c', title: 'Third', due: '2027-02-20' }),
     ])
     expect(tallies(render(list, { today: TODAY }))).toEqual(['2', '0/1'])
   })
 
-  it('never puts the wedding plaque on a lifted section', () => {
+  it('puts the wedding plaque on This month when the wedding IS this month', () => {
+    // The plaque follows the month a heading NAMES. On the wedding month every row of it is hoisted
+    // into This month, so hanging the tint off the calendar's groups alone would lose the one mark the
+    // whole plan counts down to — in the month it matters most.
+    const list = rows([task({ id: 'a', due: '2027-01-20' })])
+    const html = render(list, { today: TODAY, weddingMonth: '2027-01' })
+    // Not through `months()`: that helper matches a bare `class="plan__month"`, and a plaqued heading
+    // wears the modifier too — which is the thing being asserted.
+    expect(html).toMatch(/class="plan__month plan__month--day">This month</)
+    expect(html.match(/plan__month--day/g)).toHaveLength(1)
+    expect(html).toContain('the day')
+    // Both asides, in that order: which month, then what the month is.
+    expect(html).toMatch(/January 2027<\/span><span class="plan__aside">the day</)
+  })
+
+  it('never puts the wedding plaque on Past deadline, which names no month', () => {
     // The tint says "this month is the wedding", which is a claim about a month. A section is not
     // one, and the wedding's own tasks can be overdue like any others.
     const list = rows([task({ id: 'a', title: 'Late one', due: '2026-12-02' })])
@@ -1179,11 +1191,13 @@ describe('Japanese', () => {
       />,
     )
     expect(html).toContain('期限切れ')
-    expect(html).toContain('進行中')
+    expect(html).toContain('今月')
+    // The aside naming which month it is, which the heading cannot say on its own.
+    expect(html).toContain('<span class="plan__aside">2027年1月</span>')
     expect(html).toContain('開始日')
     expect(html).toContain('2027年1月2日')
     expect(html).not.toContain('Past deadline')
-    expect(html).not.toContain('Ongoing')
+    expect(html).not.toContain('This month')
     expect(html).not.toContain('>Start<')
   })
 

@@ -514,31 +514,27 @@ report.deleteAfterEdit.titleBack = await evaluate(
 await shot('07-deleted')
 
 /**
- * The sign and the Today line in the live document. The line is a boundary, so its position is what
- * has to be true: every row above it is due before today, the first row below it is not.
+ * The signs in the live document. There is no Today line to place any more — the sections replaced it,
+ * and with the current month hoisted the boundary it marked always fell at a month heading — so what
+ * has to be true is the ORDER of the headings and what each one carries.
  */
 await send('Page.reload', { ignoreCache: true })
 await wait(4000)
 report.sign = await evaluate(`
   (() => {
-    const now = document.querySelector('.plan__now')
-    if (!now) return 'no today line'
-    const rows = [...document.querySelectorAll('.tcard, .plan__now')]
-    const index = rows.indexOf(now)
-    const label = now.textContent
-    const plaques = [...document.querySelectorAll('.plan__month--day')].map(n => n.textContent)
+    const headings = [...document.querySelectorAll('.plan__month')]
     return {
-      label,
-      rowsAbove: index,
-      rowsBelow: rows.length - index - 1,
-      weddingPlaques: plaques,
-      tallies: [...document.querySelectorAll('.plan__tally')].map(n => n.textContent),
+      order: headings.map((n) => n.textContent),
+      // The sections lead, and neither takes a month group's done-over-total.
+      asides: [...document.querySelectorAll('.plan__aside')].map((n) => n.textContent),
+      todayLine: document.querySelectorAll('.plan__now').length,
+      weddingPlaques: [...document.querySelectorAll('.plan__month--day')].map((n) => n.textContent),
+      tallies: [...document.querySelectorAll('.plan__tally')].map((n) => n.textContent),
       // aria-hidden, so the heading's own name is the month alone.
-      tallyHidden: [...document.querySelectorAll('.plan__tally')].every(n => n.getAttribute('aria-hidden') === 'true'),
+      tallyHidden: [...document.querySelectorAll('.plan__tally')].every((n) => n.getAttribute('aria-hidden') === 'true'),
     }
   })()
 `)
-
 // Horizontal overflow anywhere?
 report.docOverflow = await evaluate(`
   (() => {

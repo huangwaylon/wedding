@@ -247,8 +247,8 @@ describe('the month sign', () => {
     // 13px. The plaque's own label and its tally therefore both sit at --ink-2, 6.60:1 at worst.
     // Kanji at low contrast is unreadable in a way Latin is not.
     expect(ruleFor(app, '.plan__tally')).toMatch(/color: var\(--ink-2\)/)
-    expect(ruleFor(app, '.plan__day')).toMatch(/color: var\(--ink-2\)/)
-    for (const selector of ['.plan__tally', '.plan__day']) {
+    expect(ruleFor(app, '.plan__aside')).toMatch(/color: var\(--ink-2\)/)
+    for (const selector of ['.plan__tally', '.plan__aside']) {
       expect(ruleFor(app, selector), selector).not.toMatch(/color: var\(--ink-3\)/)
     }
     // And the harness has to be measuring the pairing, or the paragraph above stays true while
@@ -283,14 +283,25 @@ describe('the month sign', () => {
     expect(plaque).toMatch(/margin-inline: calc\(var\(--space-2\) \* -1\)/)
   })
 
-  it('draws the today line on the LINE, not as a border on a row', () => {
-    // It belongs to the list rather than to any task, which is what keeps it outside the
-    // one-coloured-mark-per-row budget.
-    expect(ruleFor(app, '.plan__now::after')).toMatch(/background-color: var\(--accent\)/)
-    expect(ruleFor(app, '.plan__now')).toMatch(/color: var\(--ink-2\)/)
-    expect(ruleFor(app, '.plan__now'), 'the line must not tint its own words').not.toMatch(
-      /[^-]color: var\(--accent\)/,
-    )
+  it('carries ONE aside style, worn by both things a heading can note', () => {
+    // "the day" on the wedding's month and the month a lifted section is about are one idea — a note
+    // on a heading — so they are one rule. Weight 400 against the heading's 600 is what makes it a
+    // note rather than a second heading.
+    const aside = ruleFor(app, '.plan__aside')
+    expect(aside, '.plan__aside rule missing').toBeTruthy()
+    expect(aside).toMatch(/font-weight: 400/)
+    expect(ruleFor(app, '.plan__month')).toMatch(/font-weight: 600/)
+  })
+
+  it('has no "you are here" line left to draw', () => {
+    // Removed with the sections that replaced it: with the current month hoisted into This month,
+    // every calendar group below holds either a finished month or a future one, so the boundary always
+    // fell at a month heading — not "between two rows", which was the whole rule. Its three rules go
+    // with it, or the stylesheet keeps 20 lines nothing can reach.
+    for (const selector of ['.plan__now', '.plan__nowLabel', '.plan__now::after']) {
+      expect(ruleFor(app, selector), selector).toBeNull()
+    }
+    expect(code(app)).not.toMatch(/plan__now/)
   })
 })
 

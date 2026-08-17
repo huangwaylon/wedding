@@ -77,7 +77,7 @@ export default {
   'plan.cardLabelSubs': '{title}：{when}、{state}、{subs}',
   'plan.theDay': '結婚式',
   'plan.past': '期限切れ',
-  'plan.ongoing': '進行中',
+  'plan.thisMonth': '今月',
   'list.subtasks': { other: '{count}件中{done}件完了' },
   'list.subtaskAdd': 'サブタスクを追加',
   'list.markDone': '{title}を完了にする',
