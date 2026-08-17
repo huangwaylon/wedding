@@ -153,7 +153,8 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
   parser.
 - The add-a-subtask field is behind Edit, and ticking is not. A text field under the commonest tap made
   every open row read as a form to fill in; ticking is why a row is opened at all. An editor reading a row
-  with no items therefore gets no list at all, an empty `<ul>` still painting its rail.
+  with no items therefore gets no list at all, an empty `<ul>` still occupying its own margin — which is
+  also what makes `.tcard__foot:first-child` reachable.
 - Deleting a parent cascades in one `values:batchUpdate`; N calls can half-fail, leaving some children
   tombstoned and some not. `restore` is its exact inverse.
 
@@ -478,6 +479,17 @@ Measured, and `npm run contrast` re-checks every pair:
   thrash it forbids. The chevron carries the motion.
 - An unsettled row dims its HEAD, never its tick — a tick that fades on contact reads as a tap that missed.
   Same for a checklist item: the title recedes, the glyph does not.
+- ONE divider above an open row's foot, never two. `.tcard__content`'s border is the seam, so
+  `.tcard__foot`'s own drew a second hairline with 28px of blank card between them on the commonest row
+  there is — no start date, no checklist — which reads as a section whose contents failed to render.
+  `.tcard__foot:first-child` is exactly that condition, the fact line, the editor and the checklist each
+  being a preceding sibling when it exists; `test/render.test.jsx` pins the DOM half, which no stylesheet
+  can see.
+- The checklist carries NO rule, vertical or horizontal. Horizontal ones would make it a table; the one
+  vertical hairline it used to hang off its parent spent 17px of a 361px column saying what the smaller
+  glyph, the lighter ink and the lighter weight already say. The 4px indent left is not decoration — it is
+  what puts the checklist's glyph column under the row's own tick, so the circles are one column rather
+  than two that nearly line up.
 - `.tcard__check` is `align-self: center` against the grid's `align-items: start`, so the 44px box sits in
   the middle of the head's grid row however tall the head has grown — a wrapped title plus a meta line is
   ~70px, and start-aligned the circle floated to the top of a block the eye reads as one thing.

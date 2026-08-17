@@ -1186,11 +1186,32 @@ describe('the checklist and the tally', () => {
     expect(ruleFor(app, '.subtask__title')).toMatch(/flex: 1/)
   })
 
-  it('ties the checklist to its parent with one vertical rule and no horizontal ones', () => {
+  it('draws no rule around the checklist at all, in either direction', () => {
+    // Five rules between five items would make a checklist a table, and the one vertical hairline it
+    // used to hang off its parent spent 17px of a 361px column saying what the smaller glyph, the
+    // lighter ink and the lighter weight already say.
     const list = ruleFor(app, '.subtasks')
     expect(list, '.subtasks rule missing').toBeTruthy()
-    expect(list).toMatch(/border-inline-start: 1px solid var\(--line\)/)
-    expect(list).not.toMatch(/border-block|border-top|border-bottom/)
+    expect(list).not.toMatch(/border/)
+    // The indent that is left is the one that aligns this glyph column with the row's own tick:
+    // 4px plus the toggle's own 8px lands on the centre of a 44px check. Measured over CDP.
+    expect(list).toMatch(/margin-inline-start: var\(--space-1\)/)
+    expect(list).not.toMatch(/padding-inline-start/)
+  })
+
+  it('leaves ONE divider above an open row with nothing behind it but the Edit toggle', () => {
+    // `.tcard__content`'s border is the seam already, so the foot's own drew a second hairline with
+    // 28px of blank card between them — a section whose contents look like they failed to render. A
+    // task with no start date and no checklist is the commonest row there is.
+    const foot = ruleFor(app, '.tcard__foot')
+    expect(foot).toMatch(/border-top: 1px solid var\(--line\)/)
+    const bare = ruleFor(app, '.tcard__foot:first-child')
+    expect(bare, '.tcard__foot:first-child rule missing').toBeTruthy()
+    expect(bare).toMatch(/border-top: 0/)
+    expect(bare).toMatch(/margin-top: 0/)
+    expect(bare).toMatch(/padding-top: 0/)
+    // And the seam it defers to is still there.
+    expect(ruleFor(app, '.tcard__content')).toMatch(/border-top: 1px solid var\(--line\)/)
   })
 
   it('keeps a subtask off the meter and off the badge', () => {

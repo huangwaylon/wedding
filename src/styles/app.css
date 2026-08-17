@@ -511,13 +511,14 @@
 }
 
 /* ---- The checklist ----------------------------------------------------
-   One vertical hairline from the parent and no horizontal ones: five rules between five items would
-   make a checklist a table. --line, so it reads as structure. */
+   NO RULES AT ALL, vertical or horizontal: five rules between five items would make a checklist a
+   table, and the one vertical hairline this used to hang off the parent spent 17px of a 361px column
+   on saying what the smaller glyph, the lighter ink and the lighter weight already say. The 4px indent
+   is not decoration either — it is what puts this glyph column exactly under the row's own tick, so
+   the circles read as one column rather than two that nearly line up. */
 .subtasks {
   margin-top: var(--space-2);
-  margin-inline-start: var(--space-2);
-  border-inline-start: 1px solid var(--line);
-  padding-inline-start: var(--space-2);
+  margin-inline-start: var(--space-1);
   padding-bottom: var(--space-1);
 }
 
@@ -612,10 +613,10 @@
 
 /* Always last, never moved, never remounted: a changed key or position drops the iOS keyboard
    mid-checklist. Aligned with the item titles rather than their ticks, so the glyph column stays a
-   column. The indent is a clamp because of one phone: at a flat --space-7 the field holds ~139px of
-   text on a 320pt screen — 288 of viewport, less the view's 32, the card's 22 and its border, the
-   rail's 17, this 32, the 8 gap and the 44px submit — so it relaxes to --space-2 there, unchanged
-   from 393pt up. */
+   column. The indent is a clamp because of one phone: at a flat --space-7 the field held ~139px of
+   text on a 320pt screen — 288 of viewport, less the view's 32, the card's 22 and its border, this 32,
+   the 8 gap and the 44px submit — so it relaxes to --space-2 there, unchanged from 393pt up. The rail
+   this used to clear is gone, which gives the field back 17px at every width. */
 .subtask-add {
   display: flex;
   align-items: center;
@@ -740,6 +741,17 @@
   margin-top: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px solid var(--line);
+}
+
+/* ONE divider, never two. A task with no start date and no checklist opens on nothing but this foot,
+   and `.tcard__content`'s own rule is already the seam — so its border here drew a second hairline
+   with 28px of blank card between them, which reads as a section whose contents failed to render.
+   `:first-child` is exactly the condition, the fact line, the editor and the checklist each being a
+   preceding sibling when they exist. */
+.tcard__foot:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 /* Last always, so the toggle a thumb returns to does not move between modes: the row's delete appears

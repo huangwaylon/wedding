@@ -253,7 +253,10 @@ function RowsView({ locale, canEdit = true, editing = false }) {
           categories={CONFIG.categories}
           today={TODAY}
           weddingMonth={WEDDING_DAY.slice(0, 7)}
-          expanded={new Set(['r3'])}
+          /* Two rows open: the one with a checklist and a start date, and one with NEITHER — which is
+             the case where the open content is the foot alone, and where a second hairline used to
+             draw 28px of blank card. */
+          expanded={new Set(['r3', 'r4'])}
           onExpand={noop}
           onToggle={noop}
           onSave={noop}

@@ -395,11 +395,27 @@ describe('the checklist inside an open row', () => {
     expect(editing).toContain('subtask-add__field')
   })
 
-  it('draws no empty rail on a row with no checklist and nothing to add to it', () => {
-    // With the add field behind Edit, an editor reading a row with no items has nothing in the
-    // list at all — and an empty `<ul>` still paints its own indent rule.
+  it('draws no empty list on a row with no checklist and nothing to add to it', () => {
+    // With the add field behind Edit, an editor reading a row with no items has nothing to put in the
+    // list — and an empty `<ul>` still occupies its own margin.
     expect(render(parented([]), { open: true })).not.toContain('class="subtasks"')
     expect(render(parented([]), { open: true, editing: true })).toContain('class="subtasks"')
+  })
+
+  it('leaves the foot as the FIRST child when there is nothing else behind the row', () => {
+    // What `.tcard__foot:first-child` hangs off, and the reason it is a CSS rule rather than a class:
+    // a task with no start date and no checklist opens on the foot alone, and two hairlines with blank
+    // card between them read as a section that failed to render. The DOM condition is asserted here
+    // because the stylesheet cannot see it.
+    const html = render(parented([]), { open: true })
+    expect(html).toMatch(/<div class="tcard__content"[^>]*><div class="tcard__foot"/)
+    // Anything real in front of it — the checklist, the start fact, the editor — and it is not.
+    expect(render(parented([sub('p', 1)]), { open: true })).not.toMatch(
+      /<div class="tcard__content"[^>]*><div class="tcard__foot"/,
+    )
+    expect(render(parented([]), { open: true, editing: true })).not.toMatch(
+      /<div class="tcard__content"[^>]*><div class="tcard__foot"/,
+    )
   })
 
   it('offers no add field on a PROMOTED row, whatever the mode', () => {
