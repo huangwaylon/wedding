@@ -126,7 +126,10 @@ function seed() {
     ['a3', 'Compare the two venue quotes', 'Venue', day(0), '', day(-7)],
     ['a4', 'Send the deposit', 'Budget', day(1), '', ''],
     ['a5', 'Choose the invitation paper', 'Stationery', day(7), '', day(-2)],
-    ['a6', 'Order signage, vow books and favours', 'Gifts', day(120), '', day(60)],
+    /* The STRAY: begun a fortnight ago, due four months out. It is lifted into This month by the
+       running clause, and it is the one row there dated outside the month the heading names — so it is
+       the row that has to print its own. */
+    ['a6', 'Order signage, vow books and favours', 'Gifts', day(120), '', day(-14)],
     ['a7', 'Agree the budget and who is contributing', 'Budget', day(-60), '2026-07-01T00:00:00.000Z', day(-90)],
     // The three with no date at all: `nodate` sorts last, into its own group.
     ['a8', 'Decide about a live band', 'Music', '', '', ''],
