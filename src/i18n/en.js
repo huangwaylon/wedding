@@ -97,6 +97,9 @@ export default {
      scolds: "Past deadline" is what the sheet says, where "Late" or "Overrun" is a verdict on the two
      people reading it. */
   'plan.past': 'Past deadline',
+  /* On a row sitting under a heading that names a DIFFERENT month: the section says August and the
+     row's big day number says 10, so without the word the date reads as the 10th of August. */
+  'plan.dueMonth': 'Due {month}',
   'plan.thisMonth': 'This month',
   'list.subtasks': {
     one: '{done} of {count} subtask',

@@ -760,23 +760,45 @@ describe('Plan', () => {
     expect(html.match(/<article/g)).toHaveLength(4)
   })
 
-  it('makes a lifted row name its own month and year, the heading above naming neither', () => {
-    // A section heading says "Past deadline", so the day column's bare `20` names no month — and a row
-    // lifted out of the calendar is exactly the row somebody needs the whole date of. The month sits
-    // first on the meta line, the day column's other half rather than a second copy of it.
+  it('states a row’s own month in one of THREE ways, decided by what the heading names', () => {
+    // The day column carries a bare number, so what it means depends entirely on the heading above it.
+    // Three cases, and the third is the one a reader can be actively misled by: under "This month ·
+    // January 2027" a big `20` reads as the 20th of January when the row is due in March.
     const list = rows([
       task({ id: 'late', title: 'Late one', due: '2026-12-10' }),
       task({ id: 'now', title: 'Started', due: '2027-03-20', start: '2027-01-02' }),
       task({ id: 'plain', title: 'Plain', due: '2027-03-20' }),
     ])
     const html = render(list, { today: TODAY })
+    // Past deadline names no month: the bare month and year, the other half of the date.
     expect(html).toContain('<span class="tcard__month">Dec 2026</span>')
-    expect(html).toContain('<span class="tcard__month">Mar 2027</span>')
-    /* Twice, not three times: the row under This month is dated OUTSIDE the month that heading names,
-       so it says which — and the row in the March group needs nothing, its heading being March. */
+    // This month names January, and this row is due in March: the month says it is the DEADLINE, which
+    // is also the answer to why the row is in that section at all.
+    expect(html).toContain('<span class="tcard__month">Due Mar 2027</span>')
+    // The March group names the row's own month: nothing, or the heading would be restated per row.
     expect(html.match(/tcard__month/g)).toHaveLength(2)
-    // The day column is untouched, so the number is stated once and the two halves make one date.
+    // The day column is untouched in every case, so the number is stated once.
     expect(html).toMatch(/class="tcard__day tnum">10</)
+  })
+
+  it('labels the month only where a heading CONTRADICTS the row, never merely where it is silent', () => {
+    // The word is the fix for a specific confusion, not decoration: Past deadline names no month, so
+    // there is nothing to be misled by and nothing to correct.
+    const late = rows([task({ id: 'a', due: '2026-12-10' })])
+    expect(render(late, { today: TODAY })).not.toContain('Due Dec 2026')
+    // A row due inside the month its heading names says nothing at all, label or otherwise.
+    const inside = rows([task({ id: 'b', due: '2027-01-20' })])
+    expect(render(inside, { today: TODAY })).not.toContain('tcard__month')
+  })
+
+  it('renders no month at all when nothing above the row names one', () => {
+    // `TaskCard` alone — a static render, or any caller with no groups — must not start captioning
+    // itself: `headingMonth` is null there, which is a third thing from '' and has to stay one.
+    const [row] = rows([task({ due: '2026-12-10' })])
+    const bare = renderToStaticMarkup(
+      <TaskCard task={row} canEdit open={false} categories={CATEGORIES} {...CARD_HANDLERS} />,
+    )
+    expect(bare).not.toContain('tcard__month')
   })
 
   it('says nothing about a month on an undated lifted row, there being none to say', () => {
@@ -1180,7 +1202,7 @@ describe('Japanese', () => {
       <Plan
         tasks={rows([
           task({ id: 'late', due: '2026-12-10' }),
-          task({ id: 'now', due: '2027-01-20', start: '2027-01-02' }),
+          task({ id: 'now', due: '2027-03-20', start: '2027-01-02' }),
         ])}
         canEdit
         categories={CATEGORIES}
@@ -1192,6 +1214,8 @@ describe('Japanese', () => {
     )
     expect(html).toContain('期限切れ')
     expect(html).toContain('今月')
+    // The label on a contradicted row orders itself: 期限 before the date, not "Due" bolted on.
+    expect(html).toContain('期限 2027年3月')
     // The aside naming which month it is, which the heading cannot say on its own.
     expect(html).toContain('<span class="plan__aside">2027年1月</span>')
     expect(html).toContain('開始日')

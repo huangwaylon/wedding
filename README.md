@@ -66,7 +66,8 @@ read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization
   that claims it; the heading says which month it is about. Below them, **tasks are grouped by month**,
   where a row prints a bare day number and the sticky heading carries the rest — so the current month
   is never listed twice, every one of its rows being in a section above. A row spells out its own month
-  and year wherever the heading over it does not. Whole-group tallies are withheld while a filter is
+  and year wherever the heading over it does not — and says **Due** in front of it where the heading
+  names a different month, which is the one place a bare day number could be read as the wrong date. Whole-group tallies are withheld while a filter is
   on.
 - **Per-device, in `localStorage`, never in the sheet:** language (English/Japanese), accent (`tarn`
   default, `pine`, `rosehip`), the state filter, the read-only view toggle.

@@ -136,12 +136,20 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
   and the rows underneath already carry the state.
 - An UNDATED row is never lifted, whatever its start date: it sorts last into the group that says so,
   and under **Ongoing** it would read as progress while the one thing wrong with it is why it is there.
-- A ROW NAMES ITS OWN MONTH AND YEAR wherever the heading above does not already name THAT month
-  (`withMonth`, `.tcard__month`, first on the meta line): every row under Past deadline, and under This
-  month the strays alone — work begun early, dated outside the month the heading names. The two halves
-  make one date and neither repeats the other: `20` in the column, `Sep 2026` on the line below. One
-  expression, `group.month !== monthOf(task.due)`, rather than a per-section flag, so a month group
-  cannot start restating its own month.
+- A ROW STATES ITS OWN MONTH in one of THREE ways, and `headingMonth` — the month the heading above it
+  names, `''` for a section, `null` for no heading at all — is the only input:
+
+  | the heading names | the row prints |
+  | --- | --- |
+  | this row's month | nothing; the day number plus the heading is the date |
+  | no month | the bare month and year (`Sep 2026`), the day column's other half |
+  | ANOTHER month | the same behind the due label (`Due Mar 2027`, `期限 2027年3月`) |
+
+  The third is the only case a reader can be actively MISLED by: the day column is a bare number, so a
+  `20` under "This month · January 2027" reads as the 20th of January when the row is due in March. The
+  label is also the answer to why that row is in the section at all. One comparison in `TaskCard`, not a
+  flag per section, so a month group cannot start restating its own month and the label cannot appear
+  where a heading is merely silent.
 - Not a stacked tile in the day column, which is the obvious design and was measured: `2026年10月` is
   76px at 13px against a 72px column, so the column had to go to 5rem and every title in the two
   sections that matter most wrapped. The meta line was already there and already wraps.

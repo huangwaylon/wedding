@@ -13,7 +13,7 @@
  */
 
 import { STATE } from '../lib/progress.js'
-import { dayOfMonth, formatDay, formatMonthYear } from '../lib/time.js'
+import { dayOfMonth, formatDay, formatMonthYear, monthOf } from '../lib/time.js'
 import { useCategoryLabel, useT } from '../i18n/index.js'
 import DoneToggle from './DoneToggle.jsx'
 import DueLabel from './DueLabel.jsx'
@@ -32,10 +32,18 @@ export default function TaskCard({
   onFieldFocus,
   categories,
   /**
-   * Whether the row has to name its own month: true under a section heading, which names a state
-   * rather than a month, and false under one that already says "April 2027".
+   * The month the heading above this row names, `''` where it names none (a section, the undated
+   * group) and `null` where there is no heading at all — a static render, or a caller with no groups.
+   * It decides whether this row states its own date and HOW, which is three cases and not two:
+   *
+   *   the heading names this month     nothing: the day number plus the heading is the date
+   *   the heading names no month       the bare month and year, the other half of the date
+   *   the heading names ANOTHER month  the same, behind the DUE label — this is the only case a
+   *                                    reader can be actively misled by, a big `10` under
+   *                                    "This month · August 2026" reading as the 10th of August
+   *                                    when the row is due in December
    */
-  withMonth = false,
+  headingMonth = null,
   /** The open row's INITIAL mode. A harness prop; see `TaskDetail`. */
   editing,
 }) {
@@ -62,10 +70,18 @@ export default function TaskCard({
       })
     : t('plan.cardLabel', { title: task.title, when, state: t(`state.${state}`) })
 
-  /* Nothing at all on a row months out with no checklist and no category — but a lifted row always
-     has the date to state, its heading naming a state rather than a month. */
+  /**
+   * Whether this row states its own month, and whether it has to say that the month is its DEADLINE.
+   * Both fall out of one comparison, so a month group can never start restating its own month and the
+   * label can only appear where a heading actually contradicts the row.
+   */
+  const ownMonth = dated && headingMonth !== null && headingMonth !== monthOf(task.due)
+  const dueElsewhere = ownMonth && Boolean(headingMonth)
+
+  /* Nothing at all on a row months out with no checklist and no category — but a row stating its own
+     month always has that to state. */
   const hasMeta =
-    (withMonth && dated) || state === STATE.OVERDUE || state === STATE.SOON || tally || task.category
+    ownMonth || state === STATE.OVERDUE || state === STATE.SOON || tally || task.category
 
   return (
     <article
@@ -102,9 +118,15 @@ export default function TaskCard({
                   calendar fact the sticky heading carries everywhere else, and it is the day column's
                   other half rather than a second copy of it: `20` up there, `Sep 2026` here. A tile
                   stacking both in the column instead needed 5rem for `2026年10月` and wrapped every
-                  title in the two sections that matter most. */}
-              {withMonth && dated ? (
-                <span className="tcard__month">{formatMonthYear(task.due, { locale })}</span>
+                  title in the two sections that matter most. Under a heading naming a DIFFERENT month
+                  it says which date it is: nothing else on the row can, and the label is also the
+                  answer to why the row is in that section at all. */}
+              {ownMonth ? (
+                <span className="tcard__month">
+                  {dueElsewhere
+                    ? t('plan.dueMonth', { month: formatMonthYear(task.due, { locale }) })
+                    : formatMonthYear(task.due, { locale })}
+                </span>
               ) : null}
               <DueLabel state={state} days={days} />
               {tally ? (

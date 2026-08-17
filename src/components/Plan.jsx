@@ -156,10 +156,9 @@ export default function Plan({
                 task={task}
                 open={Boolean(expanded?.has(task.id))}
                 onOpen={onExpand}
-                /* A row names its own month only where the heading above it does not already name THAT
-                   month: every row under Past deadline, and under This month the strays alone — work
-                   begun early, due in a month the heading does not mention. See `TaskCard`. */
-                withMonth={group.month !== monthOf(task.due)}
+                /* What this heading names, which is all a row needs to decide whether — and how — to
+                   state its own month. See `TaskCard`. */
+                headingMonth={group.month}
                 {...cardProps}
               />
             ))}
