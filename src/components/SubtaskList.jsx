@@ -152,8 +152,8 @@ function AddSubtask({ onAdd, onFocusChange }) {
 export default function SubtaskList({
   subtasks,
   canEdit,
-  canAdd = true,
-  canRemove = true,
+  canAdd,
+  canRemove,
   onToggle,
   onDelete,
   onAdd,

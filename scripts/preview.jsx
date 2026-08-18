@@ -20,6 +20,7 @@ import { copyFileSync, writeFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { mergeConfig } from '../src/config.js'
 import { overallProgress, withProgress } from '../src/lib/progress.js'
+import { monthOf } from '../src/lib/time.js'
 import { ACCENTS, DEFAULT_ACCENT } from '../src/lib/theme.js'
 import { setLocale } from '../src/i18n/index.js'
 import { findTemplate, materialize } from '../src/lib/templates.js'
@@ -149,7 +150,7 @@ function Shell({ children, fab = false, tab = TABS.PLAN }) {
 }
 
 /**
- * The whole board, with the checklist row opened so the editor's three fields, the checklist and
+ * The whole board, with the checklist row opened so the editor's four fields, the checklist and
  * the add row are all in the screenshot. `open` comes from `App`'s `expanded` set, which no effect
  * populates, so passing it here is the only way to see it.
  *
@@ -176,7 +177,7 @@ function BoardView({ locale, canEdit = true, open = true, editing = false }) {
           canEdit={canEdit}
           categories={CONFIG.categories}
           today={TODAY}
-          weddingMonth={WEDDING_DAY.slice(0, 7)}
+          weddingMonth={monthOf(WEDDING_DAY)}
           expanded={new Set(opened ? [opened.id] : [])}
           onExpand={noop}
           onToggle={noop}
@@ -252,7 +253,7 @@ function RowsView({ locale, canEdit = true, editing = false }) {
           canEdit={canEdit}
           categories={CONFIG.categories}
           today={TODAY}
-          weddingMonth={WEDDING_DAY.slice(0, 7)}
+          weddingMonth={monthOf(WEDDING_DAY)}
           /* Two rows open: the one with a checklist and a start date, and one with NEITHER — which is
              the case where the open content is the foot alone, and where a second hairline used to
              draw 28px of blank card. */
@@ -315,7 +316,7 @@ function SignView({ locale, unfiltered = true }) {
           canEdit
           categories={CONFIG.categories}
           today={TODAY}
-          weddingMonth={WEDDING_DAY.slice(0, 7)}
+          weddingMonth={monthOf(WEDDING_DAY)}
           unfiltered={unfiltered}
           expanded={new Set()}
           onExpand={noop}
@@ -428,7 +429,7 @@ function page(body, { locale, accent }) {
 `
 }
 
-function emit(name, element, { locale = 'en', accent = 'indigo' } = {}) {
+function emit(name, element, { locale = 'en', accent = DEFAULT_ACCENT } = {}) {
   setLocale(locale)
   const path = `scripts/preview-${name}.html`
   writeFileSync(path, page(renderToStaticMarkup(element), { locale, accent }))

@@ -33,14 +33,15 @@ import * as sheets from './sheets.js'
  */
 const READ_TIMEOUT_MS = 20_000
 
-/**
- * Attempts per request, including the first. What is retried is a blip — a dropped connection, a
- * 500, a rate limit — and two in a row is an outage.
- */
-const ATTEMPTS = 3
-
 /** Between attempts. Short: the condition being waited out is a blip, not congestion. */
 const BACKOFF_MS = [500, 1_500]
+
+/**
+ * Attempts per request, including the first — so three, and DERIVED, because `send` indexes
+ * `BACKOFF_MS[attempt - 1]`: a hand-raised 4 waits `undefined` ms and retries instantly. What is
+ * retried is a blip — a dropped connection, a 500, a rate limit — and two in a row is an outage.
+ */
+const ATTEMPTS = BACKOFF_MS.length + 1
 
 /**
  * Status codes worth a second go. Every other 4xx is a statement about the request that will be
@@ -112,8 +113,6 @@ function classify(error) {
     case 'bad_payload':
     case 'misconfigured':
       return new ApiError(API_ERROR.MISCONFIGURED, error)
-    default:
-      break
   }
 
   const status = error?.status
@@ -168,7 +167,6 @@ function decodeBoard({ tasks, config, needsSetup, sheetTimeZone }) {
  * string because a fragment would not reach the server — which is why the edit key lives in one.
  */
 async function readPublicBoard(now) {
-  if (!SCRIPT_URL) throw new ApiError(API_ERROR.UNCONFIGURED)
   const separator = SCRIPT_URL.includes('?') ? '&' : '?'
 
   let response

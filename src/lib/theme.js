@@ -41,6 +41,8 @@ function getAccent() {
   return ACCENTS.includes(stored) ? stored : DEFAULT_ACCENT
 }
 
+const listeners = new Set()
+
 export function setAccent(name) {
   const next = ACCENTS.includes(name) ? name : DEFAULT_ACCENT
   writeStored(STORAGE_KEYS.accent, next)
@@ -48,8 +50,6 @@ export function setAccent(name) {
   for (const listener of listeners) listener()
   return next
 }
-
-const listeners = new Set()
 
 function onAccentChange(listener) {
   listeners.add(listener)

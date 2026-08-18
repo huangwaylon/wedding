@@ -53,7 +53,7 @@ function luminance(hex) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
-export function contrast(a, b) {
+function contrast(a, b) {
   const la = luminance(a)
   const lb = luminance(b)
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
@@ -227,3 +227,6 @@ add(
 console.table(rows)
 const failures = rows.filter((row) => row.verdict === 'FAIL')
 console.log(failures.length ? `${failures.length} FAILING` : 'all pass')
+// A non-zero exit, so `npm run contrast` can gate something and a FAIL is not a line of output
+// somebody has to notice in a 47-row table.
+process.exitCode = failures.length ? 1 : 0

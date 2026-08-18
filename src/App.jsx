@@ -16,7 +16,7 @@
  * holds unsaved text — see `typing`.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { STORAGE_KEYS, isConfigured, readStored, weddingDay, writeStored } from './config.js'
 import { isStandalone, markKeyRejected, resolveAccess, writeEditKey } from './lib/access.js'
 import { API_ERROR, isTerminal } from './lib/api.js'

@@ -16,10 +16,13 @@ import { CheckCircleIcon, CircleIcon } from './icons.jsx'
 /**
  * @param {string} props.title the task's own title, for the accessible name
  * @param {boolean} props.canEdit a viewer gets the same slot, as a static glyph
+ * @param {string} props.className the control's base class, REQUIRED: `--on` and `--static` are
+ *   composed onto it, so an omitted one emits a class literally named `--on`. The two homes are a
+ *   task row's tick and a checklist item's.
  * @param {React.ReactNode} [props.children] rendered inside the control, after the glyph, so a
  *   caller can make a whole row the target
  */
-export default function DoneToggle({ done, title, canEdit, onToggle, className = '', children }) {
+export default function DoneToggle({ done, title, canEdit, onToggle, className, children }) {
   const { t } = useT()
   const Glyph = done ? CheckCircleIcon : CircleIcon
   const state = `${className}${done ? ` ${className}--on` : ''}`

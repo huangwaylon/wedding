@@ -188,6 +188,17 @@ export function createWriteQueue(send) {
  * @param {() => void} input.onUnauthorized called once when the endpoint refuses the key, so
  *   the caller can flag it and drop to view-only
  */
+/**
+ * A soft delete or its exact inverse, as an optimistic updater. The write cascades to subtasks in
+ * one request, so this must too, or children linger for a moment and vanish when the read lands.
+ * Module scope: it closes over nothing, and rebuilt per render it would be an unlisted dependency
+ * of the two `useCallback`s that use it — benign only for as long as it captures nothing.
+ */
+const stamp = (id, deletedAt) => (previous) =>
+  previous.map((row) =>
+    row.id === id || row.parentId === id ? { ...row, deletedAt, pending: true } : row,
+  )
+
 export function useBoard({ editKey, onUnauthorized }) {
   const seeded = useRef(readSnapshot())
 
@@ -438,15 +449,6 @@ export function useBoard({ editKey, onUnauthorized }) {
     (task) => editTask({ ...task, doneAt: task.doneAt ? '' : new Date().toISOString() }),
     [editTask],
   )
-
-  /**
-   * The write cascades to subtasks in one request, so the optimistic update must too, or children
-   * linger for a moment and vanish when the read lands.
-   */
-  const stamp = (id, deletedAt) => (previous) =>
-    previous.map((row) =>
-      row.id === id || row.parentId === id ? { ...row, deletedAt, pending: true } : row,
-    )
 
   const removeTask = useCallback(
     (id) => run({ op: 'delete', id }, stamp(id, new Date().toISOString())),

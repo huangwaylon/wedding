@@ -77,7 +77,7 @@ function inside(x, y) {
 }
 
 /** RGB, no alpha: the icon is opaque, and iOS composites a transparent one onto white. */
-export function pixels(size) {
+function pixels(size) {
   // One filter byte per row, as PNG requires. Filter 0 = None; the deflate below does the
   // compressing.
   const raw = Buffer.alloc(size * (size * 3 + 1))
@@ -126,7 +126,7 @@ function chunk(type, data) {
   return Buffer.concat([length, body, crc])
 }
 
-export function encodePng(size, raw) {
+function encodePng(size, raw) {
   const header = Buffer.alloc(13)
   header.writeUInt32BE(size, 0)
   header.writeUInt32BE(size, 4)
