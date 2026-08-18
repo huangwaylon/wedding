@@ -114,9 +114,20 @@ function pad(number) {
 }
 
 /**
- * The three ways a day string is taken apart, and the only place that knows its layout. Nothing
- * outside this module may index into 'YYYY-MM-DD'. All three normalise first, so a cell holding
- * '2027-04-18T00:00' behaves like the day it means.
+ * A day's parts, tolerating the clock time a hand-edited cell arrives with — the composition every
+ * accessor and every formatter below needs. `isValidDay` deliberately does NOT go through it:
+ * `normalizeDay` is built on `isValidDay`, so a lenient one would be circular, and what it answers is
+ * "may this be written", not "what does this cell mean".
+ */
+function partsOf(day) {
+  return parseDay(normalizeDay(day))
+}
+
+/**
+ * The four ways a day string is taken apart, and the only place that knows its layout. Nothing
+ * outside this module may index into 'YYYY-MM-DD'. All of them normalise first, so a cell holding
+ * '2027-04-18T00:00' behaves like the day it means; `yearOf` sits below with the formatters, being a
+ * display question, and obeys the same rule.
  *
  * `monthOf` returns '' for anything unusable, so a bad date groups with the undated rows rather
  * than forming a group of its own.
@@ -128,8 +139,7 @@ export function monthOf(day) {
 
 /** The day of the month as a number, for the column a row prints it in. 0 if unusable. */
 export function dayOfMonth(day) {
-  const parts = parseDay(normalizeDay(day))
-  return parts ? parts.day : 0
+  return partsOf(day)?.day ?? 0
 }
 
 /** A 'YYYY-MM' key back to a real day, so it can be formatted. '' if unusable. */
@@ -144,7 +154,7 @@ export function firstOfMonth(monthKey) {
  * where adding 86,400,000ms to an instant would not.
  */
 export function addDays(day, days) {
-  const parts = parseDay(normalizeDay(day))
+  const parts = partsOf(day)
   if (!parts) return ''
   const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days))
   return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
@@ -157,8 +167,8 @@ export function addDays(day, days) {
  * @returns {number|null} null when either day is unusable
  */
 export function daysBetween(from, to) {
-  const a = parseDay(normalizeDay(from))
-  const b = parseDay(normalizeDay(to))
+  const a = partsOf(from)
+  const b = partsOf(to)
   if (!a || !b) return null
   return Math.round(
     (Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day)) / MS_PER_DAY,
@@ -181,7 +191,7 @@ export function todayIn(timeZone, nowMs) {
 
 /** A Date whose UTC fields hold the day's parts, for the header's second rule. */
 function asUtcDate(day) {
-  const parts = parseDay(normalizeDay(day))
+  const parts = partsOf(day)
   if (!parts) return null
   return new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
 }
@@ -197,6 +207,16 @@ function displayFormatter(locale, options) {
 }
 
 /**
+ * Every display below is this: parts to a UTC instant, formatted in UTC, '' for a day that is not
+ * one. The four exports differ only in their options, and each is a NAME for a place in the ui —
+ * which is why they are four exports rather than one with a shape argument at the call site.
+ */
+function formatted(day, locale, options) {
+  const date = asUtcDate(day)
+  return date ? displayFormatter(locale, options).format(date) : ''
+}
+
+/**
  * 'Apr 18' / '4月18日'.
  *
  * @param {string} day
@@ -205,13 +225,11 @@ function displayFormatter(locale, options) {
  * @param {boolean} [opts.year] include the year
  */
 export function formatDay(day, { locale, year = false } = {}) {
-  const date = asUtcDate(day)
-  if (!date) return ''
-  return displayFormatter(locale, {
+  return formatted(day, locale, {
     month: 'short',
     day: 'numeric',
     ...(year ? { year: 'numeric' } : {}),
-  }).format(date)
+  })
 }
 
 /**
@@ -220,26 +238,22 @@ export function formatDay(day, { locale, year = false } = {}) {
  * Saturday" is answered nowhere else on screen.
  */
 export function formatDayLong(day, { locale } = {}) {
-  const date = asUtcDate(day)
-  if (!date) return ''
-  return displayFormatter(locale, {
+  return formatted(day, locale, {
     weekday: 'short',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
-  }).format(date)
+  })
 }
 
 /**
  * 'Oct' / '10月' — the month line of a row's date column, and the one thing there that is NOT the
- * year: '2026年10月' measures 67px at 13px against that 2rem box, where '10月' is 24px and '12月'
- * 31px (both measured over CDP). A row states its year on the meta line, and only when it is not
- * the board's own — see `TaskCard`.
+ * year: the year is what does not fit that box, and `.tcard__date` in app.css holds the figures. A
+ * row states its year on the meta line instead, and only where nothing else on screen gives it one
+ * — see `TaskCard`.
  */
 export function formatMonth(day, { locale } = {}) {
-  const date = asUtcDate(day)
-  if (!date) return ''
-  return displayFormatter(locale, { month: 'short' }).format(date)
+  return formatted(day, locale, { month: 'short' })
 }
 
 /**
@@ -247,13 +261,10 @@ export function formatMonth(day, { locale } = {}) {
  * for anything unusable, which is what stops an undated row claiming to be in year zero.
  */
 export function yearOf(day) {
-  const parts = parseDay(normalizeDay(day))
-  return parts ? parts.year : null
+  return partsOf(day)?.year ?? null
 }
 
 /** 'April 2027' / '2027年4月' — the list's group headings. */
 export function formatDayMonth(day, { locale } = {}) {
-  const date = asUtcDate(day)
-  if (!date) return ''
-  return displayFormatter(locale, { year: 'numeric', month: 'long' }).format(date)
+  return formatted(day, locale, { year: 'numeric', month: 'long' })
 }

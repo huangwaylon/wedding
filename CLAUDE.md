@@ -148,10 +148,10 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
   on a row due in March, and the caption that fixed it — `Due Mar 2027` on the meta line — was a second
   way of stating a date on the rows that matter most. `formatMonth` is what the column prints and
   `test/render.test.jsx` pins that every dated row carries one.
-- **The column holds no year, and 2rem is why.** Measured over CDP: `Sep` is 24px and `12月` 31px inside
-  a 32px box, where `Sep 2026` is 60px and `2026年9月` 67px — a year in the column takes it to 5rem and
-  wraps every title in the two sections that matter most. So the day column costs exactly what the bare
-  day number cost, and nothing was taken from the title.
+- **The column holds no year, and 2rem is why**: a short month fits that box in both alphabets and a
+  month with its year is two and a half times wider, which takes the column to 5rem and wraps every
+  title in the two sections that matter most. `.tcard__date` in `app.css` holds the measured figures and
+  is the only place they appear. So the date column costs exactly what the bare day number cost.
 - A ROW STATES ITS YEAR only where nothing else on screen gives it one, which is two clauses and one
   idea: the heading above does not name this row's month — a calendar heading says "April 2027" over
   rows that are all April 2027's — and the year is not the board's own, a date inside the year the

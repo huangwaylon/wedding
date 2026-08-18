@@ -183,8 +183,9 @@ report.rowDates = await evaluate(`
     years: [...group.querySelectorAll('.tcard__year')].map((n) => n.textContent),
   }))
 `)
-/* The month is why the column could not hold the year: 2rem takes 'Oct' and '12月' and neither
-   'Oct 2026' nor '2026年10月'. Measured here rather than assumed, in whatever locale the fixture is. */
+/* The figures behind `.tcard__date`'s 2rem, measured rather than assumed and in whatever locale the
+   fixture runs in: the box holds a short month in either alphabet and could not hold one carrying a
+   year. `lines` is the tile's height, which is what the row grew by. */
 report.dateColumn = await evaluate(`
   (() => {
     const box = document.querySelector('.tcard__date')

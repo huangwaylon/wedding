@@ -387,11 +387,13 @@
    two lifted sections above it name a STATE, so a heading-shaped rule left the rows that matter most
    as a bare number captioned on the meta line, and the same date then read two ways on one screen.
 
-   2rem holds both lines, which is what makes this affordable: the year is what did not fit —
-   'Sep 2026' measures 60px and '2026年9月' 67px, against 'Sep' at 24px and '12月' at 31px (measured
-   over CDP) — so the year sits on the meta line, on the rows nothing else gives one to. `flex: none`,
-   or a long title squeezes the one thing a month of rows is scanned for; the box owns the width so a
-   one- and a two-digit day share a centre. Never state-coloured — see primitives.css. */
+   2rem holds both lines, and THE YEAR IS WHAT DOES NOT FIT. Measured over CDP at 13px, which is the
+   only home for these figures: a short month is 22.3–24.3px in English and 21.4–27.5px in Japanese,
+   inside a 32px box — but 'Sep 2026' is 60px and '2026年10月' 73.2px, which takes the column to 5rem
+   and wraps every title in the two sections that matter most. So the year sits on the meta line, on
+   the rows nothing else gives one to. `flex: none`, or a long title squeezes the one thing a month of
+   rows is scanned for; the box owns the width so a one- and a two-digit day share a centre. Never
+   state-coloured — see primitives.css. */
 .tcard__date {
   flex: none;
   display: flex;

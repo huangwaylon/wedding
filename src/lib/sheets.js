@@ -144,6 +144,23 @@ function batchUpdateValues(spreadsheetId, data) {
   })
 }
 
+/**
+ * Rows onto the end of a tab, and the one place the append verb and its two options are spelled.
+ * `INSERT_ROWS` rather than `OVERWRITE`, so an append can never land on a row somebody added in the
+ * Sheets ui while this was in flight; empty is a no-op, as with the two wrappers around it.
+ */
+function appendRows(spreadsheetId, range, values) {
+  if (!values.length) return Promise.resolve({})
+  return request(
+    `/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append`,
+    {
+      method: 'POST',
+      params: { valueInputOption: RAW, insertDataOption: 'INSERT_ROWS' },
+      body: { values },
+    },
+  )
+}
+
 function batchUpdateSheet(spreadsheetId, requests) {
   if (!requests.length) return Promise.resolve({})
   return request(`/${encodeURIComponent(spreadsheetId)}:batchUpdate`, {
@@ -324,7 +341,7 @@ async function openGrid(spreadsheetId) {
  * written back in canonical order. A column `TASK_COLUMNS` does not name is dropped.
  *
  * It does not clear anything past the last column it knows and must not start. Every range derives from
- * `TASK_COLUMNS`, so a stray column J cannot shift an index, and wiping it would delete the column
+ * `TASK_COLUMNS`, so a stray column K cannot shift an index, and wiping it would delete the column
  * a newer deployment appends.
  *
  * One write of the whole grid, so Google applies it atomically; without a lock it cannot promise
@@ -390,16 +407,7 @@ export async function createTasks(spreadsheetId, tasks) {
   // A replayed mixed batch can need both halves. Sequential, in one fixed order, so the result
   // matches re-sending each edit; an append shifts nothing the in-place ranges name.
   if (data.length) await batchUpdateValues(spreadsheetId, data)
-  if (fresh.length) {
-    await request(
-      `/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(TASKS_RANGE)}:append`,
-      {
-        method: 'POST',
-        params: { valueInputOption: RAW, insertDataOption: 'INSERT_ROWS' },
-        body: { values: fresh },
-      },
-    )
-  }
+  await appendRows(spreadsheetId, TASKS_RANGE, fresh)
 }
 
 /**
@@ -486,16 +494,7 @@ export async function setConfig(spreadsheetId, config) {
   const appended = Object.keys(config)
     .filter((key) => !seen.has(key))
     .map((key) => [key, cellText(config[key])])
-  if (appended.length) {
-    await request(
-      `/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(CONFIG_RANGE)}:append`,
-      {
-        method: 'POST',
-        params: { valueInputOption: RAW, insertDataOption: 'INSERT_ROWS' },
-        body: { values: appended },
-      },
-    )
-  }
+  await appendRows(spreadsheetId, CONFIG_RANGE, appended)
 }
 
 /**
