@@ -115,6 +115,21 @@ describe('taskProgress: states', () => {
     expect(stateOf('sometime')).toBe(STATE.NODATE)
   })
 
+  it('reads a DUE cell somebody typed a clock time into', () => {
+    // `Code.gs`'s `readCell` hands the anonymous read '2027-01-01T00:00' for any cell the Sheets ui
+    // coerced to a Date, and a board written before dates lost their clock times holds one in every
+    // row. Read raw, every one of those rows was No date — sorted last, counted 0, no urgency — while
+    // the editor's own field showed the date, because `draftFrom` normalises inbound. The state, the
+    // distance and the month all have to come off the same normalised day.
+    expect(stateOf('2027-01-20T00:00')).toBe(STATE.SOON)
+    expect(stateOf('2027-01-05T23:59')).toBe(STATE.OVERDUE)
+    const soon = taskProgress(task({ due: '2027-01-09T09:30' }), TODAY)
+    expect(soon.dated).toBe(true)
+    expect(soon.days).toBe(3)
+    // And it lands in the month it names rather than in the undated group.
+    expect(taskProgress(task({ due: '2027-01-20T00:00' }), TODAY).thisMonth).toBe(true)
+  })
+
   it('reports the signed distance, which is what a row prints', () => {
     expect(taskProgress(task({ due: '2027-01-09' }), TODAY).days).toBe(3)
     expect(taskProgress(task({ due: '2027-01-03' }), TODAY).days).toBe(-3)

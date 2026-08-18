@@ -732,9 +732,10 @@ describe('Plan', () => {
   })
 
   it('leaves an undated row in the group that says so, whatever its start date', () => {
-    // Anybody can empty the cell by hand, and such a row has to sort last into its own group: under
-    // Ongoing it would read as progress while the one thing wrong with it — no date at all — is the
-    // reason it is there.
+    // Anybody can empty the cell by hand, and such a row has to sort last into its own group: lifted
+    // into This month it would read as work in hand while the one thing wrong with it — no date at
+    // all — is the reason it is there. The absence check is the OLD section name, which no board may
+    // print again.
     const list = rows([
       task({ id: 'a', due: '', start: '2027-01-01' }),
       task({ id: 'b', title: 'Second', due: '2027-03-20' }),

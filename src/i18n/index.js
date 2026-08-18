@@ -27,6 +27,9 @@ function numberFormat(locale) {
 }
 
 /**
+ * CLDR category for a count, never a `count === 1` ternary: `ja` has `other` alone, and a ternary
+ * would put an English plural rule on a Japanese string. The `Intl.PluralRules` instance is memoised
+ * because constructing one costs tens of microseconds and every counted string goes through here.
  */
 function selectPlural(locale, count) {
   let rules = pluralRules.get(locale)
@@ -54,6 +57,13 @@ function lookup(locale, key) {
 }
 
 /**
+ * `{name}` substitution, and the one place a value becomes text. A NUMBER is formatted through
+ * `Intl.NumberFormat`, which is what makes `{count} days` read correctly in every locale — and is
+ * also a trap: it GROUPS, so a year passed as a number renders as '2,026'. Anything that is a string
+ * of digits rather than a quantity has to arrive as a string (see `plan.rowYear`).
+ *
+ * An unknown placeholder is left as typed rather than blanked: a visible `{name}` is a bug report,
+ * an empty gap is a sentence with a hole in it.
  */
 export function interpolate(template, vars, locale) {
   if (!vars) return template
@@ -65,6 +75,9 @@ export function interpolate(template, vars, locale) {
 }
 
 /**
+ * The lookup plus interpolation. A catalog value is a string or, for a counted noun, an object keyed
+ * by CLDR category; `?? entry.other` keeps an unexpected category readable rather than rendering
+ * `undefined`, which is the one failure a reader could not diagnose.
  */
 export function translate(locale, key, vars) {
   const entry = lookup(locale, key)
@@ -128,6 +141,9 @@ export function t(key, vars) {
 }
 
 /**
+ * The React face of the singleton: subscribed through `useSyncExternalStore`, so a locale change
+ * re-renders every component that reads it without a provider anywhere. Memoised on the locale, or
+ * the new object identity re-renders the tree on every parent render instead.
  */
 export function useT() {
   const locale = useSyncExternalStore(onLocaleChange, getLocale, getLocale)

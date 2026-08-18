@@ -51,8 +51,8 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
   Google's `Automatic` format. Deliberate — the repair path is the most delicate write there is, and the
   symptom is the bullet above, which `due` already has on every board. README records it.
 - These are the two places a planner and an editor see different boards, and until `Code.gs` is
-  redeployed the whole **Ongoing** section is a third: the read drops a column it does not know rather
-  than shifting the rest.
+  redeployed the RUNNING half of **This month** is a third: the read drops a column it does not know
+  rather than shifting the rest, so an anonymous read sees no `start` and lifts nothing by it.
 - The client stamps `created_at` and `updated_at`, so a wrong device clock can backdate a row — traded for a
   one-hop write, and neither is load-bearing. `created_at` is read off the existing row, so a replay cannot
   restamp it. `taskToRow` omits both, which makes it `TaskDetail`'s change fingerprint; writes use
@@ -73,8 +73,13 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
   about a moment rather than a date.
 - Overdue is `due < today` on day strings. `now >= instantOf(due)` makes every task overdue at 00:01 on the
   morning it is due; `test/progress.test.js` pins both sides.
-- `normalizeDay` slices a clock time off, and that is load-bearing: `type=date` renders an unparseable value
-  as blank, so `draftFrom` normalises inbound too or the first commit clears a live date.
+- `normalizeDay` slices a clock time off, and that is load-bearing on THREE paths, because `readCell`
+  hands the anonymous read `2027-01-01T00:00` for any cell the Sheets ui coerced to a Date and a board
+  written before dates lost their times holds one in every row: `type=date` renders an unparseable value
+  as blank, so `draftFrom` normalises inbound or the first commit clears a live date; `taskProgress`
+  normalises `due` and `start`, or such a row is No date — sorted last, counted 0, no urgency — while the
+  editor's field shows the date correctly; and `monthOf`/`dayOfMonth`/`yearOf`/`daysBetween` normalise so
+  nothing downstream has to.
 - `useToday` is the app's whole clock: today's date in the board's zone, as a day string, polled on a
   15-minute wall-clock boundary — exact, every IANA offset being a whole number of quarter-hours. A
   millisecond timestamp re-rendered `App` and the unmemoised list once a minute for a daily value. `Hero`
@@ -135,7 +140,8 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
 - No lifted section takes the wedding plaque or a colour of its own: the tint is a claim about a month,
   and the rows underneath already carry the state.
 - An UNDATED row is never lifted, whatever its start date: it sorts last into the group that says so,
-  and under **Ongoing** it would read as progress while the one thing wrong with it is why it is there.
+  and in **This month** it would read as work in hand while the one thing wrong with it is why it is
+  there.
 - **EVERY ROW STATES ITS OWN DATE, in one column, month over day** (`.tcard__date` — `Oct` at 13px over
   `12` at 24px). It is the same shape under a section as under a month heading, so no date has to be
   read against its context: a bare `20` under "This month · January 2027" read as the 20th of January

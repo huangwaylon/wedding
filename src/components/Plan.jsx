@@ -155,6 +155,11 @@ export default function Plan({
             {group.tasks.map((task) => (
               <TaskCard
                 key={task.id}
+                /* FIRST, so nothing a caller happens to pass can overwrite what this component
+                   decides below: `cardProps` is everything `Plan` did not destructure, and spread
+                   last it would let a stray `today` or `headingMonth` — the two props that decide
+                   whether a row states its year — win over the values computed here. */
+                {...cardProps}
                 task={task}
                 open={Boolean(expanded?.has(task.id))}
                 onOpen={onExpand}
@@ -164,7 +169,6 @@ export default function Plan({
                    calendar the reader is living in supplies one. See `TaskCard`. */
                 today={today}
                 headingMonth={group.month}
-                {...cardProps}
               />
             ))}
           </section>

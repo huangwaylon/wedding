@@ -59,12 +59,14 @@ export default function TaskCard({
   const subtasks = task.subtasks ?? []
   const contentId = `tcard-${task.id}`
 
-  /**
-   */
+  /** There is something behind the head only if a checklist exists or an editor can open one: a
+      viewer's row with no items is a plain line of text, and `aria-expanded` on it would promise a
+      disclosure that never comes. */
   const expandable = canEdit || subtasks.length > 0
 
-  /**
-   */
+  /** The row IN WORDS, and the one place the date is spelled out in full with its year: the visible
+      row splits it across a column and a meta line, and none of that reaches a screen reader as a
+      date. The state is a word here too, so the dot's hue is never the only channel. */
   const when = dated ? formatDay(task.due, { locale, year: true }) : t('state.nodate')
   const label = tally
     ? t('plan.cardLabelSubs', {

@@ -17,7 +17,7 @@
  */
 
 import { isDone, isLive } from '../schema.js'
-import { daysBetween, isValidDay, monthOf, normalizeDay } from './time.js'
+import { daysBetween, monthOf, normalizeDay } from './time.js'
 
 /**
  * How near a due date has to be to count as soon. Two weeks: near enough to be this fortnight's
@@ -99,9 +99,17 @@ function clamp01(value) {
  *   calendar days until the due date
  */
 export function taskProgress(task, today, subtasks = []) {
-  const dated = isValidDay(task?.due)
+  /* NORMALISED, exactly like `start` below and for the same reason: `Code.gs`'s `readCell` hands the
+     anonymous read '2027-01-01T00:00' for any cell the Sheets ui coerced to a Date, and a board
+     written before dates lost their clock times holds one in every row. A raw `isValidDay` here read
+     every such row as having no date at all — sorted last, counted 0, no urgency — while the editor's
+     field, which normalises inbound, showed the date correctly. Everything below compares day
+     strings, and `daysBetween` and `monthOf` normalise too; this was the one place a readable day
+     could still report as no date. */
+  const due = normalizeDay(task?.due)
+  const dated = Boolean(due)
   const done = isDone(task)
-  const days = dated ? daysBetween(today, task.due) : null
+  const days = dated ? daysBetween(today, due) : null
 
   /**
    * The subtask tally. Ticking is a count rather than an estimate; this app never asks how far
@@ -151,7 +159,7 @@ export function taskProgress(task, today, subtasks = []) {
    */
   const start = normalizeDay(task?.start)
   const started = Boolean(start) && start <= today
-  const dueThisMonth = dated && monthOf(task.due) === monthOf(today)
+  const dueThisMonth = dated && monthOf(due) === monthOf(today)
   const running = started && !done && dated && days > 0
 
   return {
