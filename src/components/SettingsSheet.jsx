@@ -222,8 +222,10 @@ export default function SettingsSheet({
 
       <section className="section">
         <h3 className="section__title">{t('settings.language')}</h3>
-        <p className="section__hint">{t('settings.device')}</p>
-        <div className="swatches">
+        <p className="hint section__hint">{t('settings.device')}</p>
+        {/* Named, like the filter chips: a row of `aria-pressed` buttons with no group name is read
+            as loose controls, the `<h3>` above it being associated with nothing. */}
+        <div className="swatches" role="group" aria-label={t('settings.language')}>
           {SUPPORTED.map((tag) => (
             <button
               type="button"
@@ -240,7 +242,7 @@ export default function SettingsSheet({
 
       <section className="section">
         <h3 className="section__title">{t('settings.accent')}</h3>
-        <div className="swatches">
+        <div className="swatches" role="group" aria-label={t('settings.accent')}>
           {ACCENTS.map((name) => (
             <button
               type="button"
@@ -265,7 +267,7 @@ export default function SettingsSheet({
           <>
             {/* Above the revoke, being the one somebody wants. The label names the direction the
                 tap goes, the same rule the row's Edit/Done toggle follows. */}
-            <p className="section__hint">{t('settings.readOnlyHint')}</p>
+            <p className="hint section__hint">{t('settings.readOnlyHint')}</p>
             <button
               type="button"
               className="btn btn--secondary btn--block"
@@ -275,7 +277,7 @@ export default function SettingsSheet({
               {readOnly ? t('settings.readOnlyOff') : t('settings.readOnlyOn')}
             </button>
 
-            <p className="section__hint">{t('access.revokeHint')}</p>
+            <p className="hint section__hint">{t('access.revokeHint')}</p>
             <button type="button" className="btn btn--secondary btn--block" onClick={onRevokeEditing}>
               {t('access.revoke')}
             </button>
@@ -315,7 +317,7 @@ export default function SettingsSheet({
         <section className="section">
           <h3 className="section__title">{t('settings.maintenance')}</h3>
           <DeletedList tasks={deletedTasks} onRestore={onRestore} />
-          <p className="section__hint">
+          <p className="hint section__hint">
             {t('settings.compactHint', { count: deletedTasks.length })}
           </p>
           <button type="button" className="btn btn--secondary btn--block" onClick={onCompact}>

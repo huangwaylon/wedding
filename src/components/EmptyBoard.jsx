@@ -10,18 +10,14 @@
 
 import { TEMPLATES } from '../lib/templates.js'
 import { useT } from '../i18n/index.js'
-import { ICON_SIZE, RingsIcon } from './icons.jsx'
+import EmptyState from './EmptyState.jsx'
+import { RingsIcon } from './icons.jsx'
 
 export default function EmptyBoard({ canEdit, weddingDay, seeding, onSeed, onOpenSettings }) {
   const { t } = useT()
 
   return (
-    <section className="card empty">
-      <p aria-hidden="true">
-        <RingsIcon className="empty__mark" style={ICON_SIZE.display} />
-      </p>
-      <h2 className="empty__title">{t('empty.title')}</h2>
-
+    <EmptyState mark={RingsIcon} title={t('empty.title')}>
       {!canEdit ? (
         <p className="empty__body">{t('empty.viewer')}</p>
       ) : !weddingDay ? (
@@ -53,6 +49,6 @@ export default function EmptyBoard({ canEdit, weddingDay, seeding, onSeed, onOpe
           ))}
         </div>
       )}
-    </section>
+    </EmptyState>
   )
 }

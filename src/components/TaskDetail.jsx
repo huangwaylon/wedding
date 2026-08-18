@@ -25,10 +25,7 @@ import { useT } from '../i18n/index.js'
 import EditToggle from './EditToggle.jsx'
 import SubtaskList from './SubtaskList.jsx'
 import {
-  CategoryField,
-  DueField,
-  StartField,
-  TitleField,
+  TaskFieldSet,
   codesFor,
   draftFrom,
   fieldErrors,
@@ -146,43 +143,19 @@ export default function TaskDetail({
   return (
     <>
       {editing ? (
-        /* No field reports focus: the session reports it for the whole of itself. */
+        /* No field reports focus: the session reports it for the whole of itself. Both days or
+           neither — `dated` is false for a subtask — and `TaskFieldSet` owns their order. */
         <div className="editor">
-          <TitleField
-            id={fieldId('title')}
+          <TaskFieldSet
+            idFor={fieldId}
             skin="editor"
-            value={draft.title}
-            error={errors.title}
-            onChange={(title) => set({ title })}
-            /* Return ends the session, not the field: there is one write. */
-            onEnter={() => done()}
-          />
-          {/* Both days or neither, in the order they happen: the day work starts, then the day it is
-              due. Each label says whether it is optional or required, which is what the old
-              required-day-first ordering was standing in for. */}
-          {dated ? (
-            <>
-              <StartField
-                id={fieldId('start')}
-                skin="editor"
-                value={draft.start}
-                onChange={(start) => set({ start })}
-              />
-              <DueField
-                id={fieldId('due')}
-                skin="editor"
-                value={draft.due}
-                error={errors.due}
-                onChange={(due) => set({ due })}
-              />
-            </>
-          ) : null}
-          <CategoryField
-            id={fieldId('category')}
-            skin="editor"
-            value={draft.category}
+            draft={draft}
+            errors={errors}
             categories={categories}
-            onChange={(category) => set({ category })}
+            dated={dated}
+            onChange={set}
+            /* Return ends the SESSION, not the field: there is one write. */
+            onEnter={() => done()}
           />
         </div>
       ) : started ? (
@@ -191,7 +164,7 @@ export default function TaskDetail({
            it already carry it, and a line restating it was the largest thing in an open row for a
            value nobody had to look up. A row with no start date shows nothing at all. */
         <p className="tcard__fact">
-          <span className="tcard__factLabel">{t('form.start')}</span>{' '}
+          <span className="tcard__fact-label">{t('form.start')}</span>{' '}
           {/* The space is for the accessibility tree: without it "Start" and "Wed" are read as one
               word. */}
           <span>{formatDayLong(task.start, { locale })}</span>

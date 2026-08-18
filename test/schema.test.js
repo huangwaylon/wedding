@@ -184,7 +184,11 @@ describe('taskToRow', () => {
     const row = taskToRow(task)
     expect(row).not.toHaveProperty('created_at')
     expect(row).not.toHaveProperty('updated_at')
-    expect(JSON.stringify(taskToRow(task))).toBe(JSON.stringify(taskToRow({ ...task })))
+    // And every OTHER cell is in it, or a field this omits would read as unchanged for ever: the
+    // fingerprint is only honest if it covers the whole row a write sends.
+    expect(Object.keys(row).sort()).toEqual(
+      TASK_COLUMNS.filter((name) => !['created_at', 'updated_at'].includes(name)).sort(),
+    )
   })
 
   it('refuses a row that cannot be identified or read', () => {

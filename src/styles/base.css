@@ -165,9 +165,10 @@ hr {
 }
 
 /* ---- Numerals ----------------------------------------------------------
-   For every figure that sits in a column and must not jitter: a row's day, its checklist tally, a
-   month's tally, the countdown, the board's count. Not on the hero percentage: `tabular-nums` gives
-   every digit the width of a `0`, so a standalone value takes proportional figures. */
+   For every figure that must not jitter, whether it sits in a column or changes in place: a row's day,
+   its checklist tally, a month's tally, a chip's count, the countdown, and the hero percentage — that
+   one shares a flex row with the meter, so proportional digits move the bar's left edge every time the
+   figure changes. Worn in the markup, never restated as the two properties in a rule. */
 .tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;

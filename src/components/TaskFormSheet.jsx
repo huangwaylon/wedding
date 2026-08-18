@@ -13,10 +13,7 @@ import { useState } from 'react'
 import { useT } from '../i18n/index.js'
 import BottomSheet from './BottomSheet.jsx'
 import {
-  CategoryField,
-  DueField,
-  StartField,
-  TitleField,
+  TaskFieldSet,
   codesFor,
   draftFrom,
   fieldErrors,
@@ -64,30 +61,14 @@ export default function TaskFormSheet({ categories, onSave, onClose }) {
       {/* The submit button lives in the sticky footer, outside this element, which is what the
           `form` attribute is for: inside, Save would sit under the keyboard. */}
       <form id="task-form" onSubmit={submit} noValidate>
-        <TitleField
-          id="task-title"
-          value={draft.title}
-          error={errors.title}
-          onChange={(title) => set({ title })}
-        />
-        {/* The two days in the order they happen, each stating whether it is optional or required.
-            Both open BLANK, this one included: nothing here may invent a date. */}
-        <StartField
-          id="task-start"
-          value={draft.start}
-          onChange={(start) => set({ start })}
-        />
-        <DueField
-          id="task-due"
-          value={draft.due}
-          error={errors.due}
-          onChange={(due) => set({ due })}
-        />
-        <CategoryField
-          id="task-category"
-          value={draft.category}
+        {/* The same four fields the row's editor draws, in the same order, from one place — and both
+            days open BLANK here: nothing may invent a date. */}
+        <TaskFieldSet
+          idFor={(name) => `task-${name}`}
+          draft={draft}
+          errors={errors}
           categories={categories}
-          onChange={(category) => set({ category })}
+          onChange={set}
         />
       </form>
     </BottomSheet>

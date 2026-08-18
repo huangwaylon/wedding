@@ -17,7 +17,6 @@
   color: var(--ink-3);
 }
 
-
 .label {
   display: block;
   font-size: var(--fs-caption);
@@ -357,9 +356,9 @@
   color: var(--ink-3);
 }
 
+/* Tabular figures come from `.tnum` in the markup, as every other figure in the app does — a second
+   spelling of the same two properties is a second place to change them. */
 .chip__count {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
   /* --ink-3, not `opacity: 0.75`: 0.75 of --ink-2 composites to 4.15:1 at 13px, under the 4.5:1
      floor every ink is measured against. --ink-3 is the lightest that passes. */
   color: var(--ink-3);
@@ -586,9 +585,9 @@
   margin-bottom: var(--space-1);
 }
 
+/* Worn WITH `.hint`, the way `.notes__warning` is: the size and the ink are that rule's, and this
+   adds only the space a section needs under it. */
 .section__hint {
-  font-size: var(--fs-caption);
-  color: var(--ink-3);
   margin-bottom: var(--space-3);
 }
 

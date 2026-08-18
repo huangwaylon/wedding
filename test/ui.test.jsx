@@ -197,10 +197,18 @@ const COLOURED = [STATE.OVERDUE, STATE.SOON]
 
 describe('the state table', () => {
   it('maps exactly the coloured states, once, in one place', () => {
-    // Exact-set equality against the states derived from `progress.js`: a sixth state fails here
-    // and forces the decision, a no-op re-added for `later` or `nodate` fails here too, and a
-    // subset check would be an assertion that always passes. Nothing else anywhere maps a state
-    // to a colour.
+    // Exact-set equality on both sides. The states first, because the FILTER below hides a new one:
+    // a sixth `STATE` with no `.dot--*` rule drops straight out of it, so this assertion alone read
+    // "the coloured ones are still overdue and soon" and said nothing about the addition.
+    expect(STATES, 'a sixth STATE is a decision, not an addition').toEqual([
+      'done',
+      'overdue',
+      'soon',
+      'later',
+      'nodate',
+    ])
+    // Then the table: a no-op re-added for `later` or `nodate` fails here, and a subset check would
+    // always pass. Nothing else anywhere maps a state to a colour.
     expect(STATES.filter((state) => stateEntry(state) !== null)).toEqual(COLOURED)
     for (const state of COLOURED) {
       expect(stateEntry(state), `${state} sets no fill`).toMatch(/--state-fill:/)
@@ -319,15 +327,19 @@ describe('an unsettled row', () => {
 })
 
 describe('typography and Japanese', () => {
-  it('has no letter-spacing outside the digits-only hero figure', () => {
-    // Tracking inserts a gap between every kana: 「このつき」 becomes 「こ の つ き」.
-    const offenders = []
-    for (const match of all.matchAll(/([.#][\w-]+[^{}]*)\{[^}]*letter-spacing:\s*([^;]+);/g)) {
-      if (/letter-spacing:\s*0/.test(match[0])) continue
-      if (match[1].includes('overall__percent')) continue
-      offenders.push(match[1].trim())
+  it('has no letter-spacing anywhere, at any value but zero', () => {
+    // Tracking inserts a gap between every kana: 「このつき」 becomes 「こ の つ き」. There is no
+    // carve-out: the exemption this test used to carry named a class the app does not have, so a
+    // tracked hero figure would have failed the one test whose name says it is allowed.
+    //
+    // The value is READ rather than matched, and the whole declaration block with it: an assertion
+    // that only looks for the property passes at zero occurrences, which is what this was doing.
+    const tracked = []
+    for (const [, selector, body] of all.matchAll(/([.#][\w-]+[^{}]*)\{([^}]*)\}/g)) {
+      const found = /letter-spacing:([^;}]+)/.exec(body)
+      if (found && found[1].trim() !== '0') tracked.push(`${selector.trim()} (${found[1].trim()})`)
     }
-    expect(offenders, 'letter-spacing outside the hero figure').toEqual([])
+    expect(tracked, 'letter-spacing must be 0 wherever text can be Japanese').toEqual([])
   })
 
   it('has no text-transform anywhere', () => {
@@ -478,10 +490,13 @@ describe('touch ergonomics', () => {
     expect(ruleFor(primitives, '.chip')).toMatch(/min-height: var\(--tap-target\)/)
   })
 
-  it('draws a control boundary the eye can find', () => {
+  it('draws a control boundary the eye can find, on BOTH pill controls', () => {
     // 1.4.11 wants 3:1 for the boundary identifying a control; --line measures ~1.2:1, which
-    // reads borderless beside the compliant buttons next to it.
+    // reads borderless beside the compliant buttons next to it. `.swatch` is the same widget in
+    // Settings and drifted to --line while only its SELECTED state was compliant, through the
+    // accent border — so an unpressed accent pill had no findable edge at all.
     expect(ruleFor(primitives, '.chip')).toMatch(/border: 1px solid var\(--line-input\)/)
+    expect(ruleFor(app, '.swatch')).toMatch(/border: 1px solid var\(--line-input\)/)
   })
 
   it('makes a disabled chip look disabled', () => {
@@ -495,6 +510,9 @@ describe('touch ergonomics', () => {
     // tokens.css is measured against — and the count is the reason the chip earns its space.
     const count = ruleFor(primitives, '.chip__count')
     expect(count).not.toMatch(/opacity/)
+    // And its tabular figures come from `.tnum` in the markup, like every other figure in the app:
+    // a second spelling of those two properties is a second place to change them.
+    expect(count).not.toMatch(/font-variant-numeric|font-feature-settings/)
     expect(count).toMatch(/color: var\(--ink-3\)/)
   })
 
@@ -1118,7 +1136,7 @@ describe('the open row', () => {
     // The type treatment is shared with `.editor__label` — one quiet label, two places it sits —
     // so it is declared on a group and `ruleFor`, which anchors on a single selector, cannot see
     // it. Read the group instead: a per-class copy is exactly what this consolidated.
-    const quietLabel = /\.editor__label,\n\.tcard__factLabel \{([^}]*)\}/.exec(code(app))
+    const quietLabel = /\.editor__label,\n\.tcard__fact-label \{([^}]*)\}/.exec(code(app))
     expect(quietLabel, 'the shared quiet-label rule is missing').toBeTruthy()
     expect(quietLabel[1]).toMatch(/color: var\(--ink-3\)/)
     expect(quietLabel[1]).toMatch(/font-size: var\(--fs-caption\)/)

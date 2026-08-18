@@ -5,9 +5,10 @@
  * earns its place by being the only thing that can say a task is ALREADY MINE TO DO, which no due
  * date answers; it is optional, and the rows that do not use it show no trace of it.
  *
- * THE TWO DAYS ARE DRAWN IN THE ORDER THEY HAPPEN, start then due, and each says whether it is
- * optional or required. Those two facts go together: the required day led before, which put a task's
- * span back to front to carry a claim a label can simply make.
+ * THE TWO DAYS ARE DRAWN IN THE ORDER THEY HAPPEN, start then due, and each label states whether it
+ * is optional or required. Neither half works alone: ordering alone asks for the end of a span before
+ * its beginning, and labels alone leave the reader to reorder it. `TaskFieldSet` is where the order
+ * lives, so the two surfaces cannot disagree about it.
  *
  * Two surfaces edit a task and both buffer a whole draft (`TaskDetail`, `TaskFormSheet`); every field
  * is pure value + onChange, so neither commits on its own. Both days are native `type=date`, whose
@@ -131,10 +132,9 @@ function FieldError({ code }) {
 
 /**
  * A label, with the note that its field is optional or required where that is not obvious. The two
- * days are the whole reason this exists: they are adjacent, they look identical, and one refuses the
- * save without a value while the other can be emptied again — a difference nothing on screen used to
- * state until the save was refused. It is a note ON the label, same size and a lighter weight, which
- * is `.plan__aside`'s recipe: a qualifier at label weight is a second label.
+ * days are the whole reason it exists: they are adjacent, they look identical, and one refuses the
+ * save without a value while the other can be emptied again. It is a note ON the label, separating on
+ * WEIGHT alone — it inherits the label's colour, so it reads at the label's tier in both skins.
  *
  * The space before it is for the accessibility tree, not the layout — the label names the input, so
  * without one "Start" and "optional" are announced as one word.
@@ -178,10 +178,7 @@ export function TitleField({ id, skin, value, error, onChange, onEnter }) {
 }
 
 /**
- * The optional day, and it comes FIRST: the two days are a task's span, so they are drawn in the
- * order they happen — a form that asks for the end before the beginning is asking the reader to
- * reorder it in their head. What kept the required one first was that nothing said which was which;
- * the labels say it now, which is the fix that ordering was standing in for.
+ * The optional day, first of the two — see the header for why the span reads in the order it happens.
  *
  * It is the only field in the app that can be emptied again, and it carries its own clear button
  * because the platform does not: iOS's date wheel offers no way back to blank, so without one a start
@@ -227,8 +224,7 @@ export function StartField({ id, skin, value, onChange }) {
 
 /**
  * The day the task is due, and the only date this app REQUIRES — `validateTask` returns `MISSING_DUE`
- * without one, and the label says so rather than leaving the reader to discover it when Save refuses.
- * Second of the two, the span reading in the order it happens.
+ * without one, and the label says so rather than leaving it to be discovered when Save refuses.
  *
  * Full width on a row of its own, which is half of why it fits: a two-track grid's per-column minimum
  * is narrower than a `type=date` control's intrinsic width, and that width is a floor.
@@ -288,5 +284,64 @@ export function CategoryField({ id, skin, value, categories, onChange }) {
         )}
       </select>
     </div>
+  )
+}
+
+/**
+ * THE FOUR FIELDS, in the one order they may be drawn: a title, the day it starts, the day it is due,
+ * a category. Both surfaces render this rather than a copy of it — the create sheet had its own
+ * assembly and no test at all, so the ordering rule and the two label hints were pinned on the
+ * editor's copy alone and the other was free to drift.
+ *
+ * `dated` is false for a subtask: `validateTask` returns early for anything with a `parentId`, so a
+ * day offered there would be stored unvalidated. `idFor` is a function rather than a prefix because
+ * the two surfaces number their controls differently — one per task, one per sheet — and a duplicate
+ * `id` breaks the `htmlFor` that names every field.
+ */
+export function TaskFieldSet({
+  idFor,
+  skin,
+  draft,
+  errors,
+  categories,
+  dated = true,
+  onChange,
+  onEnter,
+}) {
+  return (
+    <>
+      <TitleField
+        id={idFor('title')}
+        skin={skin}
+        value={draft.title}
+        error={errors.title}
+        onChange={(title) => onChange({ title })}
+        onEnter={onEnter}
+      />
+      {dated ? (
+        <>
+          <StartField
+            id={idFor('start')}
+            skin={skin}
+            value={draft.start}
+            onChange={(start) => onChange({ start })}
+          />
+          <DueField
+            id={idFor('due')}
+            skin={skin}
+            value={draft.due}
+            error={errors.due}
+            onChange={(due) => onChange({ due })}
+          />
+        </>
+      ) : null}
+      <CategoryField
+        id={idFor('category')}
+        skin={skin}
+        value={draft.category}
+        categories={categories}
+        onChange={(category) => onChange({ category })}
+      />
+    </>
   )
 }

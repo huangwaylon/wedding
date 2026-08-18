@@ -36,7 +36,7 @@ export default function FilterChips({ counts, filter, onFilter }) {
           >
             {name === FILTER_ALL ? t('filter.all') : t(`state.${name}`)}
             <span
-              className={`chip__count${name === STATE.OVERDUE ? ' chip__count--alert' : ''}${
+              className={`chip__count tnum${name === STATE.OVERDUE ? ' chip__count--alert' : ''}${
                 count === 0 ? ' chip__count--empty' : ''
               }`}
             >

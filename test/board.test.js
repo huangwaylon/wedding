@@ -59,7 +59,10 @@ describe('the mutation primitive', () => {
   })
 
   it('is the only place that classifies a failure', () => {
-    expect(body.match(/API_ERROR\.TRANSIENT/g)?.length ?? 0).toBeLessThanOrEqual(2)
+    // Exactly one, and no `?? 0`: with the fallback this passed at ZERO occurrences, so deleting the
+    // default that classifies an unrecognised failure — leaving `isTerminal(undefined)` to decide
+    // whether a notice appears — read as a pass.
+    expect(body.match(/API_ERROR\.TRANSIENT/g)).toHaveLength(1)
     expect(body.match(/code === API_ERROR\.UNAUTHORIZED/g)).toHaveLength(1)
   })
 

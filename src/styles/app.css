@@ -638,8 +638,10 @@
   padding-inline-start: clamp(var(--space-2), 4vw, var(--space-7));
 }
 
+/* The floor stated as a promise rather than inherited, and the name six render tests locate this
+   field by: `.input` sets the same value, and shrinking THIS field to look subordinate is the
+   mistake — mobile Safari zooms on focus below 16px and will not zoom back. See base.css. */
 .subtask-add__field {
-  /* Inherits `.input`'s 16px floor; do not shrink it to look subordinate. See base.css. */
   min-height: var(--tap-target);
 }
 
@@ -714,7 +716,7 @@
    Japanese, where tracking gaps every kana and text-transform only breaks the Latin ones. --ink-3 is
    the lightest ink that passes AA at 13px; a label is information, so not the --ink-4 tier. */
 .editor__label,
-.tcard__factLabel {
+.tcard__fact-label {
   font-size: var(--fs-caption);
   font-weight: 500;
   color: var(--ink-3);
@@ -740,7 +742,7 @@
 }
 
 /* Beside its value on a baseline row, so it must not shrink. */
-.tcard__factLabel {
+.tcard__fact-label {
   flex: none;
 }
 
@@ -878,13 +880,17 @@
   gap: var(--space-2);
 }
 
+/* --line-input, not --line, for the reason `.chip` states: this is an `aria-pressed` control, and
+   1.4.11 wants 3:1 for the boundary identifying one — --line measures ~1.2:1 and reads borderless
+   beside the compliant secondary buttons in the same sheet. Unselected, this was the one control in
+   the app with no findable edge; the accent border only ever covered the selected one. */
 .swatch {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-height: var(--tap-target);
   padding: 0 var(--space-3);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-input);
   border-radius: var(--radius-full);
   font-size: var(--fs-caption);
   color: var(--ink-2);

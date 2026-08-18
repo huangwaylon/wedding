@@ -28,8 +28,9 @@ export default function EditToggle({ editing, busy = false, onToggle }) {
       disabled={busy}
       onClick={onToggle}
     >
-      {busy ? t('common.saving') : null}
-      {busy ? null : editing ? (
+      {busy ? (
+        t('common.saving')
+      ) : editing ? (
         t('common.editDone')
       ) : (
         <>

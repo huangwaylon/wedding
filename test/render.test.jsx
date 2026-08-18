@@ -34,7 +34,8 @@ import Plan from '../src/components/Plan.jsx'
 import SettingsSheet from '../src/components/SettingsSheet.jsx'
 import TabBar, { TABS } from '../src/components/TabBar.jsx'
 import TaskCard from '../src/components/TaskCard.jsx'
-import { draftFrom, taskFromDraft } from '../src/components/TaskFields.jsx'
+import TaskFormSheet from '../src/components/TaskFormSheet.jsx'
+import { draftFrom, fieldErrors, taskFromDraft } from '../src/components/TaskFields.jsx'
 import Toasts from '../src/components/Toasts.jsx'
 
 /** The board's day. Day-granular everywhere, so no instant is needed. */
@@ -1291,14 +1292,14 @@ describe('defaults', () => {
 })
 
 /**
- * What `TaskEditor` hands to `onSave`.
+ * What `TaskDetail` hands to `onSave`.
  *
  * The editor commits `taskFromDraft({ ...draftFrom(task), ...patch }, task)` and passes the
  * result straight through. A static render runs no blur, so the payload is built here from
  * those same two functions, in that same order — not re-derived, which would be a second
  * implementation of the rule and could agree with itself while disagreeing with the editor.
  */
-describe('the payload TaskEditor hands to onSave', () => {
+describe('the payload TaskDetail hands to onSave', () => {
   it('still carries parentId, so a subtask is never silently promoted', () => {
     // THE highest-consequence rule in the editor. `update` rewrites the whole row from the
     // payload, so one built without `parentId` blanks the cell — and a promoted subtask
@@ -1321,7 +1322,7 @@ describe('the payload TaskEditor hands to onSave', () => {
   })
 
   it('is the WHOLE task, so an untouched field commits nothing at all', () => {
-    // `TaskEditor` decides "did this change" by comparing the ROW it is about to write with
+    // `TaskDetail` decides "did this change" by comparing the ROW it is about to write with
     // the row already there. If the payload dropped a field, every blur would differ from the
     // stored row and cost a round trip and a toast.
     const [row] = rows([task({ doneAt: '2027-01-02T00:00:00.000Z' })])
@@ -1358,6 +1359,19 @@ describe('the payload TaskEditor hands to onSave', () => {
     // the empty string here is what `validateTask` turns into MISSING_DUE and the sheet reports on
     // the field; see test/schema.test.js. Defaulting and requiring are different things.
     expect(taskFromDraft(draftFrom(null)).due).toBe('')
+  })
+
+  it('shows ONE message per field, and the more useful of the two due codes', () => {
+    // A code family collapses to the FIRST match: "give it a date" beats "that is not a real date"
+    // on the app's commonest refusal. Nothing else can reach this — the codes come from state inside
+    // `TaskDetail`, so a render never sees them.
+    expect(fieldErrors(['MISSING_TITLE', 'MISSING_DUE'])).toEqual({
+      title: 'MISSING_TITLE',
+      due: 'MISSING_DUE',
+    })
+    expect(fieldErrors(['BAD_DUE', 'MISSING_DUE']).due).toBe('MISSING_DUE')
+    expect(fieldErrors(['BAD_DUE']).due).toBe('BAD_DUE')
+    expect(fieldErrors([])).toEqual({ title: '', due: '' })
   })
 
   it('would RESURRECT a deleted task, which is why the delete disarms the flush', () => {
@@ -1735,5 +1749,44 @@ describe('App’s notes wiring', () => {
     // asked to be on.
     expect(source).toMatch(/useState\(TABS\.PLAN\)/)
     expect(source).not.toMatch(/STORAGE_KEYS\.tab/)
+  })
+})
+
+/**
+ * The create sheet. It renders `TaskFieldSet`, the same four fields the row's editor draws — but from
+ * the other skin and with its own ids, and it is the surface a first task is typed into, so the rules
+ * that live in the ORDER of those fields need pinning on both.
+ */
+describe('the create sheet', () => {
+  const render = () =>
+    renderToStaticMarkup(
+      <TaskFormSheet categories={CATEGORIES} onSave={noop} onClose={noop} />,
+    )
+
+  it('draws the two days in the order they happen, each saying which it is', () => {
+    const html = render()
+    expect(html).toContain('>Start <span class="field__hint">optional</span>')
+    expect(html).toContain('>Due <span class="field__hint">required</span>')
+    expect(html.indexOf('task-start')).toBeLessThan(html.indexOf('task-due'))
+    // Two days and no more, and the required one alone carries the claim in the a11y tree.
+    expect(html.match(/type="date"/g)).toHaveLength(2)
+    expect(html.match(/aria-required="true"/g)).toHaveLength(1)
+    expect(/id="task-due"[^>]*aria-required="true"/.test(html)).toBe(true)
+  })
+
+  it('opens every field BLANK, a defaulted date being an invented one', () => {
+    // Required is not defaulted: a date nobody typed lands in the overdue count and the on-schedule
+    // mark, so anything entered in a hurry reads overdue tomorrow.
+    const html = render()
+    expect(/id="task-due"[^>]*value=""/.test(html)).toBe(true)
+    expect(/id="task-start"[^>]*value=""/.test(html)).toBe(true)
+    expect(/id="task-title"[^>]*value=""/.test(html)).toBe(true)
+  })
+
+  it('puts Save in the sticky footer, outside the form it submits', () => {
+    // Inside, it sits under the keyboard on iOS; the `form` attribute is what reaches it from there.
+    const html = render()
+    expect(html).toContain('form="task-form"')
+    expect(html).toContain('id="task-form"')
   })
 })

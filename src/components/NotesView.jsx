@@ -34,6 +34,7 @@ import { NOTES_MAX_CHARS, notesError } from '../config.js'
 import { toggleBold, toggleBullets, toggleHeading, toggleItalic } from '../lib/markdown.js'
 import { useT } from '../i18n/index.js'
 import EditToggle from './EditToggle.jsx'
+import EmptyState from './EmptyState.jsx'
 import Fab from './Fab.jsx'
 import Markdown from './Markdown.jsx'
 import {
@@ -223,15 +224,11 @@ export default function NotesView({
           <Markdown text={stored} />
         </section>
       ) : (
-        <section className="card empty">
-          <p aria-hidden="true">
-            <NotebookIcon className="empty__mark" style={ICON_SIZE.display} />
-          </p>
-          <h2 className="empty__title">{t('notes.emptyTitle')}</h2>
+        <EmptyState mark={NotebookIcon} title={t('notes.emptyTitle')}>
           {/* A viewer gets the sentence and nothing else: there is no control above for them, so a
               call to action would name something they cannot do. */}
           <p className="empty__body">{t(canEdit ? 'notes.emptyEditor' : 'notes.emptyViewer')}</p>
-        </section>
+        </EmptyState>
       )}
 
       {/* The way in, in the corner the plan tab puts its own. Withheld for the whole session: Done is
