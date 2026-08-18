@@ -18,6 +18,7 @@
 
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
+import { TASK_COLUMNS } from '../src/schema.js'
 
 const SOURCE = readFileSync('apps-script/Code.gs', 'utf8')
 const KEY = 'a'.repeat(64)
@@ -112,14 +113,18 @@ function lastRowOf(sheet) {
  * `nodate` is a state of its own, and a row in it must draw and count as one.
  */
 function seed() {
+  /* Offsets from TODAY, not from a hardcoded date: anchored to a fixed day, every claim in the
+     comments below decays as the calendar moves — "due today" became six days overdue, and the row
+     every open-row probe uses was the one that drifted. */
   const day = (offset) => {
-    const date = new Date(Date.UTC(2026, 7, 12))
+    const date = new Date()
+    date.setUTCHours(0, 0, 0, 0)
     date.setUTCDate(date.getUTCDate() + offset)
     return date.toISOString().slice(0, 10)
   }
-  /* `[id, title, category, due, done_at, start]`. Two rows carry a start date that has passed, so
-     the Ongoing section renders; a1 and a2 are past their date and unfinished, so Past deadline
-     does. a7 has both and is finished, which is the case that must land in neither. */
+  /* `[id, title, category, due, done_at, start]`. Rows carrying a start date that has passed are what
+     make the running half of This month render; a1 and a2 are past their date and unfinished, so Past
+     deadline does. a7 has both and is finished, which is the case that must land in neither. */
   const rows = [
     ['a1', 'Mail the save-the-dates', 'Stationery', day(-43), '', ''],
     ['a2', 'Book the photographer and videographer', 'Photo', day(-1), '', day(-30)],
@@ -131,6 +136,10 @@ function seed() {
        the row that has to print its own. */
     ['a6', 'Order signage, vow books and favours', 'Gifts', day(120), '', day(-14)],
     ['a7', 'Agree the budget and who is contributing', 'Budget', day(-60), '2026-07-01T00:00:00.000Z', day(-90)],
+    /* The one row in another YEAR, and the only reason `report.rowDates.years` can fail: begun ten
+       days ago and due in about fourteen months, so it is lifted into This month, no heading names its
+       year, and the meta line is the only place four digits can come from. */
+    ['a10', 'Book the honeymoon flights', 'Honeymoon', day(430), '', day(-10)],
     // The three with no date at all: `nodate` sorts last, into its own group.
     ['a8', 'Decide about a live band', 'Music', '', '', ''],
     ['a9', 'Ask about corkage', 'Food', '', '', ''],
@@ -146,7 +155,10 @@ function seed() {
   ]
 
   const grid = [
-    ['id', 'title', 'category', 'due', 'done_at', 'created_at', 'updated_at', 'deleted_at', 'parent_id', 'start'],
+    /* THE COLUMN LIST, imported rather than typed: `schema.js` and `Code.gs` are the two places
+       allowed to name a column, and a third copy here would serve a header the client repairs with
+       `relayout()` on every write — exercising the repair path instead of the ordinary one. */
+    TASK_COLUMNS.slice(),
     ...rows.map(([id, title, category, due, doneAt, start]) => [
       id, title, category, due, doneAt, '2026-01-01T00:00:00.000Z', '', '', '', start,
     ]),

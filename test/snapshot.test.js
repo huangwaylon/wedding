@@ -7,6 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readSnapshot, writeSnapshot } from '../src/lib/snapshot.js'
+import { TASK_COLUMNS } from '../src/schema.js'
 import {
   CONFIG_FIELDS,
   DEFAULT_CONFIG,
@@ -79,6 +80,17 @@ describe('snapshot', () => {
     expect(readSnapshot()).toBeNull()
     store.set(STORAGE_KEYS.snapshot, JSON.stringify({ v: 2, tasks: [], config: {} }))
     expect(readSnapshot()).toBeNull()
+  })
+
+  it('has a version that moves WITH the column list', () => {
+    /* The rule above has no teeth on its own: `VERSION` is a hand-kept number, so appending an
+       eleventh column and forgetting it ships the exact defect the version exists to prevent, and
+       every test here still passes because they all write the current version. Coupling the two is
+       what makes the omission fail: version 3 is the ten-column shape, so a new column must arrive
+       with a bump here and in `snapshot.js`. */
+    store.set(STORAGE_KEYS.snapshot, JSON.stringify({ v: 3, tasks: [], config: {} }))
+    expect(readSnapshot(), 'v3 is the ten-column shape').toEqual({ tasks: [], config: {} })
+    expect(TASK_COLUMNS, 'a column was appended — bump VERSION in snapshot.js').toHaveLength(10)
   })
 
   it('ignores a corrupt or structurally wrong payload', () => {

@@ -10,7 +10,7 @@
  * headless Chrome reports a different width than asked for.
  *
  * A static render runs no effect, so these files show every default on first paint. The
- * accordion, commit-on-blur, the native date wheel and the keyboard's effect on a sheet are
+ * accordion, an edit session's one write, the native date wheel and the keyboard's effect on a sheet are
  * covered by `scripts/drive.mjs` instead — as is the notes field's height, which is driven from
  * `scrollHeight`, so `en-notes-editing` here draws it at its bare `min-height` with the text
  * clipped. That page is for the toolbar and the type, not the box.

@@ -177,7 +177,7 @@ describe('TaskCard', () => {
     expect(html).not.toContain('role="progressbar"')
   })
 
-  it('never puts a state colour on the day column', () => {
+  it('never puts a state colour on the date column', () => {
     // A column a third of whose entries are red stops being a column, and the state hue would
     // then be on type. Overdue and upcoming rows draw the SAME day number.
     const [late] = rows([task({ due: '2026-12-11' })])
@@ -280,7 +280,8 @@ describe('TaskCard', () => {
   it('OPENS READ-ONLY, with no field armed by the tap that opened it', () => {
     // Tapping a row is how you read it and tick its checklist, a hundred times a week.
     // Live fields behind that tap meant the common gesture put a caret in a text input, and
-    // the editor commits on blur — so a stray tap could retitle a task with no confirmation.
+    // and a session writes on close as well as on Done — so a stray tap could retitle a task with
+    // no confirmation at all.
     const html = render(row, { open: true })
     expect(html).not.toContain('class="editor"')
     // No TITLE field above all — that is the one a caret lands in, and the one a stray blur
@@ -289,7 +290,7 @@ describe('TaskCard', () => {
     expect(html).not.toContain('<select')
     expect(html).not.toMatch(/class="input"/)
     // What it shows instead: the way in, and nothing else at all on a row with no start date. The
-    // due date is NOT restated here — the row's own day column and the words beside it carry it,
+    // due date is NOT restated here — the row's own date column and the words beside it carry it,
     // and a line repeating it was the largest thing in an open row.
     expect(html).not.toContain('tcard__fact')
     expect(html).not.toContain('January 11, 2027')
@@ -313,15 +314,15 @@ describe('TaskCard', () => {
   })
 
   it('states no fact at all on an undated row, having none to state', () => {
-    // The day column already prints a dash and the head's accessible name says "No date". A fact
+    // The date column already prints a dash and the head's accessible name says "No date". A fact
     // line saying it a third time is a label on an absence.
     const [none] = rows([task({ due: '' })])
     expect(render(none, { open: true })).not.toContain('tcard__fact')
   })
 
   it('renders four fields once editing, with no Save button and no form', () => {
-    // Every field commits on blur, so there is no dirty state a collapse or a reload can throw
-    // away — and therefore nothing to submit.
+    // ONE write per session, on Done or on close, so the toggle IS the commit and there is nothing
+    // to submit: a Save button here would be a second way to end a session.
     const html = render(row, { open: true, editing: true })
     expect(html).toContain('class="editor"')
     expect(html).toContain('>Title<')

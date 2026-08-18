@@ -116,7 +116,7 @@ export default function App() {
   const [ticked, setTicked] = useState(() => new Set())
   /**
    * How many things hold text that exists nowhere else: an open edit session, or the add-a-subtask
-   * field while focused. Non-zero moves the fixed FAB out of the way — it does not move with the
+   * field while focused. Non-zero withholds the FAB and the tab bar — it does not move with the
    * keyboard and sits over the trailing end of the add field, where a tap opens the new-task sheet
    * and discards what was typed — and holds off a service-worker reload.
    *

@@ -90,6 +90,9 @@ describe('minting', () => {
     expect(init.headers['Content-Type']).toBe('text/plain;charset=utf-8')
     expect(init.redirect).toBe('follow')
     expect(JSON.parse(init.body)).toEqual({ key: KEY })
+    /* The third hang-stop, and the one whose absence is least visible: a mint that never settles
+       leaves every write queued behind it with no error and no toast. */
+    expect(init.signal, 'the mint needs a hang-stop').toBeInstanceOf(AbortSignal)
   })
 
   it('sends the key in the BODY, never in the query string', async () => {
@@ -104,6 +107,16 @@ describe('minting', () => {
     const connection = await load()
     replies(GOOD)
     expect(await connection.getSpreadsheetId()).toBe('SHEET_ID')
+  })
+
+  it('says so rather than handing back nothing when a mint was superseded', async () => {
+    /* A revoke landing during the first mint resolves its waiters without caching anything, so this
+       could resolve `null` — and `sheets.js` would build `/spreadsheets/null`, spend a round trip and
+       be told `misconfigured` by Google. It is the same verdict, one request later, and with the
+       device's own state as the cause. */
+    const connection = await load()
+    replies({ ok: true, token: 'TOKEN', expiresIn: 3600 })
+    await expect(connection.getSpreadsheetId()).rejects.toMatchObject({ misconfigured: true })
   })
 
   it('does not mint at module load, so a test environment needs no network', async () => {

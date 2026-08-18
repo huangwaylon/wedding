@@ -1,6 +1,6 @@
 /**
  * Drives the running app in a real browser over the Chrome DevTools Protocol: the accordion, the
- * read/edit toggle, commit-on-blur, the create sheet, whether BOTH `input[type=date]` controls stay
+ * read/edit toggle, one write per edit session, the create sheet, whether BOTH `input[type=date]` controls stay
  * inside their row, that the add-a-subtask field is behind Edit and ticking is not, that a checklist
  * link is a sibling of its tick rather than an anchor inside a button, that ticking under a filter
  * keeps the row on screen, that deleting a just-edited task sends no resurrecting `update`, and the
@@ -8,12 +8,13 @@
  * whether a toolbar tap keeps the selection, and that the bar gets out of the keyboard's way. A static render fires no blur and runs no effect, so none of it is reachable from
  * `scripts/preview.jsx`. The delete check is a POST count, the fixture replying with the
  * pre-write board: reverting `remove()` in TaskDetail.jsx to a bare `onDelete(task)` prints
- * `["delete:a5:", "update:a5:Edited, then deleted"]`.
+ * `["delete:row5", "update:row5:a5:Edited, then deleted"]` — `labelWrite` names the ROW, so an example
+ * in the older shape reads as a formatting difference rather than as the regression it is.
  *
  * Four ways this file can verify nothing:
  *
  * - Without `Emulation.setFocusEmulationEnabled`, headless Chrome dispatches no focus or focusout,
- *   so every commit-on-blur check passes against a board that saved nothing.
+ *   so every check that a blur sends NOTHING passes against a board that saved nothing either way.
  * - A Chrome left on the debugging port from an earlier run keeps it, so this attaches to that
  *   browser and reports its board. The page-target count below is the check.
  * - The fixture replies in milliseconds, so no optimistic state lasts long enough to measure:
@@ -172,9 +173,11 @@ report.count = await evaluate(`document.querySelector('.hero__tally')?.textConte
 report.fab = await evaluate(`Boolean(document.querySelector('.fab'))`)
 report.months = await evaluate(`[...document.querySelectorAll('.plan__month')].map(n=>n.textContent)`)
 /* Every dated row states its own month above its own day, in every group, lifted or not — a date must
-   not need the heading above it to be read. Reported as pairs so a row missing a month is as visible
-   as a group of them missing one, with the years beside it: those appear only where the year is not
-   the board's, so on a one-year fixture the list is empty and that is the assertion. */
+   not need the heading above it to be read. Reported as pairs so a row missing a month is as visible as
+   a group of them missing one, with the years beside it: the fixture holds exactly ONE cross-year row
+   (a10, lifted into This month), so `years` must read `['2027']` there and be empty everywhere else. An
+   empty list everywhere is what a deleted `.tcard__year` also produces, which is why the fixture needs
+   that row for this to be a check at all. */
 report.rowDates = await evaluate(`
   [...document.querySelectorAll('.plan__group')].map((group) => ({
     heading: group.querySelector('.plan__month').textContent,
@@ -213,8 +216,8 @@ await wait(600)
 report.openRows = await evaluate(`document.querySelectorAll('.tcard--open').length`)
 
 /**
- * Read mode is the default and inert: the editor commits on blur, so a caret in the title on the
- * tap that opened the row is one stray blur from renaming it.
+ * Read mode is the default and inert: a caret in the title on the tap that opens a row is one stray
+ * edit from a rename nothing confirms, and the session's unmount flush would write it.
  */
 report.readMode = await evaluate(`({
   editor: document.querySelectorAll('.tcard--open .editor').length,
@@ -298,7 +301,7 @@ const setField = async (selector, value) => {
 
 const postsBeforeEdit = posts.length
 await setField('.tcard--open .editor input:not([type=date])', 'Compare the venue quotes CAREFULLY')
-/* By ID, never by ordinal: there are TWO date controls in the editor now, and
+/* By ID, never by ordinal: there are TWO date controls in the editor, and
    `querySelector('input[type=date]')` would silently drive the optional one while every assertion
    below still read as being about the deadline. */
 await setField('.tcard--open .editor input[id$="-due"]', '2026-12-24')
@@ -352,9 +355,9 @@ await evaluate(`
 await wait(400)
 const undatedRow = await evaluate(`
   (() => {
-    /* The group whose rows print a dash for a day. NOT simply the last one any more: Past deadline
-       and Ongoing are groups too, and if either sorted last this would date the wrong task and every
-       figure below would be about it while still reading as a pass. */
+    /* The group whose rows print a dash for a day, found by that dash rather than by position: Past
+       deadline and This month are groups too, and if either sorted last, taking the last group would
+       date the wrong task and every figure below would be about it while still reading as a pass. */
     const groups = [...document.querySelectorAll('.plan__group')]
     const last = groups.find((g) => g.querySelector('.tcard__day')?.textContent === '\u2013')
     const heading = last.querySelector('.plan__month').textContent
@@ -540,7 +543,7 @@ report.deleteAfterEdit.titleBack = await evaluate(
 await shot('07-deleted')
 
 /**
- * The signs in the live document. There is no Today line to place any more — the sections replaced it,
+ * The signs in the live document. There is no Today line to place — the sections replaced it,
  * and with the current month hoisted the boundary it marked always fell at a month heading — so what
  * has to be true is the ORDER of the headings and what each one carries.
  */

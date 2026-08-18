@@ -45,7 +45,7 @@
    which is opaque so tokens.css's measured meter figures apply — over the photograph an empty bar
    disappears into a bright sky. `fixed`, not `sticky`: WebKit positions a sticky element on the
    scrolling thread without a layer of its own, so a later promoted element (`.chips` has a
-   `mask-image`, rows have images) composites above it and the list draws over the photograph
+   `mask-image`, and any future one would do) composites above it and the list draws over the photograph
    mid-flick; it also ends the sticky-under-sticky pairing with `.plan__month`. A fixed element
    reserves no flow space, so --hero-height must be exact and `.hero__progress` renders always, even
    empty; the containing block is the viewport, so the horizontal insets repeat here or a landscape
@@ -388,7 +388,7 @@
    as a bare number captioned on the meta line, and the same date then read two ways on one screen.
 
    2rem holds both lines, and THE YEAR IS WHAT DOES NOT FIT. Measured over CDP at 13px, which is the
-   only home for these figures: a short month is 22.3–24.3px in English and 21.4–27.5px in Japanese,
+   only home for these figures: a short month is at most 24.3px in English and 27.5px in Japanese,
    inside a 32px box — but 'Sep 2026' is 60px and '2026年10月' 73.2px, which takes the column to 5rem
    and wraps every title in the two sections that matter most. So the year sits on the meta line, on
    the rows nothing else gives one to. `flex: none`, or a long title squeezes the one thing a month of
@@ -730,7 +730,7 @@
 }
 
 /* The one fact an open row shows in read mode, and only when it has one: the day it starts. The due
-   date is not repeated here — the row's own day column carries it. `space-between`, so the value sits
+   date is not repeated here — the row's own date column carries it. `space-between`, so the value sits
    at the right edge under the Edit toggle. */
 .tcard__fact {
   display: flex;

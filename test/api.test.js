@@ -110,6 +110,10 @@ describe('which backend a request goes to', () => {
     expect(init.method).toBe('GET')
     // No Authorization header anywhere near the anonymous path.
     expect(init.headers).toBeUndefined()
+    /* And a CEILING. `fetch` has none of its own and `useBoard` holds `reading` for the life of the
+       call, so one socket that never closes blocks every later refresh — the failure this signal
+       exists to stop. An abort retries as transient, which is sound because every op is idempotent. */
+    expect(init.signal, 'the anonymous read needs a hang-stop').toBeInstanceOf(AbortSignal)
   })
 
   it('reads through the Sheets API when it does, and never touches /exec', async () => {

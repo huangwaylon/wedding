@@ -1,5 +1,5 @@
 /**
- * The floating action button. One of the app's three pieces of pinned chrome, and now one component:
+ * The floating action button. One of the app's three pieces of pinned chrome, and one component:
  * both tabs put their single most likely action here, and two copies of the markup would drift on
  * which of them carries a label a screen reader can read.
  *

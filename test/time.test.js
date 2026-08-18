@@ -273,7 +273,7 @@ describe('taking a day apart', () => {
   })
 
   it('returns 0 for a day number it cannot read, never NaN', () => {
-    // NaN reaches the row's day column and renders as "NaN".
+    // NaN reaches the row's date column and renders as "NaN".
     for (const bad of ['', 'nonsense', '2027-02-31', null]) {
       expect(dayOfMonth(bad), JSON.stringify(bad)).toBe(0)
     }

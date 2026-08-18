@@ -253,6 +253,12 @@
   min-width: 0;
 }
 
+/* The ROW is one field's worth of vertical rhythm. Its children are `.field`s, so without this their
+   own bottom margin stacks inside it and puts 16px of nothing under the pair of names. */
+.field__row > .field {
+  margin-bottom: 0;
+}
+
 /* A field and the one button that acts on it — an optional date and the control that empties it
    again. Not `.field__row`, whose children share the width equally: here the input takes what is
    left, and the 44px button must not be squeezed. */
@@ -408,9 +414,9 @@
    is the only consumer; the indirection stays so a second mark type costs one line. A state earns an
    entry only where it reaches a mark — `DueLabel` composes `dot--${state}` for `overdue` and `soon`
    alone, a done row, a row past the fortnight and an undated one stating themselves in a tick or an
-   empty day column, so anything else falls through to `.dot`'s own --ink-4. Never `color:`: a state
+   empty date column, so anything else falls through to `.dot`'s own --ink-4. Never `color:`: a state
    hue paints a graphic and the meaning sits in ink beside it, so a viewer who cannot separate red
-   from green loses nothing — which is also why a row's day column is not tinted, a column a third
+   from green loses nothing — which is also why a row's date column is not tinted, a column a third
    of which is red having stopped being a column. */
 .dot--overdue {
   --state-fill: var(--critical);

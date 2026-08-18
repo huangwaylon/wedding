@@ -62,7 +62,12 @@ const LIFTED = [
     is still an April task, and April's heading says April. Counting the visible rows instead made
     `1/2` a true statement about a slice and a false one about the month, which is the exact defect the
     figure is withheld under a filter to avoid — and it would have meant lifting a row changed what
-    April was worth. It is `aria-hidden` for the same reason: the arithmetic is not the rows below. */
+    April was worth. It is `aria-hidden` for the same reason: the arithmetic is not the rows below.
+
+    THE TALLY OBJECT IS SHARED WITH THE MAP BY REFERENCE, and that is the whole mechanism: a lifted row
+    of a month whose group already exists increments it AFTER the group was built, so the heading keeps
+    counting April while drawing a subset of it. Copying it here (`tally: { ...tally }`) reads as the
+    tidier line and silently turns every heading into a figure about the rows below it. */
 function groupTasks(tasks, today) {
   const lifted = LIFTED.map((section) => ({ ...section, month: section.month(today), tasks: [] }))
   const months = []

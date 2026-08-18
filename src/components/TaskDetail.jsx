@@ -160,7 +160,7 @@ export default function TaskDetail({
         </div>
       ) : started ? (
         /* The one fact an open row shows in read mode, and only when there is one: the day work
-           starts. The due date is NOT repeated here — the row's own day column and the words beside
+           starts. The due date is NOT repeated here — the row's own date column and the words beside
            it already carry it, and a line restating it was the largest thing in an open row for a
            value nobody had to look up. A row with no start date shows nothing at all. */
         <p className="tcard__fact">

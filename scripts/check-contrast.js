@@ -6,7 +6,9 @@
  *
  * It parses `tokens.css` rather than restating it, so a retheme cannot pass while measuring the
  * previous palette, and it discovers the accent list from the `[data-accent]` blocks, so a preset
- * cannot be added without being measured.
+ * cannot be added without being measured. Two kinds of row: WCAG contrast ratios, and OKLab distances
+ * for the one thing a ratio cannot express — whether the accent and the two signal colours are
+ * tellable apart on an 8px dot. A FAIL exits non-zero.
  */
 
 import { readFileSync } from 'node:fs'
@@ -57,6 +59,33 @@ function contrast(a, b) {
   const la = luminance(a)
   const lb = luminance(b)
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+
+/**
+ * OKLab, for the one question a contrast ratio cannot answer: whether two colours are TELLABLE APART.
+ * `.dot--soon` wears the accent and `.dot--overdue` --critical, 8px discs a few rows apart, and two
+ * hues of equal luminance have a ratio of 1.0 against each other while being different colours — or
+ * the same one. Björn Ottosson's transform; the distance below is Euclidean in (L, a, b), which is
+ * ΔEok.
+ */
+function oklab(hex) {
+  const [r, g, b] = srgb(hex).map((channel) =>
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+  )
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+  return [
+    0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+  ]
+}
+
+function distance(a, b) {
+  const [la, aa, ba] = oklab(a)
+  const [lb, ab, bb] = oklab(b)
+  return Math.hypot(la - lb, aa - ab, ba - bb)
 }
 
 const BG = token('bg')
@@ -120,6 +149,22 @@ for (const [name, hex] of Object.entries(ACCENTS)) {
 // Status colours are fills (meter segments, bars), so 3:1 against the surface they sit on.
 for (const [name, hex] of Object.entries(STATUS)) {
   add(`${name} fill on surface`, contrast(hex, SURFACE), 3)
+}
+
+/**
+ * ACCENT AGAINST THE TWO SIGNAL COLOURS, in OKLab. This is the row that decides which preset may be
+ * the default: `soon` is the accent on an 8px disc and `overdue` is --critical, so a reader who cannot
+ * separate them loses the one channel a row's state has besides its words. 0.15 is the floor, and
+ * every preset must clear it against BOTH — muting --good toward the neutrals is the specific mistake
+ * (`#35762f` puts pine at 0.132), which is why this is measured here rather than by hand.
+ *
+ * Ratios cannot express it: two hues of equal luminance sit at 1.0 against each other whether they are
+ * the same colour or opposites.
+ */
+for (const [name, hex] of Object.entries(ACCENTS)) {
+  for (const [signal, colour] of Object.entries(STATUS)) {
+    add(`${name} vs ${signal} (OKLab)`, distance(hex, colour), 0.15)
+  }
 }
 
 // A badge is a wash with ink text, never status-coloured text: a colour light enough to fill a

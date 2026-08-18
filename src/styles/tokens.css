@@ -106,7 +106,7 @@
   /* ---- The pinned header -----------------------------------------------
      --hero-height is the header's whole occupied height, and four things offset by it: `.views` (the
      header is `fixed` and reserves no flow space), `.plan__month`'s sticky `top`, `html`'s
-     `scroll-padding-top`, and the FAB's keyboard clearance. Anything added to the header goes in this
+     `scroll-padding-top`, and the notes bar's sticky `top`. Anything added to the header goes in this
      token, or the month heading lands under the strip. The clamp's terms are not interchangeable:
      20vh is the band, and it holds the couple in frame where a tenth of the viewport did not; the
      floor is two lines of type plus the inset, because it applies where the viewport is shortest and

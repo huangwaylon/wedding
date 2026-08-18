@@ -226,6 +226,11 @@ export function refreshToken() {
 export async function getSpreadsheetId() {
   if (spreadsheetId) return spreadsheetId
   await tokenAtLeast(generation)
+  /* A mint superseded in flight — `forgetToken` or a revoke landing during it — resolves its waiters
+     without caching anything, so this can still be empty. Said here rather than passed on: a request
+     to `/spreadsheets/null` comes back 404 and reports as `misconfigured` anyway, having spent a round
+     trip to be told something this side already knew. */
+  if (!spreadsheetId) throw mintError('No spreadsheet for this device yet.', { misconfigured: true })
   return spreadsheetId
 }
 

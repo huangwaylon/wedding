@@ -30,7 +30,16 @@ function sources(dir, found = []) {
   return found
 }
 
-const FILES = sources('src').map((path) => ({ path, text: readFileSync(path, 'utf8') }))
+/**
+ * Comments STRIPPED, which is the rule for every absence assertion in this repo: these files explain
+ * their own rules by naming keys they no longer use, so a raw scan finds a catalog entry mentioned in
+ * prose and calls it live. No key passes on a comment alone today — this is what keeps that true.
+ */
+function code(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+}
+
+const FILES = sources('src').map((path) => ({ path, text: code(readFileSync(path, 'utf8')) }))
 const ALL_SOURCE = FILES.map((file) => file.text).join('\n')
 
 /**

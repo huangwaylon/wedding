@@ -24,6 +24,36 @@ import BottomSheet from './BottomSheet.jsx'
 import Notice from './Notice.jsx'
 import { DeletedList } from './Deleted.jsx'
 
+/**
+ * One settings field: a label, a text control, and whatever goes under it. Six of these existed as six
+ * copies, and what a copy loses is the pairing — a control whose `htmlFor` stops matching its `id` has
+ * no visible symptom and no accessible name. `children` is the line below, hint or error, because those
+ * differ per field while nothing else does.
+ *
+ * `label` is omitted for the one field named by the heading above it (the categories list), which is
+ * why the label is conditional rather than assumed: an empty `<label>` is worse than none.
+ */
+function SettingField({ id, label, value, onChange, type, invalid, children, ...input }) {
+  return (
+    <div className="field">
+      {label ? (
+        <label className="label" htmlFor={id}>
+          {label}
+        </label>
+      ) : null}
+      <input
+        id={id}
+        type={type}
+        className={`input${invalid ? ' input--invalid' : ''}`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        {...input}
+      />
+      {children}
+    </div>
+  )
+}
+
 export default function SettingsSheet({
   config,
   canEdit,
@@ -113,105 +143,80 @@ export default function SettingsSheet({
         <>
           <section className="section">
             <h3 className="section__title">{t('settings.couple')}</h3>
+            {/* The one row that holds two fields: two names, equal width, no wrapping. */}
             <div className="field__row">
-              <div>
-                <label className="label" htmlFor="p1">
-                  {t('settings.partner1')}
-                </label>
-                <input
-                  id="p1"
-                  className="input"
-                  value={draft.partner1Name}
-                  onChange={(event) => set({ partner1Name: event.target.value })}
-                  autoComplete="off"
-                />
-              </div>
-              <div>
-                <label className="label" htmlFor="p2">
-                  {t('settings.partner2')}
-                </label>
-                <input
-                  id="p2"
-                  className="input"
-                  value={draft.partner2Name}
-                  onChange={(event) => set({ partner2Name: event.target.value })}
-                  autoComplete="off"
-                />
-              </div>
+              <SettingField
+                id="p1"
+                label={t('settings.partner1')}
+                value={draft.partner1Name}
+                onChange={(partner1Name) => set({ partner1Name })}
+                autoComplete="off"
+              />
+              <SettingField
+                id="p2"
+                label={t('settings.partner2')}
+                value={draft.partner2Name}
+                onChange={(partner2Name) => set({ partner2Name })}
+                autoComplete="off"
+              />
             </div>
           </section>
 
           <section className="section">
             <h3 className="section__title">{t('settings.wedding')}</h3>
             {/* One date, alone on its row. Nothing on the board reads a clock time. */}
-            <div className="field">
-              <label className="label" htmlFor="wdate">
-                {t('settings.weddingDate')}
-              </label>
-              <input
-                id="wdate"
-                type="date"
-                className="input"
-                value={draft.weddingDate}
-                onChange={(event) => set({ weddingDate: event.target.value })}
-              />
-            </div>
-            <div className="field">
-              <label className="label" htmlFor="venue">
-                {t('settings.venue')}
-              </label>
-              <input
-                id="venue"
-                className="input"
-                value={draft.venue}
-                onChange={(event) => set({ venue: event.target.value })}
-                autoComplete="off"
-              />
-            </div>
-            <div className="field">
-              <label className="label" htmlFor="tz">
-                {t('settings.timezone')}
-              </label>
-              <input
-                id="tz"
-                className={`input${zoneOk ? '' : ' input--invalid'}`}
-                value={draft.timezone}
-                onChange={(event) => set({ timezone: event.target.value })}
-                autoComplete="off"
-                spellCheck={false}
-              />
-              {/* `.hint` is inline, so two run together into one paragraph. Stacked explicitly,
-                  and the error replaces the hint rather than shifting it. */}
+            <SettingField
+              id="wdate"
+              type="date"
+              label={t('settings.weddingDate')}
+              value={draft.weddingDate}
+              onChange={(weddingDate) => set({ weddingDate })}
+            />
+            <SettingField
+              id="venue"
+              label={t('settings.venue')}
+              value={draft.venue}
+              onChange={(venue) => set({ venue })}
+              autoComplete="off"
+            />
+            <SettingField
+              id="tz"
+              label={t('settings.timezone')}
+              value={draft.timezone}
+              onChange={(timezone) => set({ timezone })}
+              invalid={!zoneOk}
+              autoComplete="off"
+              spellCheck={false}
+            >
+              {/* `.hint` is inline, so two run together into one paragraph. Stacked explicitly, and
+                  the error REPLACES the hint rather than shifting it. */}
               {zoneOk ? (
                 <p className="hint">
                   {t('settings.timezoneHint')}
                   {/* Only when the two differ: a time typed into the sheet is read in the SHEET's
                       zone. */}
                   {sheetTimeZone && sheetTimeZone !== draft.timezone ? (
-                    <>
-                      {' '}
-                      {t('settings.timezoneMismatch', { zone: sheetTimeZone })}
-                    </>
+                    <> {t('settings.timezoneMismatch', { zone: sheetTimeZone })}</>
                   ) : null}
                 </p>
               ) : (
                 <span className="field__error">{t('settings.timezoneBad')}</span>
               )}
-            </div>
+            </SettingField>
           </section>
 
           <section className="section">
             <h3 className="section__title">{t('settings.categories')}</h3>
-            <div className="field">
-              <input
-                className="input"
-                value={draft.categories}
-                onChange={(event) => set({ categories: event.target.value })}
-                aria-label={t('settings.categories')}
-                autoComplete="off"
-              />
+            {/* The one field with no visible label: the heading above it is its name, so it carries
+                `aria-label` instead — a second copy of the word would be read twice. */}
+            <SettingField
+              value={draft.categories}
+              onChange={(categories) => set({ categories })}
+              aria-label={t('settings.categories')}
+              autoComplete="off"
+            >
               <span className="hint">{t('settings.categoriesHint')}</span>
-            </div>
+            </SettingField>
           </section>
         </>
       ) : (

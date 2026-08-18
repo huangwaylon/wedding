@@ -98,9 +98,9 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
   change what the rest of the board is worth.
 - `SOON_DAYS` is part of the meaning of a state, not a component's constant — it is what "due soon" is, and
   the boundary past which a row prints no urgency.
-- `ongoing` is a boolean on `taskProgress`, never a sixth `STATE`. A state is what the chips slice by and
-  what the roll-up counts, and this is orthogonal to all five — an ongoing task is also soon or later. As
-  a state it would have made a task overdue OR ongoing and moved a row out of the overdue count.
+- `thisMonth` is a boolean on `taskProgress`, never a sixth `STATE`. A state is what the chips slice by
+  and what the roll-up counts, and this is orthogonal to all five — a row in hand is also soon or later.
+  As a state it would have made a task overdue OR in hand and moved a row out of the overdue count.
   Inclusive at its own end (`start <= today`, a task starting today being today's work), where overdue is
   exclusive (`due < today`); the two are different questions and are allowed to disagree.
 
@@ -282,7 +282,8 @@ that cost something to rediscover:
 - The mint is `text/plain`, keeping it a CORS simple request; a preflight would be answered with the 302 and
   die, which is also why there is no `doOptions`. Its method is never forced through the hop.
 
-`RETRYABLE_STATUS` is 429 and 5xx. Everything else is terminal, being equally true a second later.
+`RETRYABLE_STATUS` is 429, 500, 502, 503 and 504 — not every 5xx, a 501 being a statement about the
+request. Everything else is terminal, being equally true a second later.
 
 | Signal | Code | Note |
 | --- | --- | --- |
@@ -461,7 +462,8 @@ percentages, no library. Every rule carries its constraint as a comment.
 - The overdue chip's count is `--critical`, the one count that is not `--ink-3` (everything else there is a
   statistic), and is withheld at zero (`.chip__count--empty`) so a clean board carries no red 0.
 
-Measured, and `npm run contrast` re-checks every pair:
+Measured, and `npm run contrast` re-checks every row below — ratios and OKLab distances alike,
+exiting non-zero on a FAIL:
 
 | Pair | Measured | Rule |
 | --- | --- | --- |
@@ -469,11 +471,11 @@ Measured, and `npm run contrast` re-checks every pair:
 | `--line-input` on surface / bg / sunken | 4.00 / 3.77 / 3.38 | WCAG 1.4.11's 3:1 on all three, `.chip` and `.btn--secondary` swapping their fill to `--sunken` on hover while keeping it |
 | white type over `--photo-scrim`'s dense end, on a blown-out sky | 8.98:1 | the scrim is the contrast mechanism, the backdrop being unmeasurable; lightening the end stop fails AA |
 | white OS status-bar glyphs over `--photo-scrim-top`, on a blown-out sky | 4.03:1 | the page owns that strip, so its glyphs are ours to make legible; 3:1, they being graphics |
-| accent vs `--good` / `--critical`, in OKLab | tarn 0.198/0.202, pine 0.134/0.176, rosehip 0.260/0.128 | 0.15 is comfortable on `.dot--soon`'s 8px disc, so `tarn` is the only possible default |
+| accent vs `--good` / `--critical`, ΔEok | tarn 0.23/0.28, pine 0.16/0.26, rosehip 0.28/0.16 | floor 0.15 on `.dot--soon`'s 8px disc. Tarn is the only preset comfortable against BOTH, so it is the only possible default; a ratio cannot express this at all, two hues of equal luminance sitting at 1.0 against each other |
 
-- Whoever picks pine or rosehip accepts a `soon` dot they may not separate. Never add a preset without
-  measuring it, and never mute `--good` to match the neutrals — at a muted `#35762f` the default falls to
-  0.155. `--good` and `--critical` are signals, not theme.
+- Whoever picks pine or rosehip accepts one dot pair close to the floor. Never add a preset without
+  measuring it, and never mute `--good` toward the neutrals — at `#35762f` pine falls to 0.13 and
+  `npm run contrast` exits non-zero. `--good` and `--critical` are signals, not theme.
 - `make-icons.js` and `scripts/check-contrast.js` both parse `tokens.css` rather than restating it, or a
   retheme passes its own contrast check while measuring the previous colours. The icons are committed, so
   re-run `npm run icons` after changing the default. `index.html`'s inline favicon is the one copy that
@@ -532,11 +534,10 @@ Measured, and `npm run contrast` re-checks every pair:
   `.tcard__foot:first-child` is exactly that condition, the fact line, the editor and the checklist each
   being a preceding sibling when it exists; `test/render.test.jsx` pins the DOM half, which no stylesheet
   can see.
-- The checklist carries NO rule, vertical or horizontal. Horizontal ones would make it a table; the one
-  vertical hairline it used to hang off its parent spent 17px of a 361px column saying what the smaller
-  glyph, the lighter ink and the lighter weight already say. The 4px indent left is not decoration — it is
-  what puts the checklist's glyph column under the row's own tick, so the circles are one column rather
-  than two that nearly line up.
+- The checklist carries NO rule, vertical or horizontal: horizontal ones make it a table, and a vertical
+  one duplicates what the smaller glyph, the lighter ink and the lighter weight already say — at a cost
+  `.subtasks` in `app.css` records. The 4px indent left is not decoration: it is what puts the checklist's
+  glyph column under the row's own tick, so the circles are one column rather than two that nearly line up.
 - `.tcard__check` is `align-self: center` against the grid's `align-items: start`, so the 44px box sits in
   the middle of the head's grid row however tall the head has grown — a wrapped title plus a meta line is
   ~70px, and start-aligned the circle floated to the top of a block the eye reads as one thing.
@@ -547,7 +548,7 @@ Measured, and `npm run contrast` re-checks every pair:
 **The header, the tab bar and the FAB**
 
 - `.hero` is `position: fixed`, not `sticky`: WebKit does not promote a sticky element to its own layer, so
-  a later promoted element (`.chips`'s `mask-image`, row images) composites above it and the list draws over
+  a later promoted element — `.chips`'s `mask-image` is the one the app has — composites above it and the list draws over
   the photograph mid-flick. `.plan__month` is still sticky; the pairing is gone. The containing block is the
   viewport, so the horizontal safe-area insets repeat here. `.hero` also carries an opaque
   `background-color` as a backstop: the two bands fill its box between them, so it is never seen, and it is
@@ -625,10 +626,10 @@ that.
 A1 ranges for real, because both are the kind of code that succeeds while writing the wrong cell.
 `connection.test.js` covers the mint, where every failure is invisible: `/exec` always answers 200, so a
 rotated key reported as a blip hides behind retries forever, and the reverse sends somebody hunting for
-their edit link. `markdown.test.js` covers the grammar and the three toolbar transforms, both pure, because
+their edit link. `markdown.test.js` covers the grammar and the four toolbar transforms, both pure, because
 what they get wrong — a bare caret, a mixed run of lines, an unclosed `**` — is unreachable from a render.
 
-- A static render never runs an effect and never fires a blur, so opening a card and every commit-on-blur
+- A static render never runs an effect and never fires a blur, so opening a card and every commit
   path are invisible to `render.test.jsx` and to the harness. Every default must be correct alone — which is
   why `expanded` and `editing` are props — and the accordion, each commit path, the validation refusals and
   the keyboard's effect on a sheet are verified by driving the built app in a real browser.
@@ -637,7 +638,7 @@ what they get wrong — a bare caret, a mixed run of lines, an unclosed `**` —
 - A passing suite does not mean it looks right. Screenshot through `scripts/harness.html`'s iframes, not a
   resized window: an iframe gets an honest viewport, headless Chrome reports a width you did not ask for.
   `to=` does not survive a headless capture, so a surface that only appears mid-scroll needs a preview page
-  — `en-sign` is that, for the month tally, the wedding plaque and the `Today` line.
+  — `en-sign` is that, for the two lifted sections, the month tally and the wedding plaque.
 - `scripts/drive.mjs` covers what no static render can, over CDP, and its header enumerates it, records the
   ways it can silently verify nothing, and says that no optimistic state survives its millisecond fixture — so
   anything about that window must be pinned elsewhere. The fixture is `public/__dev-board.json`, gitignored

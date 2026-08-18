@@ -38,7 +38,7 @@ read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization
 - **Progress** ([`src/lib/progress.js`](src/lib/progress.js)): done is 100%, otherwise a task with a
   checklist is the share of its items ticked, otherwise 0%. The header percentage is the mean over
   top-level tasks, each counting equally; the mark on the meter is the share of due dates that have
-  passed. There is no pace figure — the overdue count stands alone, as a button that jumps to those rows.
+  passed. There is no pace figure — the overdue count stands alone, as a chip that narrows the list to those rows.
 - **Notes** is one document everybody sees, opening rendered and read-only; the pencil button in the
   corner starts an editing session, which is a plain field plus four buttons — heading, bullet list,
   bold, italic — and Done. Markdown is deliberately small: headings, bullet and numbered lists,

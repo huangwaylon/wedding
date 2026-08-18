@@ -114,6 +114,25 @@ describe('accent presets', () => {
     }
   })
 
+  it('draws one two-rings mark, in the default accent, in all three hand-written copies', () => {
+    /**
+     * `index.html`'s inline favicon, `RingsIcon` and `make-icons.js` all draw the mark by hand — the
+     * favicon because a data URI cannot be derived, the other two because one is JSX and one writes a
+     * PNG. Two things can drift silently and both ship to a Home Screen: the geometry, and the accent
+     * the favicon hardcodes, which no retheme of the default would touch. The favicon and `RingsIcon`
+     * share the 24-unit box, so their circles are literally the same numbers.
+     */
+    const favicon = decodeURIComponent(/rel="icon"\s*\n?\s*href="([^"]*)"/.exec(html)[1])
+    expect(favicon.toLowerCase()).toContain(`fill='${ACCENT_HEX[DEFAULT_ACCENT]}'`)
+
+    const circles = (svg) => [...svg.matchAll(/<circle cx='?"?(\d+)'?"? cy='?"?(\d+)'?"? r='?"?(\d+)/g)]
+      .map((match) => match.slice(1, 4).join(','))
+    const icons = readFileSync('src/components/icons.jsx', 'utf8')
+    const rings = /export function RingsIcon[\s\S]*?<\/svg>/.exec(icons)[0]
+    expect(circles(favicon), 'the favicon draws no rings').toHaveLength(2)
+    expect(circles(favicon)).toEqual(circles(rings))
+  })
+
   it('spells the page background the same way in all four places', () => {
     /**
      * `--bg`, the `theme-color` meta, and the manifest's two colours are one value in four
@@ -232,7 +251,7 @@ describe('the state table', () => {
 
   it('never puts a state colour on type', () => {
     // The hue paints a graphic — a dot — and the meaning always sits in ink beside it. It is
-    // also why the day column on a task row is not tinted: a column a third of which is red
+    // also why the date column on a task row is not tinted: a column a third of which is red
     // stops being a column.
     for (const state of COLOURED) {
       expect(stateEntry(state), state).not.toMatch(/[^-]color:/)
@@ -785,7 +804,7 @@ describe('layout', () => {
   it('pins the header and makes the month heading stop BELOW it', () => {
     // THE HEADER IS `fixed`, NOT `sticky`, AND THAT IS A FIX. WebKit positions a sticky element on
     // the scrolling thread without promoting it to a layer of its own, so a later element that IS
-    // promoted — `.chips` carries a mask, every row carries an image — composites above it and the
+    // promoted — `.chips` carries a mask — composites above it and the
     // list is drawn over the photograph mid-flick. A fixed element is always its own layer.
     const hero = ruleFor(app, '.hero')
     expect(hero).toMatch(/position: fixed/)
@@ -1260,9 +1279,9 @@ describe('the checklist and the tally', () => {
   })
 
   it('draws no rule around the checklist at all, in either direction', () => {
-    // Five rules between five items would make a checklist a table, and the one vertical hairline it
-    // used to hang off its parent spent 17px of a 361px column saying what the smaller glyph, the
-    // lighter ink and the lighter weight already say.
+    // Five rules between five items would make a checklist a table, and a vertical one says what the
+    // smaller glyph, the lighter ink and the lighter weight already say — `.subtasks` in app.css
+    // records what it cost in column width.
     const list = ruleFor(app, '.subtasks')
     expect(list, '.subtasks rule missing').toBeTruthy()
     expect(list).not.toMatch(/border/)
