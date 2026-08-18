@@ -234,6 +234,16 @@
   color: var(--critical);
 }
 
+/* "optional" / "required", inside the label and after the noun that names the field. A note ON a
+   label, so it separates on WEIGHT and nothing else: 13px is the scale's floor, so it cannot be
+   smaller, and --ink-3 is where the editor's own label already sits, so it cannot be lighter either.
+   Never --critical and never an asterisk — a required field is not a failure, and the one red thing
+   in a form is the message under the field that refused. It inherits the label's colour, so the note
+   reads at the label's tier in both skins. */
+.field__hint {
+  font-weight: 400;
+}
+
 .field__row {
   display: flex;
   gap: var(--space-3);

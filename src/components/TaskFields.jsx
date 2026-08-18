@@ -1,13 +1,18 @@
 /**
  * A task's fields, and the only home for the markup and the draft arithmetic behind them. Four
- * fields — a title, the day it is due, an optional day it starts, a category — and nothing may be
+ * fields — a title, an optional day it starts, the day it is due, a category — and nothing may be
  * added: every extra control makes a task something to fill in rather than write down. The start date
  * earns its place by being the only thing that can say a task is ALREADY MINE TO DO, which no due
- * date answers; it is optional, and the rows that do not use it show no trace of it. Two surfaces edit
- * a task and both buffer a whole draft (`TaskDetail`, `TaskFormSheet`); every field is pure value +
- * onChange, so neither commits on its own. Both days are native `type=date`, whose intrinsic width
- * comes from the platform — see `.input[type="date"]` in primitives.css, which stops it drawing past
- * the edge of its card.
+ * date answers; it is optional, and the rows that do not use it show no trace of it.
+ *
+ * THE TWO DAYS ARE DRAWN IN THE ORDER THEY HAPPEN, start then due, and each says whether it is
+ * optional or required. Those two facts go together: the required day led before, which put a task's
+ * span back to front to carry a claim a label can simply make.
+ *
+ * Two surfaces edit a task and both buffer a whole draft (`TaskDetail`, `TaskFormSheet`); every field
+ * is pure value + onChange, so neither commits on its own. Both days are native `type=date`, whose
+ * intrinsic width comes from the platform — see `.input[type="date"]` in primitives.css, which stops
+ * it drawing past the edge of its card.
  */
 
 import { validateTask } from '../schema.js'
@@ -124,14 +129,38 @@ function FieldError({ code }) {
   return <span className="field__error">{t(`error.${code}`)}</span>
 }
 
+/**
+ * A label, with the note that its field is optional or required where that is not obvious. The two
+ * days are the whole reason this exists: they are adjacent, they look identical, and one refuses the
+ * save without a value while the other can be emptied again — a difference nothing on screen used to
+ * state until the save was refused. It is a note ON the label, same size and a lighter weight, which
+ * is `.plan__aside`'s recipe: a qualifier at label weight is a second label.
+ *
+ * The space before it is for the accessibility tree, not the layout — the label names the input, so
+ * without one "Start" and "optional" are announced as one word.
+ */
+function FieldLabel({ id, className, hint, children }) {
+  return (
+    <label className={className} htmlFor={id}>
+      {children}
+      {hint ? (
+        <>
+          {' '}
+          <span className="field__hint">{hint}</span>
+        </>
+      ) : null}
+    </label>
+  )
+}
+
 export function TitleField({ id, skin, value, error, onChange, onEnter }) {
   const { t } = useT()
   const classes = skinOf(skin)
   return (
     <div className={classes.field}>
-      <label className={classes.label} htmlFor={id}>
+      <FieldLabel id={id} className={classes.label}>
         {t('form.title')}
-      </label>
+      </FieldLabel>
       <input
         id={id}
         className={`input${error ? ' input--invalid' : ''}`}
@@ -149,39 +178,15 @@ export function TitleField({ id, skin, value, error, onChange, onEnter }) {
 }
 
 /**
- * The one date, and it is REQUIRED — see `validateTask`. Full width on a row of its own, which is
- * half of why it fits: a two-track grid's per-column minimum is narrower than a `type=date`
- * control's intrinsic width, and that width is a floor. `scrollIntoView` on focus because the wheel
- * is not a keyboard — iOS raises a ~330px inline picker and `interactive-widget=resizes-content`
- * does not fire for it, so a field low in the viewport ends up under the wheel editing it.
- * `nearest` so a visible field is not yanked.
- */
-export function DueField({ id, skin, value, error, onChange }) {
-  const { t } = useT()
-  const classes = skinOf(skin)
-  return (
-    <div className={classes.field}>
-      <label className={classes.label} htmlFor={id}>
-        {t('form.due')}
-      </label>
-      <input
-        id={id}
-        type="date"
-        className={`input${error ? ' input--invalid' : ''}`}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'nearest' })}
-      />
-      <FieldError code={error} />
-    </div>
-  )
-}
-
-/**
- * The optional one, and the only field in the app that can be emptied again. It carries its own clear
- * button because the platform does not: iOS's date wheel offers no way back to blank, so without one
- * a start date picked by mistake is permanent and the row is stuck in This month for good. The button
- * renders only when there is something to clear, so an unused field is still one control.
+ * The optional day, and it comes FIRST: the two days are a task's span, so they are drawn in the
+ * order they happen — a form that asks for the end before the beginning is asking the reader to
+ * reorder it in their head. What kept the required one first was that nothing said which was which;
+ * the labels say it now, which is the fix that ordering was standing in for.
+ *
+ * It is the only field in the app that can be emptied again, and it carries its own clear button
+ * because the platform does not: iOS's date wheel offers no way back to blank, so without one a start
+ * date picked by mistake is permanent and the row is stuck in This month for good. The button renders
+ * only when there is something to clear, so an unused field is still one control.
  *
  * No validation of its own — the control yields a real day or nothing, and `taskFromDraft` normalises
  * on the way out, so there is no third refusal to word. A start after the due date is left alone
@@ -192,9 +197,9 @@ export function StartField({ id, skin, value, onChange }) {
   const classes = skinOf(skin)
   return (
     <div className={classes.field}>
-      <label className={classes.label} htmlFor={id}>
+      <FieldLabel id={id} className={classes.label} hint={t('form.optional')}>
         {t('form.start')}
-      </label>
+      </FieldLabel>
       <div className="field__pair">
         <input
           id={id}
@@ -220,15 +225,51 @@ export function StartField({ id, skin, value, onChange }) {
   )
 }
 
+/**
+ * The day the task is due, and the only date this app REQUIRES — `validateTask` returns `MISSING_DUE`
+ * without one, and the label says so rather than leaving the reader to discover it when Save refuses.
+ * Second of the two, the span reading in the order it happens.
+ *
+ * Full width on a row of its own, which is half of why it fits: a two-track grid's per-column minimum
+ * is narrower than a `type=date` control's intrinsic width, and that width is a floor.
+ * `scrollIntoView` on focus because the wheel is not a keyboard — iOS raises a ~330px inline picker
+ * and `interactive-widget=resizes-content` does not fire for it, so a field low in the viewport ends
+ * up under the wheel editing it. `nearest` so a visible field is not yanked.
+ */
+export function DueField({ id, skin, value, error, onChange }) {
+  const { t } = useT()
+  const classes = skinOf(skin)
+  return (
+    <div className={classes.field}>
+      <FieldLabel id={id} className={classes.label} hint={t('form.required')}>
+        {t('form.due')}
+      </FieldLabel>
+      <input
+        id={id}
+        type="date"
+        className={`input${error ? ' input--invalid' : ''}`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'nearest' })}
+        /* The claim the label makes, in the accessibility tree. The form is `noValidate` and
+           `validateTask` is the only judge, so this changes no behaviour: the browser's own bubble
+           would say what `error.MISSING_DUE` says, in the wrong place and without the field's ink. */
+        aria-required="true"
+      />
+      <FieldError code={error} />
+    </div>
+  )
+}
+
 export function CategoryField({ id, skin, value, categories, onChange }) {
   const { t } = useT()
   const categoryLabel = useCategoryLabel()
   const classes = skinOf(skin)
   return (
     <div className={classes.field}>
-      <label className={classes.label} htmlFor={id}>
+      <FieldLabel id={id} className={classes.label}>
         {t('form.category')}
-      </label>
+      </FieldLabel>
       <select
         id={id}
         className="input select"

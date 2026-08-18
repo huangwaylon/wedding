@@ -55,8 +55,11 @@ read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization
 - **A task needs a day.** Create opens with the date blank and Save refuses without one. A row already
   in the sheet with an empty `due` still renders, in a **No date** group.
 - **A start date is optional**, and the one thing that can say a task is already yours to be doing: a
-  task whose start day has arrived and which is not finished appears under **Ongoing**. It has a clear
-  button, because a date wheel on a phone offers no way back to blank.
+  task whose start day has arrived and which is not finished is lifted into **This month**. It has a
+  clear button, because a date wheel on a phone offers no way back to blank.
+- **The two dates are edited in the order they happen** — the day it starts, then the day it is due —
+  and each label says which it is, `optional` or `required`, rather than leaving it to be discovered
+  when Save refuses.
 - **An open row is read-only** behind an **Edit** toggle, which also gates the destructive controls and
   the add-a-checklist-item field; ticking does not. Read mode states one thing, the day it starts, and
   only when it has one. One edit session sends one write, on Done or on close.

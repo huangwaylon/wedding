@@ -106,6 +106,8 @@ export default {
   'form.categoryNone': 'カテゴリなし',
   'form.due': '期限',
   'form.start': '開始日',
+  'form.optional': '任意',
+  'form.required': '必須',
   'form.startClear': '開始日を消す',
   'form.deleteThis': 'このタスクを削除',
 

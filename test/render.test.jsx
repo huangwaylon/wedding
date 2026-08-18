@@ -324,20 +324,27 @@ describe('TaskCard', () => {
     const html = render(row, { open: true, editing: true })
     expect(html).toContain('class="editor"')
     expect(html).toContain('>Title<')
-    expect(html).toContain('>Due<')
-    expect(html).toContain('>Start<')
     expect(html).toContain('>Category<')
+    // The two days carry a note on the label, so the noun is followed by a space rather than by `<`.
+    expect(html).toContain('>Start <span class="field__hint">optional</span>')
+    expect(html).toContain('>Due <span class="field__hint">required</span>')
     expect(html).not.toContain('<form')
     // Fields the model does not have.
     expect(html).not.toContain('>Owner<')
     expect(html).not.toContain('>Notes<')
     expect(html).not.toContain('>All day<')
     expect(html).not.toContain('type="time"')
-    // TWO days, and no more: the one it is due and the optional one it starts. Both are `type=date`,
+    // TWO days, and no more: the optional one it starts and the one it is due. Both are `type=date`,
     // so this count is also what catches a third being added.
     expect(html.match(/type="date"/g)).toHaveLength(2)
     expect(html).toMatch(/id="edit-a-due"/)
     expect(html).toMatch(/id="edit-a-start"/)
+    // IN THE ORDER THEY HAPPEN: a task's span, drawn beginning to end. The required day led while
+    // nothing on screen said which was which; the labels above say it now.
+    expect(html.indexOf('edit-a-start')).toBeLessThan(html.indexOf('edit-a-due'))
+    // The claim the label makes, in the accessibility tree, and on the required day only.
+    expect(html.match(/aria-required="true"/g)).toHaveLength(1)
+    expect(/id="edit-a-due"[^>]*aria-required="true"/.test(html)).toBe(true)
     // And the facts line gives way to the fields rather than stacking above them.
     expect(html).not.toContain('tcard__fact')
     expect(html).toContain('aria-pressed="true"')

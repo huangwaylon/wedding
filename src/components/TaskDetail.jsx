@@ -157,22 +157,23 @@ export default function TaskDetail({
             /* Return ends the session, not the field: there is one write. */
             onEnter={() => done()}
           />
-          {/* Both days or neither, and the required one first: the day a task must have comes before
-              the one most rows leave blank. */}
+          {/* Both days or neither, in the order they happen: the day work starts, then the day it is
+              due. Each label says whether it is optional or required, which is what the old
+              required-day-first ordering was standing in for. */}
           {dated ? (
             <>
+              <StartField
+                id={fieldId('start')}
+                skin="editor"
+                value={draft.start}
+                onChange={(start) => set({ start })}
+              />
               <DueField
                 id={fieldId('due')}
                 skin="editor"
                 value={draft.due}
                 error={errors.due}
                 onChange={(due) => set({ due })}
-              />
-              <StartField
-                id={fieldId('start')}
-                skin="editor"
-                value={draft.start}
-                onChange={(start) => set({ start })}
               />
             </>
           ) : null}

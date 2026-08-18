@@ -137,6 +137,12 @@ export default {
   /* The optional day. "Start" rather than "From", which reads as a range and this is not one — there
      is one deadline and one day work on it begins. */
   'form.start': 'Start',
+  /* A note on a date field's label, and the pair is the point: the two days sit next to each other and
+     look identical, so each says which it is rather than leaving the reader to find out when Save
+     refuses. Lower case, being an aside on the label and not a heading of its own; the noun above it
+     is what names the field. */
+  'form.optional': 'optional',
+  'form.required': 'required',
   'form.startClear': 'Clear the start date',
   'form.deleteThis': 'Delete this task',
 

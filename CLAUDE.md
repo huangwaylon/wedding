@@ -247,8 +247,16 @@ The second tab: one free-form markdown document, shared, holding what has been d
   tomorrow.
 - `start` is the opposite: optional, refused by nothing, and it carries its own clear button because iOS's
   date wheel offers no way back to blank — without one a start date picked by mistake is permanent and the
-  row is in Ongoing for good. A start after the due date is left alone: it is somebody rescheduling, and
-  refusing the save would be a lecture.
+  row is in **This month** for good. A start after the due date is left alone: it is somebody rescheduling,
+  and refusing the save would be a lecture.
+- **The two days are drawn in the order they happen — start, then due — and each label states whether it
+  is optional or required** (`FieldLabel`, `.field__hint`, `form.optional`/`form.required`; the required
+  one also carries `aria-required`). The two go together and neither works alone: what kept the required
+  day first was that nothing on screen said which was which, so the ordering was carrying a claim a label
+  can simply make — at the cost of asking for the end of a span before its beginning. The note separates
+  on WEIGHT alone, 13px being the floor and `--ink-3` being where the editor's label already sits; never
+  `--critical` and never an asterisk, a required field not being a failure. `test/render.test.jsx` pins
+  the order and that `aria-required` is on the due field alone.
 - `STATE.NODATE` must keep working: anybody can empty the cell by hand, and such a row sorts last into its
   own group and counts toward neither numerator. A row the client refuses to save must still be shown.
   Consequence: an undated task cannot be renamed until it is dated, the whole task going in one write.

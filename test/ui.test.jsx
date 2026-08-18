@@ -1163,6 +1163,20 @@ describe('the date control', () => {
     expect(code(primitives)).not.toContain('type="time"')
     expect(code(all)).not.toContain('.switch')
   })
+
+  it('separates a label’s optional/required note on WEIGHT and nothing else', () => {
+    // It sits inside the label, so it cannot be smaller — 13px is the scale's floor — and it cannot
+    // be lighter either: the editor's own label is already --ink-3. Weight is what is left, and it
+    // inherits the colour so the note reads at the label's tier in both skins.
+    const hint = ruleFor(primitives, '.field__hint')
+    expect(hint, '.field__hint rule missing').toBeTruthy()
+    expect(hint).toMatch(/font-weight: 400/)
+    expect(hint).not.toMatch(/font-size/)
+    // Never the failure colour, and no asterisk: a required field is not an error, and the one red
+    // thing in a form is the message under the field that refused.
+    expect(hint).not.toMatch(/color:/)
+    expect(hint).not.toMatch(/content:/)
+  })
 })
 
 describe('the checklist and the tally', () => {

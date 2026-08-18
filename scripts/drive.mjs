@@ -402,6 +402,15 @@ await shot('06-dated')
 await evaluate(`document.querySelector('.fab').click()`)
 await wait(700)
 report.sheetFields = await evaluate(`[...document.querySelectorAll('.sheet input, .sheet select')].map(n=>n.type||n.tagName)`)
+/* The two days in the order they happen, each label saying which it is: both are `type=date`, so the
+   field list above cannot tell them apart and an accidental swap would read as a pass. */
+report.sheetDays = await evaluate(`
+  [...document.querySelectorAll('.sheet .field')].map((field) => ({
+    id: field.querySelector('input, select')?.id,
+    label: field.querySelector('label')?.textContent,
+    required: field.querySelector('[aria-required="true"]') ? 'yes' : 'no',
+  }))
+`)
 report.sheetDateFits = await evaluate(`
   [...document.querySelectorAll('.sheet input[type=date]')].map((input) => {
     const panel = input.closest('.sheet__panel')

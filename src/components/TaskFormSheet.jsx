@@ -70,18 +70,18 @@ export default function TaskFormSheet({ categories, onSave, onClose }) {
           error={errors.title}
           onChange={(title) => set({ title })}
         />
+        {/* The two days in the order they happen, each stating whether it is optional or required.
+            Both open BLANK, this one included: nothing here may invent a date. */}
+        <StartField
+          id="task-start"
+          value={draft.start}
+          onChange={(start) => set({ start })}
+        />
         <DueField
           id="task-due"
           value={draft.due}
           error={errors.due}
           onChange={(due) => set({ due })}
-        />
-        {/* After the required day: this is the field most tasks leave blank, and it opens blank
-            itself — nothing here may invent a date. */}
-        <StartField
-          id="task-start"
-          value={draft.start}
-          onChange={(start) => set({ start })}
         />
         <CategoryField
           id="task-category"
