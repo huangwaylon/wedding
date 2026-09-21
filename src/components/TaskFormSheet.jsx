@@ -6,7 +6,7 @@
  * The date is REQUIRED and still not DEFAULTED. `validateTask` returns `MISSING_DUE` without one,
  * but the field opens BLANK and Save refuses until somebody picks one: a defaulted date is an
  * invented date, and everything typed in a hurry would read overdue tomorrow, in the overdue count
- * and the on-schedule mark. The field set and the validation live in `TaskFields`.
+ * and in the chip carrying it. The field set and the validation live in `TaskFields`.
  */
 
 import { useState } from 'react'

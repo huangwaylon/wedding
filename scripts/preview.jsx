@@ -73,8 +73,8 @@ function board(locale) {
   })
 
   return seeded.map((task, index) => {
-    // The first nine are finished; #10 onwards go overdue, which puts a gap between the headline
-    // figure and the on-schedule mark.
+    // The first nine are finished; #10 onwards go overdue, so the strip shows a part-filled bar and
+    // the overdue chip carries a count.
     if (index < 9) return { ...task, doneAt: '2026-06-01T00:00:00.000Z' }
     // One dateless task, so the trailing "No date" group is on screen.
     if (index === 14) {

@@ -2,12 +2,12 @@
  * Progress. Pure, and the only file that decides what a percentage means.
  *
  *   percent    what to draw. done -> 100, else the subtask tally, else 0.
- *   duePassed  whether the calendar has already asked for it. Rolled up as `expected`.
  *
- * Those are different claims over the same denominator and must not be merged: `percent` is work
- * done and is countable, `expected` is the share of dates that have passed. The gap is drawn as a
- * fill against a mark, never worded — five things late plus five future things ticked early sum to
- * a pace of zero, so any single verdict can be flatly wrong.
+ * ONE CLAIM, and the whole strip makes it: work done, countable by ticks. There is no second series
+ * over the same denominator and no pace figure — five things late plus five future things ticked
+ * early sum to zero, so any single subtracted verdict reports "on schedule" with five things late.
+ * What the calendar has already asked for is stated as a COUNT, by the overdue chip, which is also
+ * the control that lists those rows.
  *
  * An unfinished task is 0%, whatever the date says: nothing may make a percentage advance without
  * somebody ticking something.
@@ -94,7 +94,7 @@ function clamp01(value) {
  * @param {object} task as returned by `rowToTask`
  * @param {string} today the board's current day, 'YYYY-MM-DD' (`time.todayIn`)
  * @param {object[]} [subtasks] this task's LIVE subtasks, if any
- * @returns {{percent:number, duePassed:boolean, state:string, dated:boolean, thisMonth:boolean,
+ * @returns {{percent:number, state:string, dated:boolean, thisMonth:boolean,
  *   days:number|null, tally:{done:number,total:number}|null}} `percent` is 0–1; `days` is signed
  *   calendar days until the due date
  */
@@ -164,11 +164,6 @@ export function taskProgress(task, today, subtasks = []) {
 
   return {
     percent,
-    /**
-     * Whether the calendar has already asked for this one. An undated task asks nothing, so it
-     * counts in the denominator and contributes to neither numerator.
-     */
-    duePassed: dated && days < 0,
     state,
     dated,
     /**
@@ -217,15 +212,17 @@ function compareForDisplay(a, b) {
 }
 
 /**
- * The headline. `percent` is the mean of every task's `percent`; `expected` is the share whose date
- * has passed. Same denominator, two claims, drawn as a fill against a mark.
+ * The headline: `percent` is the MEAN of every task's `percent`, so the fill and the figure beside it
+ * are the same number and a board of ten tasks with three done is 30%.
  *
- * No pace verdict: five tasks past their date with nothing done, plus five future tasks ticked
- * early, sums to zero and would read "on schedule" with five things late. `overdue` states the fact
- * on its own.
+ * Nothing else is rolled up over that denominator. There is no second series and no pace verdict:
+ * five tasks past their date with nothing done, plus five future tasks ticked early, sums to zero
+ * and would read "on schedule" with five things late. `overdue` states the fact on its own, as a
+ * count.
  *
  * Top-level tasks only, which `withProgress` guarantees: a subtask in this mean would make a parent
- * with ten subtasks carry eleven twentieths of a ten-task board.
+ * with ten subtasks carry eleven twentieths of a ten-task board. Every LIVE task counts, whatever a
+ * device is choosing to draw — a view preference may not move a figure.
  *
  * @param {Array} tasks live top-level tasks with `progress` attached (`withProgress`)
  */
@@ -234,21 +231,16 @@ export function overallProgress(tasks) {
   // a missing key makes the count NaN for the first undated task.
   const counts = { done: 0, overdue: 0, soon: 0, later: 0, nodate: 0 }
   let percentSum = 0
-  let passed = 0
 
   for (const task of tasks) {
     counts[task.progress.state] += 1
     percentSum += task.progress.percent
-    if (task.progress.duePassed) passed += 1
   }
 
   const total = tasks.length
   return {
     total,
     percent: total ? percentSum / total : 0,
-    expected: total ? passed / total : 0,
-    /** How many dates have already passed, for the mark's accessible wording. */
-    passed,
     ...counts,
   }
 }

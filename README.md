@@ -37,8 +37,9 @@ read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization
   is being typed.
 - **Progress** ([`src/lib/progress.js`](src/lib/progress.js)): done is 100%, otherwise a task with a
   checklist is the share of its items ticked, otherwise 0%. The header percentage is the mean over
-  top-level tasks, each counting equally; the mark on the meter is the share of due dates that have
-  passed. There is no pace figure — the overdue count stands alone, as a chip that narrows the list to those rows.
+  top-level tasks, each counting equally, and the bar beside it is that same number — one series, no
+  reference mark. There is no pace figure: what the calendar has asked for is the overdue count, which
+  stands alone as a chip that narrows the list to those rows.
 - **Notes** is one document everybody sees, opening rendered and read-only; the pencil button in the
   corner starts an editing session, which is a plain field plus four buttons — heading, bullet list,
   bold, italic — and Done. Markdown is deliberately small: headings, bullet and numbered lists,
@@ -431,4 +432,4 @@ whose rect ends exactly on the image edge produces no crop at all.
 | `src/i18n/` | the engine, the `en`/`ja` catalogs, the registry |
 | `src/styles/` | `tokens`, `base`, `primitives`, `app`, loaded in that order |
 | `test/` | vitest specs. `schema.test.js` pins the two column lists against each other, `script.test.js` executes `Code.gs`, `sheets.test.js` drives the REST client against a fake that parses A1 ranges, `connection.test.js` covers the mint, `markdown.test.js` the notes grammar, `links.test.js` every scheme that may not reach an `href` |
-| `scripts/` | `preview.jsx` + `harness.html` (static visual harness), `drive.mjs` + `drive-completed.mjs` + `stub-endpoint.mjs` (drive the app against both backends), `check-contrast.js`, `build-sw.js`, `make-icons.js` |
+| `scripts/` | `preview.jsx` + `harness.html` (static visual harness), `drive.mjs` + `drive-completed.mjs` + `drive-meter.mjs` + `stub-endpoint.mjs` (drive the app against both backends), `check-contrast.js`, `build-sw.js`, `make-icons.js` |

@@ -41,7 +41,6 @@ export default {
   /* The count that makes the percentage checkable by arithmetic, in place of a pace sentence that
      could be wrong. No noun is counted, so this is a plain string. */
   'overall.summary': '{done} of {count} done',
-  'overall.expected': '{count} of {total} dates have passed',
 
   'state.done': 'Done',
   'state.overdue': 'Overdue',

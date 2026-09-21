@@ -104,11 +104,14 @@ describe('Meter', () => {
     expect(html).toContain('width:42%')
   })
 
-  it('draws the mark only when one is given', () => {
-    expect(renderToStaticMarkup(<Meter value={0.4} label="x" />)).not.toContain('meter__mark')
-    const marked = renderToStaticMarkup(<Meter value={0.4} mark={0.6} label="x" />)
-    expect(marked).toContain('meter__mark')
-    expect(marked).toContain('left:60%')
+  it('draws one series and nothing else on the track', () => {
+    // The on-schedule tick is gone: a second mark over the same length is a second claim, and the
+    // figure beside the bar and the overdue chip make theirs in words. Nothing may reintroduce a
+    // `left:` position here — the fill's width is the only geometry this component owns.
+    const html = renderToStaticMarkup(<Meter value={0.4} label="x" />)
+    expect(html).not.toContain('meter__mark')
+    expect(html).not.toContain('left:')
+    expect(html.match(/<div/g)).toHaveLength(2)
   })
 
   it('clamps rather than overflowing its track', () => {
@@ -1019,15 +1022,30 @@ describe('Hero', () => {
     expect(html).toMatch(/class="hero__tally tnum">1 of 2 done</)
   })
 
-  it('carries the on-schedule mark, which is the whole pace signal', () => {
-    // No words: the distance between the fill and the mark IS the comparison, and unlike a
-    // sentence it declines to pick a verdict it could get wrong.
-    expect(heroWith(overallOf([task({ id: 'a' }), task({ id: 'b' })]))).toContain('meter__mark')
+  it('draws the fill at the same figure it prints, and speaks the same count', () => {
+    // THE ACCURACY CHECK, and it is three copies of one number: the percentage in type, the fill's
+    // width, and `aria-valuenow`. A fill computed from anything but `overall.percent` is a bar that
+    // disagrees with the figure beside it, which no reader can resolve.
+    const html = heroWith(
+      overallOf([
+        task({ id: 'a', doneAt: '2027-01-02T00:00:00.000Z' }),
+        task({ id: 'b' }),
+        task({ id: 'c' }),
+        task({ id: 'd' }),
+      ]),
+    )
+    expect(html).toMatch(/class="hero__percent tnum">25%</)
+    expect(html).toContain('aria-valuenow="25"')
+    expect(html).toContain('width:25%')
+    expect(html).toContain('aria-valuetext="1 of 4 done"')
   })
 
-  it('names the mark in the spoken value, its only other channel', () => {
+  it('puts nothing on the track but the fill, and says nothing about dates', () => {
+    // The on-schedule mark is gone, and with it the only claim the strip made that was not work
+    // done: the overdue chip states that, as a count, and it also lists those rows.
     const html = heroWith(overallOf([task({ id: 'a', due: '2026-12-01' }), task({ id: 'b' })]))
-    expect(html).toMatch(/aria-valuetext="[^"]*1 of 2 dates have passed"/)
+    expect(html).not.toContain('meter__mark')
+    expect(html).not.toContain('dates have passed')
   })
 
   it('never reads as a finished plan when nothing is finished', () => {

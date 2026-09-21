@@ -201,7 +201,7 @@ export function validateTask(task, isValidDay) {
 
   /**
    * A day is required and refused rather than defaulted: an invented date lands straight in the
-   * overdue count and in the on-schedule mark, so the create sheet opens blank and Save refuses
+   * overdue count and in the chip that carries it, so the create sheet opens blank and Save refuses
    * until somebody picks one.
    *
    * `STATE.NODATE` still has to render: a sheet can hold undated rows, anybody can empty the cell

@@ -88,9 +88,16 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
 ### Progress
 
 - An unfinished task is 0%, whatever the date says: `percent` is done → 1, else the subtask tally, else 0.
-- `percent` and `duePassed` are different claims over the same denominator and must not be merged: `percent`
-  is work done and countable, `expected` (the mean of `duePassed`) the share of dates passed. The gap is a
-  fill against a mark in the hero strip, the one meter in the app.
+- **ONE SERIES over the roll-up's denominator, and the strip draws exactly it**: `percent` is the mean of
+  every top-level task's `percent`, work done and countable. The on-schedule mark and the `duePassed` /
+  `expected` / `passed` fields that fed it are GONE — a second tick on the track is a second claim about
+  the same length, and what the calendar has asked for is said as a COUNT, by the overdue chip, which is
+  also the control that lists those rows. `Meter` takes no `mark`; `test/ui.test.jsx` pins that
+  `.meter__mark` and `.meter--marked` are out of the stylesheet, `test/progress.test.js` that the two
+  fields are off the roll-up.
+- The figure, the fill and `aria-valuenow` are three copies of ONE number, `toPercent(overall.percent)`:
+  a fill computed from anything else is a bar disagreeing with the type beside it, which no reader can
+  resolve. `test/render.test.jsx` pins the three together.
 - There is no pace verdict: two tasks late plus two finished early sum to zero, so any single subtracted
   figure reports "on schedule" with two things late. `test/progress.test.js` asserts `overallProgress`
   exposes no `pace`; `overdue` states the fact alone.
@@ -251,8 +258,8 @@ The second tab: one free-form markdown document, shared, holding what has been d
 
 - Every task carries a day: `validateTask` returns `MISSING_DUE` without one. The board is a schedule.
 - Required is not defaulted. Create opens blank and Save refuses until somebody picks a date; an invented
-  one lands in the overdue count and the on-schedule mark, so anything typed in a hurry reads overdue
-  tomorrow.
+  one lands in the overdue count and in the chip that carries it, so anything typed in a hurry reads
+  overdue tomorrow.
 - `start` is the opposite: optional, refused by nothing, and it carries its own clear button because iOS's
   date wheel offers no way back to blank — without one a start date picked by mistake is permanent and the
   row is in **This month** for good. A start after the due date is left alone: it is somebody rescheduling,
@@ -659,6 +666,9 @@ what they get wrong — a bare caret, a mixed run of lines, an unclosed `**` —
   way the sheet is (`wedding_date`).
 - The two safe-area insets are the only geometry no harness can show, both reporting 0px in an iframe and in a
   headless viewport: `drive.mjs` fakes each and asserts the band's and the bar's rects against them.
+- `scripts/drive-meter.mjs` recomputes the roll-up from the endpoint's own rows, in its own arithmetic,
+  and compares it to the figure, `aria-valuenow` and the fill's MEASURED width: a style attribute is not a
+  width until layout agrees, and the app checking itself would agree with its own mistake. Brave, port 9336.
 - `scripts/drive-completed.mjs` is the second driver and runs BRAVE, on its own port: hiding what is finished
   is a preference read from `localStorage` at mount and flipped behind a tap in Settings, so the toggle, the
   figures that must not move with it and the reload that has to remember are all past a static render. It is

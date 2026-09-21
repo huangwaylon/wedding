@@ -37,7 +37,6 @@ export default {
 
   'overall.title': '全体の進捗',
   'overall.summary': '{count}件中{done}件完了',
-  'overall.expected': '{total}件中{count}件が期限を過ぎています',
 
   'state.done': '完了',
   'state.overdue': '期限切れ',

@@ -137,17 +137,18 @@ describe('taskProgress: states', () => {
   })
 })
 
-describe('taskProgress: duePassed', () => {
-  it('is the calendar asking, not the work being done', () => {
-    expect(taskProgress(task({ due: '2027-01-05' }), TODAY).duePassed).toBe(true)
-    expect(taskProgress(task({ due: TODAY }), TODAY).duePassed).toBe(false)
-    // Still true once it is finished: the date passed either way, and that is what makes the
-    // mark on the overall meter a reference rather than a copy of the fill.
-    expect(taskProgress(task({ due: '2027-01-05', doneAt: DONE_AT }), TODAY).duePassed).toBe(true)
-  })
-
-  it('is false for an undated task, which asks nothing of anybody', () => {
-    expect(taskProgress(task({ due: '' }), TODAY).duePassed).toBe(false)
+describe('taskProgress: what the calendar has asked for', () => {
+  it('is a STATE and a day count, and never a second percentage', () => {
+    // `duePassed` is gone with the meter's reference mark: the only thing that measured it was a
+    // second series over the same denominator. A date that has passed is `overdue` — a state, a
+    // chip and a count — and a row that is finished is done whatever its date did.
+    const late = taskProgress(task({ due: '2027-01-05' }), TODAY)
+    expect(late.state).toBe(STATE.OVERDUE)
+    expect(late.days).toBe(-1)
+    expect(late).not.toHaveProperty('duePassed')
+    // Today is not past, and finished beats late.
+    expect(taskProgress(task({ due: TODAY }), TODAY).state).toBe(STATE.SOON)
+    expect(taskProgress(task({ due: '2027-01-05', doneAt: DONE_AT }), TODAY).state).toBe(STATE.DONE)
   })
 })
 
@@ -339,39 +340,52 @@ describe('overallProgress', () => {
     )
   })
 
-  it('reports what the calendar expected separately from what is done', () => {
-    // Two dates passed of four, nothing finished: 0% done against 50% expected. Merging the
-    // two claims would produce a board reading 50% complete with nothing complete.
+  it('is the MEAN of the rows it is given, and a date moves none of it', () => {
+    // What the strip draws, checkable by hand: two of four ticked is 50%, and the two overdue rows
+    // contribute nothing on account of being overdue. Nothing but a tick may advance it.
     const rows = [
       task({ id: 'a', due: '2026-12-01' }),
       task({ id: 'b', due: '2026-12-02' }),
-      task({ id: 'c', due: '2027-06-01' }),
-      task({ id: 'd', due: '2027-06-02' }),
+      task({ id: 'c', due: '2027-06-01', doneAt: DONE_AT }),
+      task({ id: 'd', due: '2027-06-02', doneAt: DONE_AT }),
     ]
     const overall = roll(rows)
-    expect(overall.percent).toBe(0)
-    expect(overall.expected).toBe(0.5)
-    expect(overall.passed).toBe(2)
+    expect(overall.percent).toBe(0.5)
+    expect(toPercent(overall.percent)).toBe(50)
+    // The second series is gone with the mark it drew: one claim over this denominator.
+    expect(overall).not.toHaveProperty('expected')
+    expect(overall).not.toHaveProperty('passed')
+  })
+
+  it('counts a part-ticked checklist as its own fraction, and only that', () => {
+    // The other half of the arithmetic: a parent is worth its tally, so one task with three of four
+    // items ticked beside one untouched task is 37.5% — and each top-level row weighs the same.
+    const parent = task({ id: 'p', due: '2027-06-01' })
+    const items = [1, 2, 3, 4].map((n) =>
+      task({ id: `p-${n}`, due: '', parentId: 'p', doneAt: n < 4 ? DONE_AT : '' }),
+    )
+    const overall = roll([parent, task({ id: 'q', due: '2027-06-02' }), ...items])
+    expect(overall.total).toBe(2)
+    expect(overall.percent).toBe(0.375)
   })
 
   it('does not let a wall of overdue tasks read as a finished plan', () => {
     // Every date passed, nothing done. The headline must say 0% and the fact must be stated
-    // separately, which is what `overdue` and `expected` are for.
+    // separately, which is what the `overdue` count is for.
     const rows = Array.from({ length: 8 }, (_, index) =>
       task({ id: `t${index}`, due: '2026-12-01' }),
     )
     const overall = roll(rows)
     expect(toPercent(overall.percent)).toBe(0)
     expect(overall.overdue).toBe(8)
-    expect(overall.expected).toBe(1)
   })
 
   it('is why there is no pace VERDICT: early work hides missed dates', () => {
     // THE MISLEADING CASE. Two dates passed with nothing done, and two future tasks finished
     // early — so "work done" and "dates passed" are both 50% and any single figure subtracting
-    // them reports exactly "on schedule" while two things are late. The screen shows the fill
-    // against the mark and states `overdue` on its own, so nothing has to pick a verdict, and
-    // this is the test that must fail if a verdict ever appears.
+    // them reports exactly "on schedule" while two things are late. The strip draws the fill alone
+    // and the chip states `overdue` on its own, so nothing has to pick a verdict, and this is the
+    // test that must fail if a verdict ever appears.
     const rows = [
       task({ id: 'late1', due: '2026-12-01' }),
       task({ id: 'late2', due: '2026-12-02' }),
@@ -379,14 +393,14 @@ describe('overallProgress', () => {
       task({ id: 'early2', due: '2027-06-02', doneAt: DONE_AT }),
     ]
     const overall = roll(rows)
-    expect(overall.percent).toBe(overall.expected)
+    expect(overall.percent).toBe(0.5)
     expect(overall.overdue).toBe(2)
     expect(overall).not.toHaveProperty('pace')
   })
 
   it('is all zeroes on an empty board rather than NaN', () => {
     const overall = roll([])
-    expect(overall).toMatchObject({ total: 0, percent: 0, expected: 0, passed: 0 })
+    expect(overall).toMatchObject({ total: 0, percent: 0, done: 0, overdue: 0 })
   })
 })
 

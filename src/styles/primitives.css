@@ -439,11 +439,12 @@
 }
 
 /* ---- Meter -------------------------------------------------------------
-   One in the whole app, the board's tracker: a track, a fill, and one tick marking where the fill
-   would sit if everything had been finished on its date. The hairline is load-bearing — see --track
-   in tokens.css — and without it an empty meter is invisible and 0% reads as "no meter here". The
-   fill is not transitioned: it advances once a minute, and an animation would read as a tap being
-   answered. */
+   One in the whole app, the board's tracker: a track and a fill, and nothing else on the track. It
+   carries no reference tick — a second mark is a second claim about the same length, and the figure
+   beside the bar and the overdue chip make theirs in words. The hairline is load-bearing — see
+   --track in tokens.css — and without it an empty meter is invisible and 0% reads as "no meter
+   here". The fill is not transitioned: it advances once a minute, and an animation would read as a
+   tap being answered. Nothing overflows it, so it clips. */
 .meter {
   position: relative;
   height: var(--meter-height);
@@ -459,26 +460,6 @@
   /* Flat accent, no state class: there is one meter, it measures the whole board, and a board has no
      single state. */
   background-color: var(--accent);
-}
-
-/* The tick is taller than the bar, so a meter carrying one must not clip. Applied by `Meter`
-   whenever a mark is passed. */
-.meter--marked {
-  overflow: visible;
-}
-
-/* The on-schedule mark: a dark tick with a 2px ring in the surface colour. That ring is the dataviz
-   surface-ring rule, and it is why the tick stays legible whether it crosses the fill or the bare
-   track and needs no colour of its own. Taller than the bar, so its ends sit against the card. */
-.meter__mark {
-  position: absolute;
-  top: -4px;
-  bottom: -4px;
-  width: 2px;
-  margin-left: -1px;
-  background-color: var(--ink);
-  box-shadow: 0 0 0 2px var(--surface);
-  border-radius: var(--radius-full);
 }
 
 /* ---- Sheet -------------------------------------------------------------

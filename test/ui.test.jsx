@@ -174,19 +174,15 @@ describe('the meter', () => {
     expect(ruleFor(primitives, '.meter')).not.toMatch(/border: 1px solid var\(--line\)/)
   })
 
-  it('gives the on-schedule mark a surface ring rather than a colour of its own', () => {
-    // That ring is what keeps it legible whether it lands on the fill or on the bare
-    // track. Replacing it with a hue would fail against one or the other.
-    const mark = /\.meter__mark \{([^}]*)\}/.exec(primitives)[1]
-    expect(mark).toMatch(/box-shadow: 0 0 0 2px var\(--surface\)/)
-    expect(mark).toMatch(/background-color: var\(--ink\)/)
-  })
-
-  it('lets a meter with a mark show it escaping the bar', () => {
-    // The tick is taller than the track so its ends sit against the card; clipping it
-    // would hide exactly the part that makes it readable. It rides on `--marked` rather than
-    // on `--lg`, so a meter's height and its mark stay independent.
-    expect(/\.meter--marked \{([^}]*)\}/.exec(primitives)[1]).toMatch(/overflow: visible/)
+  it('keeps the track to one series, the mark and its modifier both gone', () => {
+    // A second tick over the same length is a second claim about it, and the figure beside the bar
+    // and the overdue chip make theirs in words. Comments stripped, as every absence assertion here
+    // must be: this stylesheet explains the meter by naming what it no longer draws.
+    const css = code(primitives)
+    expect(css).not.toContain('.meter__mark')
+    expect(css).not.toContain('.meter--marked')
+    // And the track clips again, nothing being taller than it.
+    expect(ruleFor(primitives, '.meter')).toMatch(/overflow: hidden/)
   })
 
   it('does not transition the fill', () => {

@@ -106,17 +106,13 @@ export default function Hero({ config, today, canEdit, overall, onOpenSettings, 
             <span className="hero__percent tnum">{toPercent(overall.percent)}%</span>
             <Meter
               value={overall.percent}
-              mark={overall.expected}
               label={t('overall.title')}
-              /* The mark has no visible label, so its meaning goes here: a screen reader's only
-                 channel for it. */
-              valueText={`${summary} — ${t('overall.expected', {
-                count: overall.passed,
-                total: overall.total,
-              })}`}
+              /* The same count the line below prints: a fill length is not a value anybody can read
+                 off, so the spoken value is the arithmetic rather than the geometry. */
+              valueText={summary}
             />
-            {/* The count makes the percentage checkable by arithmetic. No pace is claimed: one
-                figure for that can be wrong, a count cannot. */}
+            {/* The count makes the percentage checkable. No pace is claimed and no second series is
+                drawn: one figure for that can be wrong, a count cannot. */}
             <span className="hero__tally tnum">{summary}</span>
           </>
         ) : null}

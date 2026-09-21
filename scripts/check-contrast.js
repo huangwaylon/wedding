@@ -206,10 +206,6 @@ for (const [name, hex] of Object.entries(STATUS)) {
   add(`${name} fill on track`, contrast(hex, TRACK), 3)
 }
 
-// The on-schedule marker is an ink tick with a 2px surface ring, so the pair that has to pass is
-// ink against that ring, not against whatever it crosses.
-add('ink tick on its surface ring', contrast(INK.ink, SURFACE), 3)
-
 // ---------------------------------------------------------------------------
 // Over the photograph
 //

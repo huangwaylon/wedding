@@ -180,8 +180,8 @@
 }
 
 /* ---- The progress strip ------------------------------------------------
-   The whole tracker on one line: the percentage, a bar carrying the on-schedule mark, and the count
-   that makes the percentage checkable. A fixed height, because --hero-height derives from it and
+   The whole tracker on one line: the percentage, the bar it labels, and the count that makes that
+   percentage checkable. One series on the track and no reference mark. A fixed height, because --hero-height derives from it and
    the sticky month heading offsets by that; content is centred rather than setting the height. */
 .hero__progress {
   display: flex;
