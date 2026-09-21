@@ -54,40 +54,52 @@ const LIFTED = [
   },
 ]
 
-/** `withProgress` has already sorted, so grouping is one pass and the groups come out in order: no
-    second sort, no `Object.keys` ordering assumption. Undated tasks collect in a final group,
-    sorting last.
+/** A row's calendar group: the month it is due in, or the one group that says there is no date. */
+function monthKey(task) {
+  return task.progress.state === STATE.NODATE ? '' : monthOf(task.due)
+}
 
-    THE MONTH TALLY IS COUNTED OVER THE MONTH, not over the rows drawn under the heading: a lifted row
-    is still an April task, and April's heading says April. Counting the visible rows instead made
-    `1/2` a true statement about a slice and a false one about the month, which is the exact defect the
-    figure is withheld under a filter to avoid — and it would have meant lifting a row changed what
-    April was worth. It is `aria-hidden` for the same reason: the arithmetic is not the rows below.
-
-    THE TALLY OBJECT IS SHARED WITH THE MAP BY REFERENCE, and that is the whole mechanism: a lifted row
-    of a month whose group already exists increments it AFTER the group was built, so the heading keeps
-    counting April while drawing a subset of it. Copying it here (`tally: { ...tally }`) reads as the
-    tidier line and silently turns every heading into a figure about the rows below it. */
-function groupTasks(tasks, today) {
-  const lifted = LIFTED.map((section) => ({ ...section, month: section.month(today), tasks: [] }))
-  const months = []
+/**
+ * `done/total` per month, counted over whatever list is handed in — which is the whole mechanism
+ * behind the rule below, `countTasks` being the board's rows where `tasks` is the rows drawn.
+ */
+function talliesFor(tasks) {
   const tallies = new Map()
-  let current = null
-
   for (const task of tasks) {
-    const key = task.progress.state === STATE.NODATE ? '' : monthOf(task.due)
+    const key = monthKey(task)
     const tally = tallies.get(key) ?? { done: 0, total: 0 }
     tally.total += 1
     if (task.progress.state === STATE.DONE) tally.done += 1
     tallies.set(key, tally)
+  }
+  return tallies
+}
 
+/** `withProgress` has already sorted, so grouping is one pass and the groups come out in order: no
+    second sort, no `Object.keys` ordering assumption. Undated tasks collect in a final group,
+    sorting last.
+
+    THE MONTH TALLY IS COUNTED OVER THE MONTH, not over the rows drawn under the heading, and the
+    month is `counted` rather than `tasks`: a lifted row is still an April task, a row withheld
+    because it is finished is still an April task, and April's heading says April. Counting the
+    visible rows instead made `1/2` a true statement about a slice and a false one about the month,
+    which is the exact defect the figure is withheld under a filter to avoid — and it would have
+    meant lifting or hiding a row changed what April was worth. */
+function groupTasks(tasks, today, counted) {
+  const lifted = LIFTED.map((section) => ({ ...section, month: section.month(today), tasks: [] }))
+  const months = []
+  const tallies = talliesFor(counted)
+  let current = null
+
+  for (const task of tasks) {
+    const key = monthKey(task)
     const section = lifted.find((candidate) => candidate.holds(task))
     if (section) {
       section.tasks.push(task)
       continue
     }
     if (!current || current.key !== key) {
-      current = { key, month: key, tasks: [], tally }
+      current = { key, month: key, tasks: [], tally: tallies.get(key) ?? { done: 0, total: 0 } }
       months.push(current)
     }
     current.tasks.push(task)
@@ -98,6 +110,9 @@ function groupTasks(tasks, today) {
 
 /**
  * @param {string} props.today the board's day, 'YYYY-MM-DD' — see `App`
+ * @param {Array} [props.countTasks] the rows every month tally is counted over, defaulting to the
+ *   rows drawn. `App` hands the whole board, so neither lifting a row nor withholding a finished one
+ *   changes what its month is worth.
  * @param {string} [props.weddingMonth] 'YYYY-MM' of the wedding, so one heading can say so
  * @param {boolean} [props.unfiltered] false while a filter is on, suppressing every whole-group
  *   figure: a tally over the overdue slice of April would read "0/3 done" about a month nine tasks
@@ -105,6 +120,7 @@ function groupTasks(tasks, today) {
  */
 export default function Plan({
   tasks,
+  countTasks,
   expanded,
   onExpand,
   today,
@@ -113,7 +129,7 @@ export default function Plan({
   ...cardProps
 }) {
   const { t, locale } = useT()
-  const { lifted, months } = groupTasks(tasks, today)
+  const { lifted, months } = groupTasks(tasks, today, countTasks ?? tasks)
 
   // Nothing rather than an empty shell: the caller owns what an empty board says.
   if (!lifted.length && !months.length) return null

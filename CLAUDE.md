@@ -128,9 +128,11 @@ Breaking one does not throw. It puts a wrong number on a screen or the wrong thi
 - A month heading's tally counts the WHOLE month, lifted rows included: the heading says April, so a
   figure describing only the rows left under it is true about a slice and false about April — the same
   defect the filter withholds it for — and lifting a row must not change what April is worth. It is
-  `aria-hidden` for that reason: the arithmetic is not the rows below. A lifted section carries a bare
-  COUNT instead, every row in one being unfinished by definition, so `done/total` there reads `0/4` for
-  ever. Every whole-group figure is still withheld under a filter: `Plan` gets the filtered list, so a
+  `aria-hidden` for that reason: the arithmetic is not the rows below. `Plan` counts over `countTasks`,
+  which `App` fills with the whole board, so neither lifting a row nor withholding a finished one moves
+  a figure; counted over the rows drawn instead, a mostly-done March reads `0/3`. A lifted section
+  carries a bare COUNT instead, every row in one being unfinished by definition, so `done/total` there
+  reads `0/4` for ever. Every whole-group figure is still withheld under a filter: a
   tally over April's overdue slice would read `0/3` about a month nine tasks long.
 - **There is no "you are here" line, and there is no room for one.** The sections are where you are, and
   with the current month hoisted every calendar group below holds either a finished month or a future
@@ -364,7 +366,17 @@ request. Everything else is terminal, being equally true a second later.
   focused input it removes.
 - Ticking under a filter must not make a row vanish: ticking raises no toast, so a row that also leaves the
   list gives no feedback for the commonest gesture. `App` keeps the ids ticked since the filter was chosen
-  in `shown`.
+  in `shown`, and that is why the two narrowings compose in ONE place.
+- **Finished rows are hidden by default**, per-device (`STORAGE_KEYS.showDone`, absent meaning hidden —
+  the plan answers what is LEFT, and a board a year old is mostly finished). `visibleTasks` in
+  `FilterChips.jsx` is the only thing that narrows the list, both narrowings and the just-ticked
+  exemption in one pure function, because every way it can be wrong is invisible to a render. The DONE
+  CHIP overrides the hide: a slice naming the state is the request, and an empty list under a non-zero
+  count reads as a lost board. Nothing arithmetic moves with it — the chips take `overallProgress` over
+  every task and `Plan` its tallies over `countTasks` — so Settings has to SAY so, the disagreement
+  between a figure and the rows being the one part nobody can see. The way out of an empty list lifts
+  BOTH (`showEverything`), or a fully-finished board answers *Show everything* with nothing.
+  `test/render.test.jsx` pins both narrowings and the tally; `scripts/drive-completed.mjs` the toggle.
 - `canEdit` is what renders, `hasKey` what the device can do. The read-only view toggle moves only the
   first, so an editor previewing the guest view keeps their key and the revoke control rather than a paste
   field; enabling or revoking clears the flag, or a freshly pasted link appears to do nothing. A rejected
@@ -373,7 +385,7 @@ request. Everything else is terminal, being equally true a second later.
   the server one.
 - Open rows, just-ticked ids and which tab is up are session state, never `localStorage` — relaunching into
   twelve expanded rows is unreadable, and launching into the notes puts the board behind a tab nobody asked to
-  be on. Locale, accent, filter and the read-only view are per-device.
+  be on. Locale, accent, filter, whether finished rows are drawn, and the read-only view are per-device.
 - `withProgress` is memoised on today: the board is day-granular, and there is no millisecond clock to key
   it on.
 - An open row starts read-only, `TaskDetail` owning the mode: live fields behind the commonest tap put a
@@ -415,6 +427,7 @@ JSX.
 | `ICON_SIZE`, so a glyph size is a name rather than a pair of literals at every call site | `icons.jsx` |
 | `BG_HEX`, `ACCENT_HEX` | `theme.js` |
 | `run()`, the only mutation wrapper, and `fail()`, the only classifier | `useBoard.js` |
+| what narrows the plan — the state slice and the finished rows (`visibleTasks`) | `FilterChips.jsx` |
 | the markdown grammar AND the toolbar's text transforms, both pure | `markdown.js` |
 | the only done control / read-edit toggle / title-body-action block / wording of a date's nearness / task field markup / markdown → elements / anchor and text → links / floating button | `DoneToggle`, `EditToggle`, `Notice`, `DueLabel`, `TaskFields`, `Markdown`, `ExternalLink`, `Fab` |
 
@@ -646,6 +659,11 @@ what they get wrong — a bare caret, a mixed run of lines, an unclosed `**` —
   way the sheet is (`wedding_date`).
 - The two safe-area insets are the only geometry no harness can show, both reporting 0px in an iframe and in a
   headless viewport: `drive.mjs` fakes each and asserts the band's and the bar's rects against them.
+- `scripts/drive-completed.mjs` is the second driver and runs BRAVE, on its own port: hiding what is finished
+  is a preference read from `localStorage` at mount and flipped behind a tap in Settings, so the toggle, the
+  figures that must not move with it and the reload that has to remember are all past a static render. It is
+  not folded into `drive.mjs` because that script retitles, dates and deletes rows in one sequence, and a
+  check about which rows are DRAWN has to know which rows exist.
 
 ## Gotchas
 

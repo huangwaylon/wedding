@@ -73,8 +73,15 @@ read-only — `ScriptApp.getOAuthToken()` returns the script's own authorization
   part it leaves out, and a row adds it wherever nothing else on screen supplies one: not the heading,
   which names a year for every month it heads, and not the calendar the reader is living in. Whole-group
   tallies are withheld while a filter is on.
+- **Finished tasks are hidden**, and **Settings › Completed tasks** shows them. Hidden is the default:
+  the plan is what is left to do, and a board a year old is mostly finished. Nothing about the
+  arithmetic moves with it — the header percentage, every chip count and each month's tally are
+  counted over every task — and the **Done** chip still lists the finished rows, a slice that names
+  the state being an explicit request for them. A row ticked since then stays on screen wearing its
+  tick.
 - **Per-device, in `localStorage`, never in the sheet:** language (English/Japanese), accent (`tarn`
-  default, `pine`, `rosehip`), the state filter, the read-only view toggle.
+  default, `pine`, `rosehip`), the state filter, whether finished tasks are drawn, the read-only view
+  toggle.
 - **A cold launch does no network work:** `scripts/build-sw.js` emits a service worker precaching
   `dist/` and `src/lib/snapshot.js` keeps the last successful read, so the board appears offline behind
   a "showing saved data" notice.
@@ -352,7 +359,9 @@ A green suite says nothing about how the page looks.
   its iframes, not a resized window: headless Chrome reports a width you did not ask for.
 - `scripts/drive.mjs` drives the running app over the Chrome DevTools Protocol for what a static render
   cannot reach — the accordion, the read/edit toggle, how many writes an edit session costs, whether
-  the date control stays inside its row.
+  the date control stays inside its row. `scripts/drive-completed.mjs` is the same machinery in Brave,
+  for the hide-what-is-finished preference: the toggle, the figures that must not move with it, and
+  the reload that has to remember.
 - `scripts/stub-endpoint.mjs` serves **both** backends over one in-memory grid on `127.0.0.1:5200`: the
   real `Code.gs` for the read and the mint, and a Sheets API stand-in, checking the bearer token, for
   writes. `vite.config.js` proxies `/wedding/__endpoint` and `/wedding/__sheets` to it in dev only.
@@ -422,4 +431,4 @@ whose rect ends exactly on the image edge produces no crop at all.
 | `src/i18n/` | the engine, the `en`/`ja` catalogs, the registry |
 | `src/styles/` | `tokens`, `base`, `primitives`, `app`, loaded in that order |
 | `test/` | vitest specs. `schema.test.js` pins the two column lists against each other, `script.test.js` executes `Code.gs`, `sheets.test.js` drives the REST client against a fake that parses A1 ranges, `connection.test.js` covers the mint, `markdown.test.js` the notes grammar, `links.test.js` every scheme that may not reach an `href` |
-| `scripts/` | `preview.jsx` + `harness.html` (static visual harness), `drive.mjs` + `stub-endpoint.mjs` (drive the app against both backends), `check-contrast.js`, `build-sw.js`, `make-icons.js` |
+| `scripts/` | `preview.jsx` + `harness.html` (static visual harness), `drive.mjs` + `drive-completed.mjs` + `stub-endpoint.mjs` (drive the app against both backends), `check-contrast.js`, `build-sw.js`, `make-icons.js` |

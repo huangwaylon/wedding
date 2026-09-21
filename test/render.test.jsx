@@ -24,7 +24,7 @@ import { DEFAULT_LOCALE } from '../src/i18n/catalogs.js'
 import { ConfirmDeleteSheet, DeletedList } from '../src/components/Deleted.jsx'
 import DueLabel from '../src/components/DueLabel.jsx'
 import EmptyBoard from '../src/components/EmptyBoard.jsx'
-import FilterChips, { FILTER_ALL } from '../src/components/FilterChips.jsx'
+import FilterChips, { FILTER_ALL, visibleTasks } from '../src/components/FilterChips.jsx'
 import Hero, { coupleTitle } from '../src/components/Hero.jsx'
 import Markdown from '../src/components/Markdown.jsx'
 import Meter from '../src/components/Meter.jsx'
@@ -774,6 +774,24 @@ describe('Plan', () => {
     expect(html.match(/<article/g)).toHaveLength(4)
   })
 
+  it('counts a month over the rows it is given to count, not the rows it draws', () => {
+    // The hide-what-is-finished preference goes through the same door lifting does: the heading says
+    // March, so a figure counted over the three unfinished rows drawn under it would read `0/4` about
+    // a month that is a quarter done. `App` hands the whole board as `countTasks` for that reason.
+    const all = rows([
+      task({ id: 'a', due: '2027-03-02', doneAt: '2027-02-01T00:00:00.000Z' }),
+      task({ id: 'b', title: 'Second', due: '2027-03-10' }),
+      task({ id: 'c', title: 'Third', due: '2027-03-11' }),
+      task({ id: 'd', title: 'Plain', due: '2027-03-20' }),
+    ])
+    const drawn = all.filter((row) => row.progress.state !== STATE.DONE)
+    const html = render(drawn, { today: TODAY, countTasks: all })
+    expect(tallies(html)).toEqual(['1/4'])
+    expect(html.match(/<article/g)).toHaveLength(3)
+    // And with nothing to count over, the figure is about the rows drawn: the default is the list.
+    expect(tallies(render(drawn, { today: TODAY }))).toEqual(['0/3'])
+  })
+
   it('states month and day in one column on EVERY row, whatever the heading above says', () => {
     // The rule the three-way caption replaced: a date reads the same way in a section as under a
     // month heading, so nothing has to be read against its context. Under "This month · January
@@ -892,7 +910,7 @@ describe('Plan', () => {
   })
 })
 
-describe('the read-only view toggle', () => {
+describe('Settings’ per-device toggles', () => {
   const render = (extra = {}) =>
     renderToStaticMarkup(
       <SettingsSheet
@@ -901,6 +919,8 @@ describe('the read-only view toggle', () => {
         hasKey
         readOnly={false}
         onToggleReadOnly={noop}
+        showDone={false}
+        onToggleShowDone={noop}
         sheetTimeZone=""
         deletedTasks={[]}
         onRestore={noop}
@@ -945,6 +965,31 @@ describe('the read-only view toggle', () => {
   it('hides maintenance while previewing, because a guest cannot restore a row', () => {
     const html = render({ readOnly: true, canEdit: false, deletedTasks: [task({ id: 'gone' })] })
     expect(html).not.toContain('Purge deleted tasks')
+  })
+
+  it('offers the finished rows as a toggle that names where the tap goes, hidden by default', () => {
+    // Per-device, like the language and the accent, so it is in the half that renders for everybody.
+    const html = render()
+    expect(html).toContain('Completed tasks')
+    expect(html).toContain('Show completed tasks')
+    expect(html).not.toContain('Hide completed tasks')
+  })
+
+  it('flips that label too, so the way back is legible', () => {
+    const html = render({ showDone: true })
+    expect(html).toContain('Hide completed tasks')
+    expect(html).not.toContain('Show completed tasks')
+  })
+
+  it('offers it to a viewer as well, a guest reading the same board', () => {
+    const html = render({ hasKey: false, canEdit: false })
+    expect(html).toContain('Show completed tasks')
+  })
+
+  it('says what the toggle does not move, that being the invisible half', () => {
+    // The percentage, the chip counts and every month tally are over the whole board. Without the
+    // sentence, hiding half the rows looks like arithmetic that stopped agreeing with the list.
+    expect(render()).toContain('The percentage, the counts and each month’s tally still include them.')
   })
 })
 
@@ -1102,6 +1147,58 @@ describe('FilterChips', () => {
     // Disabling the active chip would strand the board on a slice with no way back to it.
     const html = render([task()], 'overdue')
     expect(html).toMatch(/aria-pressed="true"[^>]*>Overdue</)
+  })
+
+  it('counts over the whole board, not over what is drawn', () => {
+    // The Done chip's figure is how many are finished; a device withholding finished rows has not
+    // finished fewer of them. `App` feeds the chips `overallProgress` over every task for that
+    // reason, so the count here and the list below it deliberately disagree.
+    const list = [task({ id: 'a', doneAt: '2027-01-02T00:00:00.000Z' }), task({ id: 'b' })]
+    const all = rows(list)
+    expect(visibleTasks(all)).toHaveLength(1)
+    expect(overallProgress(all).done).toBe(1)
+  })
+})
+
+describe('what the plan draws', () => {
+  const done = (id) => task({ id, title: `Done ${id}`, doneAt: '2027-01-02T00:00:00.000Z' })
+  const open = (id) => task({ id, title: `Open ${id}` })
+  const ids = (list) => list.map((row) => row.id)
+
+  it('withholds what is finished by default, the plan answering what is LEFT', () => {
+    const list = rows([done('a'), open('b')])
+    expect(ids(visibleTasks(list))).toEqual(['b'])
+  })
+
+  it('draws them once the device asks for them', () => {
+    const list = rows([done('a'), open('b')])
+    expect(ids(visibleTasks(list, { showDone: true }))).toEqual(['a', 'b'])
+  })
+
+  it('answers the Done chip with the finished rows even while they are hidden', () => {
+    // A slice that names the state IS the request. Answering it with an empty list and a "nothing
+    // matches" card reads as a lost board, and the chip carries a non-zero count beside it.
+    const list = rows([done('a'), open('b')])
+    expect(ids(visibleTasks(list, { filter: STATE.DONE }))).toEqual(['a'])
+  })
+
+  it('keeps a row ticked since the slice was chosen, whichever narrowing would drop it', () => {
+    // THE CASE THAT HAS NO FEEDBACK: ticking raises no toast, so a row leaving the list on contact
+    // is the app's commonest gesture reporting nothing at all. Both narrowings hold it.
+    const list = rows([done('a'), open('b')])
+    const ticked = new Set(['a'])
+    expect(ids(visibleTasks(list, { ticked }))).toEqual(['a', 'b'])
+    expect(ids(visibleTasks(list, { filter: STATE.SOON, ticked }))).toEqual(['a', 'b'])
+  })
+
+  it('narrows by state and by finish together, neither cancelling the other', () => {
+    const list = rows([
+      done('a'),
+      task({ id: 'b', title: 'Late', due: '2026-12-10' }),
+      task({ id: 'c', title: 'Far', due: '2027-09-10' }),
+    ])
+    expect(ids(visibleTasks(list, { filter: STATE.OVERDUE }))).toEqual(['b'])
+    expect(ids(visibleTasks(list))).toEqual(['b', 'c'])
   })
 })
 

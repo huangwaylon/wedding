@@ -36,6 +36,12 @@ export const STORAGE_KEYS = {
   /** Which state filter the device was last using. Per-device, never shared. */
   filter: 'wd.filter',
   /**
+   * Whether finished rows are drawn in the plan. Per-device like the filter, and ABSENT means
+   * hidden: the plan answers what is LEFT, and a board a year in is mostly finished. Stored as '1'
+   * only when showing, so the default costs no value and a cleared store lands on it.
+   */
+  showDone: 'wd.showDone',
+  /**
    * An editor choosing to see the board the way a guest sees it. Per-device, and purely a view
    * preference: the edit key stays where it is and the endpoint's refusal is untouched.
    */

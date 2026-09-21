@@ -180,6 +180,14 @@ export default {
   'settings.device': 'This device only',
   'settings.language': 'Language',
   'settings.accent': 'Colour',
+  /* A view preference like the accent, hidden by default: the plan answers what is LEFT to do, and a
+     board a year old is mostly finished. The hint states what does NOT move, that being the part
+     nobody can see — every figure on the board is still counted over every task. */
+  'settings.completed': 'Completed tasks',
+  'settings.completedHint':
+    'Hidden by default. The percentage, the counts and each month’s tally still include them.',
+  'settings.completedShow': 'Show completed tasks',
+  'settings.completedHide': 'Hide completed tasks',
   'settings.access': 'Editing',
   /* A view preference, not an access change: the wording must make that unmistakable, or it reads
      as the revoke below. */

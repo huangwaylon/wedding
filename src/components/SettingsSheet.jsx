@@ -4,9 +4,10 @@
  *   SHARED, written to the sheet so everyone sees the change: names, the wedding date, the venue,
  *   the timezone, the category list.
  *
- *   this device, `localStorage` only: the interface language, the accent, the read-only view. None
- *   may reach the sheet — nobody restyles anybody else's screen or decides what language a planner
- *   reads. Only this half is labelled, being the half nobody would guess.
+ *   this device, `localStorage` only: the interface language, the accent, whether finished tasks are
+ *   drawn, the read-only view. None may reach the sheet — nobody restyles anybody else's screen,
+ *   decides what language a planner reads, or empties somebody else's list. Only this half is
+ *   labelled, being the half nobody would guess.
  *
  * A viewer sees only the device half plus the edit-link field, everything else being a write they
  * cannot make. `hasKey`, not `canEdit`, decides which of the two the Editing section shows: an
@@ -61,6 +62,9 @@ export default function SettingsSheet({
   hasKey = canEdit,
   readOnly = false,
   onToggleReadOnly,
+  /** Whether the plan draws finished rows. Hidden by default — see `App`. */
+  showDone = false,
+  onToggleShowDone,
   sheetTimeZone,
   deletedTasks,
   onRestore,
@@ -264,6 +268,23 @@ export default function SettingsSheet({
             </button>
           ))}
         </div>
+      </section>
+
+      <section className="section">
+        <h3 className="section__title">{t('settings.completed')}</h3>
+        {/* Says what the toggle does NOT do, which is the part nobody can see: a finished row leaves
+            the list and stays in the percentage, the chip counts and its month's tally. */}
+        <p className="hint section__hint">{t('settings.completedHint')}</p>
+        {/* The label names the direction the tap goes, like the read-only view below and a row's
+            Edit/Done toggle. */}
+        <button
+          type="button"
+          className="btn btn--secondary btn--block"
+          aria-pressed={showDone}
+          onClick={onToggleShowDone}
+        >
+          {showDone ? t('settings.completedHide') : t('settings.completedShow')}
+        </button>
       </section>
 
       <section className="section">

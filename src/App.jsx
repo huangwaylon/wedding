@@ -31,7 +31,7 @@ import { useT } from './i18n/index.js'
 import { ConfirmDeleteSheet } from './components/Deleted.jsx'
 import EmptyBoard from './components/EmptyBoard.jsx'
 import Fab from './components/Fab.jsx'
-import FilterChips, { FILTER_ALL } from './components/FilterChips.jsx'
+import FilterChips, { FILTER_ALL, visibleTasks } from './components/FilterChips.jsx'
 import Hero from './components/Hero.jsx'
 import Notice from './components/Notice.jsx'
 import NotesView from './components/NotesView.jsx'
@@ -101,6 +101,13 @@ export default function App() {
 
   const [filter, setFilter] = useState(() => readStored(STORAGE_KEYS.filter) || FILTER_ALL)
   /**
+   * Whether finished rows are drawn at all. HIDDEN by default, and per-device like the filter: the
+   * plan is what is left to do, and on a board a year old most of it is finished. It decides what is
+   * DRAWN and nothing else — the header percentage, the chip counts and every month tally are still
+   * counted over the whole board, a view preference not being allowed to move an arithmetic figure.
+   */
+  const [showDone, setShowDone] = useState(() => readStored(STORAGE_KEYS.showDone) === '1')
+  /**
    * Which destination is up. Session state, never `localStorage`, like `expanded`: the plan is what
    * the app is for, and launching into the notes puts it behind a tab nobody asked to be on.
    */
@@ -156,11 +163,8 @@ export default function App() {
   const overall = useMemo(() => overallProgress(tasks), [tasks])
 
   const shown = useMemo(
-    () =>
-      filter === FILTER_ALL
-        ? tasks
-        : tasks.filter((task) => task.progress.state === filter || ticked.has(task.id)),
-    [tasks, filter, ticked],
+    () => visibleTasks(tasks, { filter, showDone, ticked }),
+    [tasks, filter, ticked, showDone],
   )
 
   const toggleExpanded = useCallback((id) => {
@@ -178,6 +182,26 @@ export default function App() {
     setTicked(new Set())
     writeStored(STORAGE_KEYS.filter, next)
   }, [])
+
+  const toggleShowDone = useCallback(() => {
+    setShowDone((previous) => {
+      const next = !previous
+      writeStored(STORAGE_KEYS.showDone, next ? '1' : null)
+      // Same slice-changing gesture as choosing a filter, so nothing is held over into it either.
+      setTicked(new Set())
+      return next
+    })
+  }, [])
+
+  /**
+   * The one way out of an empty list, whichever of the two narrowings emptied it: a board where
+   * everything is finished and finished rows are hidden is as empty as a board sliced to overdue,
+   * and a button that lifted only the filter would leave it empty and read as broken.
+   */
+  const showEverything = useCallback(() => {
+    chooseFilter(FILTER_ALL)
+    if (!showDone) toggleShowDone()
+  }, [chooseFilter, showDone, toggleShowDone])
 
   /**
    * There is one document scroller, so a switch has to reset it: the two destinations are different
@@ -401,7 +425,7 @@ export default function App() {
                   <button
                     type="button"
                     className="btn btn--secondary"
-                    onClick={() => chooseFilter(FILTER_ALL)}
+                    onClick={showEverything}
                   >
                     {t('list.showAll')}
                   </button>
@@ -409,6 +433,11 @@ export default function App() {
               ) : (
                 <Plan
                   tasks={shown}
+                  /* The rows every whole-month tally is counted over, which is NOT the rows drawn:
+                     hiding what is finished must not make April's heading read `0/4` about a month
+                     that is mostly done — the same defect the figure is withheld under a filter
+                     for. */
+                  countTasks={tasks}
                   canEdit={canEdit}
                   categories={board.config.categories}
                   today={today}
@@ -468,6 +497,8 @@ export default function App() {
           hasKey={hasKey}
           readOnly={readOnly}
           onToggleReadOnly={toggleReadOnly}
+          showDone={showDone}
+          onToggleShowDone={toggleShowDone}
           sheetTimeZone={board.sheetTimeZone}
           deletedTasks={board.deletedTasks}
           onRestore={restore}
