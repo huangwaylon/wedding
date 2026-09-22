@@ -15,10 +15,11 @@
     <meta name="color-scheme" content="light" />
     <!--
       Inline, so it costs no request, and without one every load logs a 404 for /favicon.ico. The
-      two-rings mark on the accent, and the one copy of it that cannot be derived —
-      `scripts/make-icons.js` rasterises it for the Home Screen, `RingsIcon` draws it in the app,
-      and the three must not drift. Same 24-unit box as `RingsIcon`, so the geometry is literally
-      the same numbers. Covered by `img-src 'self' data:`.
+      two-rings mark on the accent, and the one copy of it that cannot be derived — `RingsIcon`
+      draws it in the app, and the two must not drift. Same 24-unit box as `RingsIcon`, so the
+      geometry is literally the same numbers. The Home Screen tile is NOT this mark: it is a
+      photograph of the couple (`scripts/make-icons.js`), a tile being recognised by a face where a
+      16px tab is recognised by a silhouette. Covered by `img-src 'self' data:`.
     -->
     <link
       rel="icon"

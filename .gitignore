@@ -6,9 +6,11 @@ scripts/preview-*.html
 # The harness's own copy of the hero, written beside its pages by scripts/preview.jsx —
 # `scripts/` is not served, so an absolute /hero.jpg resolves to nothing from there.
 scripts/preview-hero.jpg
-# The camera original behind public/hero.jpg. Only the derived crop is ever served, and
-# a 6MB source in git would be downloaded by every clone forever to serve ~290KB.
+# The camera originals behind public/hero.jpg and public/icons/. Only the derived crops are ever
+# served, and a multi-megabyte source in git would be downloaded by every clone forever to serve
+# ~290KB and ~100KB. So `npm run icons` cannot run on a fresh clone, and says so.
 IMG_0509.JPG
+IMG_8834.JPG
 
 # The local board fixture and env override used by scripts/drive.mjs. Both are per-machine,
 # and the fixture must never reach `dist/` — the service worker precaches whatever is there.

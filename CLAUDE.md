@@ -496,13 +496,15 @@ exiting non-zero on a FAIL:
 - Whoever picks pine or rosehip accepts one dot pair close to the floor. Never add a preset without
   measuring it, and never mute `--good` toward the neutrals — at `#35762f` pine falls to 0.13 and
   `npm run contrast` exits non-zero. `--good` and `--critical` are signals, not theme.
-- `make-icons.js` and `scripts/check-contrast.js` both parse `tokens.css` rather than restating it, or a
-  retheme passes its own contrast check while measuring the previous colours. The icons are committed, so
-  re-run `npm run icons` after changing the default. `index.html`'s inline favicon is the one copy that
-  cannot be derived, and it, `RingsIcon` and `make-icons.js` all draw the two-rings mark — two
-  interlocking rings under a diamond setting — and must not drift. The favicon and `RingsIcon` share the
-  24-unit box, so those two are the same numbers; `make-icons.js` maps them into a 0–1 square and must
-  keep every point inside the 0.4 radius Android crops a maskable icon to.
+- `scripts/check-contrast.js` parses `tokens.css` rather than restating it, or a retheme passes its own
+  contrast check while measuring the previous colours. It is the only script that reads the palette:
+  the Home Screen PNGs are a PHOTOGRAPH of the couple showing their rings, so they follow no accent and
+  a retheme does not regenerate them. `index.html`'s inline favicon and `RingsIcon` are the two
+  hand-written copies of the two-rings mark — two interlocking rings under a diamond setting — they
+  share the 24-unit box, so they are the same numbers, and they must not drift; `test/ui.test.jsx` pins
+  that pair. `make-icons.js` crops the gitignored camera original, so a fresh clone cannot run
+  `npm run icons` and says so; its square is wider than the subject needs because every icon is also
+  declared `maskable`, and the 0.4 radius Android crops one to has to keep the ring fingers.
 
 **Type**
 

@@ -130,10 +130,10 @@ export function CheckCircleIcon(props) {
   )
 }
 
-/** Two interlocking rings under a stone setting: the app's own mark. `scripts/make-icons.js`
-    rasterises the same geometry and `index.html` draws it inline as the favicon, in the same
-    24-unit box; all three must agree, or the installed app and the screen it opens carry
-    different logos. */
+/** Two interlocking rings under a stone setting: the app's own mark. `index.html` draws it inline as
+    the favicon in the same 24-unit box, and the two must agree — they are the same numbers. The
+    Home Screen PNGs are a photograph instead (`scripts/make-icons.js`), so the mark is what the app
+    is recognised by everywhere the frame is too small for a face. */
 export function RingsIcon(props) {
   return (
     <svg {...base} {...props}>

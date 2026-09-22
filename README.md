@@ -350,7 +350,7 @@ clear reason — one is also a CSP decision.
 | `npm run build` | bundle into `dist/`, then generate `dist/sw.js` |
 | `npm run preview` | serve the built `dist/`; the only way to exercise the service worker |
 | `npm test` / `npm run test:watch` | vitest, single run / watch |
-| `npm run icons` | regenerate the committed Home Screen PNGs; required after changing the default accent |
+| `npm run icons` | regenerate the committed Home Screen PNGs from the source photograph; needs the gitignored original |
 | `npm run contrast` | measure every colour pair; required after any colour change |
 
 A green suite says nothing about how the page looks.
@@ -399,6 +399,27 @@ sips --resampleHeightWidth 1600 1280 --setProperty formatOptions 20 /tmp/hero-cr
 
 `--cropOffset` is measured from the top-left when non-zero but means "centred" at `0 0`, and an offset
 whose rect ends exactly on the image edge produces no crop at all.
+
+### Replacing the app icon
+
+`public/icons/icon-180|192|512.png` are the couple showing their rings, derived from a gitignored
+camera original the same way the hero is. The two-rings mark still draws the browser favicon and the
+empty-board illustration; the Home Screen tile is a photograph because a tile is found cold among
+thirty others, where a face beats a geometry.
+
+`scripts/make-icons.js` holds the source filename and the crop rect and does both `sips` passes, so
+replacing the picture is: drop the new original in the repo root, add it to `.gitignore`, point
+`SOURCE` and `CROP` at it, and run
+
+```sh
+npm run icons
+```
+
+The crop is square and deliberately looser than the subject. Every icon is declared `maskable` as
+well as `any`, so Android may crop it to a circle of 80% width — check a new one by taking the middle
+410 of the 512 (`sips -c 410 410 public/icons/icon-512.png --out /tmp/masked.png`) and confirming the
+faces and the ring fingers are all still there. A photograph costs bytes a flat mark does not: the
+three PNGs are ~530KB together against ~10KB, and the service worker precaches all of dist/.
 
 ## Known limitations
 

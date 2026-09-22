@@ -114,13 +114,14 @@ describe('accent presets', () => {
     }
   })
 
-  it('draws one two-rings mark, in the default accent, in all three hand-written copies', () => {
+  it('draws one two-rings mark, in the default accent, in both hand-written copies', () => {
     /**
-     * `index.html`'s inline favicon, `RingsIcon` and `make-icons.js` all draw the mark by hand — the
-     * favicon because a data URI cannot be derived, the other two because one is JSX and one writes a
-     * PNG. Two things can drift silently and both ship to a Home Screen: the geometry, and the accent
-     * the favicon hardcodes, which no retheme of the default would touch. The favicon and `RingsIcon`
-     * share the 24-unit box, so their circles are literally the same numbers.
+     * `index.html`'s inline favicon and `RingsIcon` both draw the mark by hand — the favicon because
+     * a data URI cannot be derived, the other because it is JSX. Two things can drift silently: the
+     * geometry, and the accent the favicon hardcodes, which no retheme of the default would touch.
+     * They share the 24-unit box, so their circles are literally the same numbers. `make-icons.js`
+     * is no longer a third copy: the Home Screen PNGs are a photograph, and nothing in them is
+     * derived from this mark or from the palette.
      */
     const favicon = decodeURIComponent(/rel="icon"\s*\n?\s*href="([^"]*)"/.exec(html)[1])
     expect(favicon.toLowerCase()).toContain(`fill='${ACCENT_HEX[DEFAULT_ACCENT]}'`)
